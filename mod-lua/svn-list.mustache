@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{base}} - Revision {{rev}}: {{path}}</title>
+<style>
+body {
+    margin: 2rem auto;
+    padding: 0 1rem;
+    font-family: system-ui, sans-serif;
+}
+
+ul {
+    padding-left: 1.5rem;
+    line-height: 1.7;
+}
+
+.dir > a {
+    font-weight: 600;
+}
+
+footer {
+    margin-top: 2rem;
+    color: #666;
+    font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+<h1>{{base}} - Revision {{rev}}: {{path}}</h1>
+<ul>
+{{{svnlist}}}</ul>
+<footer>
+<p>Repository: {{base}} &middot; Path: {{path}} &middot; Revision: {{rev}}</p>
+<hr noshade><em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
+</footer>
+</body>
+</html>

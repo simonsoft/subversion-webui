@@ -1,53 +1,25 @@
 local lxp = require "lxp"
 local lustache = require "lustache"
 
--- The document must contain the literal "{{{svnlist}}}" tag exactly once.
+-- Resolve template.mustache next to this script, regardless of the
+-- current working directory or the absolute path Apache was configured
+-- with (LuaOutputFilter takes an absolute path to this file).
+local function script_dir()
+    local source = debug.getinfo(1, "S").source:match("^@(.*)$")
+    return source and source:match("(.*[/\\])") or "./"
+end
+
+local TEMPLATE_PATH = script_dir() .. "svn-list.mustache"
+
+-- The template must contain the literal "{{{svnlist}}}" tag exactly once.
 -- It is used as a split point, not rendered by lustache as a whole: the
 -- preamble (through the opening <ul>) is rendered as soon as the <index>
 -- attributes are known, the entries are streamed in verbatim as they are
 -- parsed, and the postamble (footer onward) is rendered once the <svn>/
 -- <index> element has been fully closed.
-local TEMPLATE = [[
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{base}} - Revision {{rev}}: {{path}}</title>
-<style>
-body {
-    margin: 2rem auto;
-    padding: 0 1rem;
-    font-family: system-ui, sans-serif;
-}
-
-ul {
-    padding-left: 1.5rem;
-    line-height: 1.7;
-}
-
-.dir > a {
-    font-weight: 600;
-}
-
-footer {
-    margin-top: 2rem;
-    color: #666;
-    font-size: 0.9rem;
-}
-</style>
-</head>
-<body>
-<h1>{{base}} - Revision {{rev}}: {{path}}</h1>
-<ul>
-{{{svnlist}}}</ul>
-<footer>
-<p>Repository: {{base}} &middot; Path: {{path}} &middot; Revision: {{rev}}</p>
-<hr noshade><em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
-</footer>
-</body>
-</html>
-]]
+local template_file = assert(io.open(TEMPLATE_PATH, "r"))
+local TEMPLATE = template_file:read("*a")
+template_file:close()
 
 local SVNLIST_TAG = "{{{svnlist}}}"
 
