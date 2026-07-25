@@ -1,12 +1,19 @@
 local lxp = require "lxp"
+local lustache = require "lustache"
 
-local HTML_HEADER = [[
+-- The document must contain the literal "{{{svnlist}}}" tag exactly once.
+-- It is used as a split point, not rendered by lustache as a whole: the
+-- preamble (through the opening <ul>) is rendered as soon as the <index>
+-- attributes are known, the entries are streamed in verbatim as they are
+-- parsed, and the postamble (footer onward) is rendered once the <svn>/
+-- <index> element has been fully closed.
+local TEMPLATE = [[
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Repository</title>
+<title>{{base}} - Revision {{rev}}: {{path}}</title>
 <style>
 body {
     margin: 2rem auto;
@@ -31,9 +38,27 @@ footer {
 </style>
 </head>
 <body>
-<h1>Repository</h1>
+<h1>{{base}} - Revision {{rev}}: {{path}}</h1>
 <ul>
+{{{svnlist}}}</ul>
+<footer>
+<p>Repository: {{base}} &middot; Path: {{path}} &middot; Revision: {{rev}}</p>
+<hr noshade><em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
+</footer>
+</body>
+</html>
 ]]
+
+local SVNLIST_TAG = "{{{svnlist}}}"
+
+local marker_start, marker_end = TEMPLATE:find(SVNLIST_TAG, 1, true)
+
+if not marker_start then
+    error("template is missing the required '" .. SVNLIST_TAG .. "' placeholder")
+end
+
+local PREAMBLE_TEMPLATE = TEMPLATE:sub(1, marker_start - 1)
+local POSTAMBLE_TEMPLATE = TEMPLATE:sub(marker_end + 1)
 
 local function escape_html(value)
     value = tostring(value or "")
@@ -95,6 +120,14 @@ function output_filter(r)
         path = "",
         base = ""
     }
+    local index_seen = false
+
+    local svn = {
+        version = "",
+        href = "http://subversion.apache.org/"
+    }
+
+    local preamble_sent = false
 
     r:info(string.format(
         "SVN listing filter entered: method=%s uri=%s content-type=%s",
@@ -112,6 +145,24 @@ function output_filter(r)
     -- The original entity validator no longer describes the transformed body.
     r.headers_out["ETag"] = nil
 
+    local function template_context()
+        return {
+            base = index.base,
+            path = index.path,
+            rev = index.rev,
+            svn_version = svn.version,
+            svn_href = svn.href
+        }
+    end
+
+    local function render_preamble()
+        return lustache:render(PREAMBLE_TEMPLATE, template_context())
+    end
+
+    local function render_postamble()
+        return lustache:render(POSTAMBLE_TEMPLATE, template_context())
+    end
+
     local parser = lxp.new({
         StartElement = function(_, name, attr)
             element_count = element_count + 1
@@ -122,10 +173,24 @@ function output_filter(r)
                 tostring(name)
             ))
 
+            if name == "svn" then
+                svn.version = attr.version or ""
+                svn.href = attr.href or svn.href
+
+                r:debug(string.format(
+                    "SVN module metadata: version=%s href=%s",
+                    svn.version,
+                    svn.href
+                ))
+
+                return
+            end
+
             if name == "index" then
                 index.rev = attr.rev or ""
                 index.path = attr.path or ""
                 index.base = attr.base or ""
+                index_seen = true
 
                 r:debug(string.format(
                     "SVN index metadata: rev=%s path=%s base=%s",
@@ -159,8 +224,10 @@ function output_filter(r)
         return
     end
 
-    -- Emit the HTML prefix and suspend until the first input bucket arrives.
-    coroutine.yield(HTML_HEADER)
+    -- mod_lua only fetches the first input chunk into `bucket` after the
+    -- coroutine yields once; without this, `bucket` is still nil on the
+    -- very first pass and the loop below never runs at all.
+    coroutine.yield("")
 
     while bucket do
         bucket_count = bucket_count + 1
@@ -188,7 +255,21 @@ function output_filter(r)
             return
         end
 
-        local output = table.concat(pending_output)
+        local output_parts = {}
+
+        -- The <svn>/<index> attributes are always the first thing parsed,
+        -- so by the time we know about them we haven't emitted anything
+        -- for this response yet: fold the rendered preamble into this same
+        -- yield rather than yielding it separately, keeping one yield per
+        -- input bucket just like before.
+        if not preamble_sent and index_seen then
+            output_parts[#output_parts + 1] = render_preamble()
+            preamble_sent = true
+        end
+
+        output_parts[#output_parts + 1] = table.concat(pending_output)
+
+        local output = table.concat(output_parts)
 
         r:debug(string.format(
             "SVN XML bucket #%d produced %d HTML bytes",
@@ -217,29 +298,27 @@ function output_filter(r)
 
     parser:close()
 
-    local footer = string.format(
-        [[
-</ul>
-<footer>
-<p>Repository: %s · Path: %s · Revision: %s</p>
-</footer>
-</body>
-</html>
-]],
-        escape_html(index.base),
-        escape_html(index.path),
-        escape_html(index.rev)
-    )
+    local final_parts = {}
 
-    coroutine.yield(footer)
+    -- Defensive fallback: an empty or malformed response body would
+    -- otherwise never get a preamble at all. Folded into the same final
+    -- yield as the postamble, keeping a single yield here as before.
+    if not preamble_sent then
+        final_parts[#final_parts + 1] = render_preamble()
+        preamble_sent = true
+    end
+
+    final_parts[#final_parts + 1] = render_postamble()
+
+    coroutine.yield(table.concat(final_parts))
 
     r:info(string.format(
-        "SVN listing transformed: buckets=%d input-bytes=%d elements=%d entries=%d elapsed=%.6fs",
+        "SVN listing transformed: buckets=%d input-bytes=%d elements=%d entries=%d svn-version=%s elapsed=%.6fs",
         bucket_count,
         byte_count,
         element_count,
         rendered_count,
+        svn.version,
         os.clock() - started_at
     ))
 end
-

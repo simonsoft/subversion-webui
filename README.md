@@ -11,6 +11,7 @@ Tested on Ubuntu 24.04
 sudo apt install     lua5.3     liblua5.3-dev     luarocks     libexpat1-dev
 
 sudo luarocks --lua-version=5.3 install luaexpat
+sudo luarocks --lua-version=5.3 install lustache
 ```
 
 
@@ -39,4 +40,15 @@ LuaOutputFilter SVN_XML_LISTING \
 
 
 </Location>
+```
+
+
+## Running tests
+
+Tests use [busted](https://lunarmodules.github.io/busted/) and run against the real `luaexpat`/`lustache` dependencies (only the Apache request object and the bucket-streaming protocol are mocked).
+
+```
+luarocks install busted
+
+busted spec/
 ```
