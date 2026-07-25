@@ -9,7 +9,6 @@ local HTML_HEADER = [[
 <title>Repository</title>
 <style>
 body {
-    max-width: 70rem;
     margin: 2rem auto;
     padding: 0 1rem;
     font-family: system-ui, sans-serif;
@@ -22,10 +21,6 @@ ul {
 
 .dir > a {
     font-weight: 600;
-}
-
-.updir {
-    margin-bottom: 0.5rem;
 }
 
 footer {
