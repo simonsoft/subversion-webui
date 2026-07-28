@@ -18,8 +18,8 @@ sudo luarocks --lua-version=5.3 install lustache
 ## Apache httpd conf
 
 ```
-LuaOutputFilter SVN_XML_LISTING \
-        "/srv/cms/admin/apache/svn-list.lua" \
+LuaOutputFilter SVN_XML_INDEX \
+        "/srv/cms/admin/apache/svn-index.lua" \
         output_filter
 
 <Location /svn>
@@ -27,16 +27,16 @@ LuaOutputFilter SVN_XML_LISTING \
     # Keep in order to generate XML
     SVNIndexXSLT "whatever.xsl"
 
-    FilterDeclare SVN_XML_LISTING
+    FilterDeclare SVN_XML_INDEX
 
-    FilterProvider SVN_XML_LISTING SVN_XML_LISTING \
+    FilterProvider SVN_XML_INDEX SVN_XML_INDEX \
         "%{REQUEST_METHOD} == 'GET' \
             && %{CONTENT_TYPE} =~ m#^(?:text|application)/xml(?:;|$)# \
             && %{REQUEST_URI} =~ m#/$#"
 
-    FilterProtocol SVN_XML_LISTING "change=yes;byteranges=no"
+    FilterProtocol SVN_XML_INDEX "change=yes;byteranges=no"
     # TODO: Restore compression
-    FilterChain SVN_XML_LISTING
+    FilterChain SVN_XML_INDEX
 
 
 </Location>

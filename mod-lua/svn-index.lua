@@ -9,9 +9,9 @@ local function script_dir()
     return source and source:match("(.*[/\\])") or "./"
 end
 
-local TEMPLATE_PATH = script_dir() .. "svn-list.mustache"
+local TEMPLATE_PATH = script_dir() .. "svn-index.mustache"
 
--- The template must contain the literal "{{{svnlist}}}" tag exactly once.
+-- The template must contain the literal "{{{svn_index}}}" tag exactly once.
 -- It is used as a split point, not rendered by lustache as a whole: the
 -- preamble (through the opening <ul>) is rendered as soon as the <index>
 -- attributes are known, the entries are streamed in verbatim as they are
@@ -21,12 +21,12 @@ local template_file = assert(io.open(TEMPLATE_PATH, "r"))
 local TEMPLATE = template_file:read("*a")
 template_file:close()
 
-local SVNLIST_TAG = "{{{svnlist}}}"
+local SVNINDEX_TAG = "{{{svn_index}}}"
 
-local marker_start, marker_end = TEMPLATE:find(SVNLIST_TAG, 1, true)
+local marker_start, marker_end = TEMPLATE:find(SVNINDEX_TAG, 1, true)
 
 if not marker_start then
-    error("template is missing the required '" .. SVNLIST_TAG .. "' placeholder")
+    error("template is missing the required '" .. SVNINDEX_TAG .. "' placeholder")
 end
 
 local PREAMBLE_TEMPLATE = TEMPLATE:sub(1, marker_start - 1)

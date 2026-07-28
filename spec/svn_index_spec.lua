@@ -10,7 +10,7 @@ end
 
 local ROOT = spec_dir() .. "../"
 
-dofile(ROOT .. "mod-lua/svn-list.lua")
+dofile(ROOT .. "mod-lua/svn-index.lua")
 
 local function make_request()
     local r = {
@@ -80,7 +80,7 @@ local function run_filter(chunks)
     return table.concat(pieces), r
 end
 
-describe("svn-list output_filter", function()
+describe("svn-index output_filter", function()
     it("renders the preamble, streamed entries and footer across multiple buckets", function()
         local html = run_filter({
             [[<?xml version="1.0" encoding="utf-8"?>
