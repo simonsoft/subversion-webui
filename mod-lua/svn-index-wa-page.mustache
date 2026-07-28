@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{base}} - Revision {{rev}}: {{path}}</title>
+<link rel="stylesheet" href="https://ka-f.webawesome.com/webawesome@3.10.0/styles/webawesome.css">
+<script type="module" src="https://ka-f.webawesome.com/webawesome@3.10.0/webawesome.loader.js"></script>
+<style>
+footer[slot="footer"] {
+    padding: var(--wa-space-s);
+}
+</style>
+</head>
+<body>
+<wa-page>
+<header slot="header">
+<h1>{{base}} - Revision {{rev}}: {{path}}</h1>
+</header>
+<ul>
+{{{svn_index}}}</ul>
+<footer slot="footer">
+<p>Repository: {{base}} &middot; Path: {{path}} &middot; Revision: {{rev}}</p>
+<hr noshade><em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
+</footer>
+</wa-page>
+</body>
+</html>
