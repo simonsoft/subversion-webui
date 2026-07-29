@@ -6,6 +6,7 @@
 <title>{{base}} - Revision {{rev}}: {{path}}</title>
 <link rel="stylesheet" href="https://ka-f.webawesome.com/webawesome@3.10.0/styles/webawesome.css">
 <script type="module" src="https://ka-f.webawesome.com/webawesome@3.10.0/webawesome.loader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0-beta6" integrity="sha384-6lyVbhrs13b9z7mLOpt/N6R76rtkEBWgCjAXRs/DSWyi2AMnQSs10ijWk+PI8n7W" crossorigin="anonymous"></script>
 <style>
 footer[slot="footer"] {
     padding: var(--wa-space-s);
@@ -17,7 +18,7 @@ footer[slot="footer"] {
 <header slot="header">
 <h1>{{base}} - Revision {{rev}}: {{path}}</h1>
 </header>
-<ul>
+<ul class="svn-index">
 {{{svn_index}}}</ul>
 <footer slot="footer">
 <p>Repository: {{base}} &middot; Path: {{path}} &middot; Revision: {{rev}}</p>

@@ -42,34 +42,48 @@ local function escape_html(value)
                  :gsub("'", "&#39;"))
 end
 
-local function render_entry(element, attr)
+-- attr.href is always relative to the directory currently being listed
+-- (e.g. "dita/"). That resolves fine for the top-level page, but once a
+-- directory's entries are inserted into the DOM as a nested <li> via htmx,
+-- a relative href/hx-get on them would still resolve against the top-level
+-- document's URL rather than the directory they actually belong to -- so
+-- expansion would only work one level deep. base_href (the request's own
+-- r.uri, which is correct per-fragment since each expansion is a genuine
+-- HTTP request to its own directory) anchors every entry to an absolute
+-- path instead, so it works regardless of nesting depth.
+local function render_entry(element, attr, base_href)
     if element == "updir" then
         return string.format(
             '<li class="updir"><a href="%s">../</a></li>\n',
-            escape_html(attr.href or "../")
+            escape_html(base_href .. (attr.href or "../"))
         )
     end
 
     if element == "file" then
         local name = attr.name or attr.href or ""
-        local href = attr.href or "#"
+        local href = escape_html(base_href .. (attr.href or "#"))
 
         return string.format(
             '<li class="file"><a href="%s">%s</a></li>\n',
-            escape_html(href),
+            href,
             escape_html(name)
         )
     end
 
     if element == "dir" then
         local name = attr.name or attr.href or ""
-        local href = attr.href or "#"
+        local href = escape_html(base_href .. (attr.href or "#"))
 
         name = name:gsub("/$", "")
 
+        -- "closest li" targets the entry's own <li>, and hx-select picks the
+        -- child directory's own listing out of the (otherwise full-page)
+        -- response so it can be nested inline as an accordion; "click once"
+        -- stops a second click from fetching and appending it again.
         return string.format(
-            '<li class="dir"><a href="%s">%s/</a></li>\n',
-            escape_html(href),
+            '<li class="dir"><a href="%s" hx-get="%s" hx-target="closest li" hx-swap="beforeend" hx-select=".svn-index" hx-trigger="click once">%s/</a></li>\n',
+            href,
+            href,
             escape_html(name)
         )
     end
@@ -100,6 +114,14 @@ function output_filter(r)
     }
 
     local preamble_sent = false
+
+    -- Anchors every entry's href to this directory's own URL (see the note
+    -- above render_entry) instead of leaving them relative.
+    local base_href = tostring(r.uri or "")
+
+    if base_href ~= "" and not base_href:match("/$") then
+        base_href = base_href .. "/"
+    end
 
     r:info(string.format(
         "SVN listing filter entered: method=%s uri=%s content-type=%s",
@@ -174,7 +196,7 @@ function output_filter(r)
                 return
             end
 
-            local html = render_entry(name, attr)
+            local html = render_entry(name, attr, base_href)
 
             if html then
                 rendered_count = rendered_count + 1
