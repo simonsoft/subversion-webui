@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{base}} - Revision {{rev}}: {{path}}</title>
+<title>{{#has_base}}{{base}} - Revision {{rev}}: {{/has_base}}{{path}}</title>
 <script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0-beta6" integrity="sha384-6lyVbhrs13b9z7mLOpt/N6R76rtkEBWgCjAXRs/DSWyi2AMnQSs10ijWk+PI8n7W" crossorigin="anonymous"></script>
 <style>
 body {
@@ -29,11 +29,10 @@ footer {
 </style>
 </head>
 <body>
-<h1>{{base}} - Revision {{rev}}: {{path}}</h1>
+<h1>{{#has_base}}{{base}} - Revision {{rev}}: {{/has_base}}{{path}}</h1>
 <ul class="svn-index">
 {{{svn_index}}}</ul>
 <footer>
-<p>Repository: {{base}} &middot; Path: {{path}} &middot; Revision: {{rev}}</p>
 <hr noshade><em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
 </footer>
 </body>

@@ -207,6 +207,28 @@ describe("svn-index output_filter", function()
         assert.are.equal(default_html, explicit_html)
     end)
 
+    it("renders an unprefixed title/h1 for the SVNParentPath 'Collection of Repositories' listing", function()
+        -- mod_dav_svn's parentpath-collection resource has no revision and
+        -- no single repository, so it omits both the rev and base
+        -- attributes on <index> (rather than emitting them empty) and never
+        -- emits <updir>. svn's own default rendering skips the
+        -- "{base} - Revision {rev}: " prefix entirely in this case, leaving
+        -- just the bare path ("Collection of Repositories").
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index path="Collection of Repositories">
+<dir name="demo1" href="demo1/" />
+<dir name="demo2" href="demo2/" />
+</index>
+</svn>]]
+        })
+
+        assert.truthy(html:find("<title>Collection of Repositories</title>", 1, true))
+        assert.truthy(html:find("<h1>Collection of Repositories</h1>", 1, true))
+        assert.falsy(html:find("Revision", 1, true))
+        assert.falsy(html:find('<li class="updir"', 1, true))
+    end)
+
     it("renders the wa-page shell when SVN_INDEX_TEMPLATE is \"wa-page\", with entries unchanged", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">

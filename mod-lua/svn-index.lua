@@ -199,11 +199,19 @@ function output_filter(r)
     -- The original entity validator no longer describes the transformed body.
     r.headers_out["ETag"] = nil
 
+    -- mod_dav_svn omits the rev/base attributes entirely (rather than
+    -- emitting them empty) on the special "Collection of Repositories"
+    -- listing served from an SVNParentPath -- that's the only case where
+    -- <index> lacks a base, so its absence is what distinguishes browsing a
+    -- single repository (where svn's own default title/heading is
+    -- "{base} - Revision {rev}: {path}") from listing the parent path
+    -- (where svn's default is just "{path}", unprefixed).
     local function template_context()
         return {
             base = index.base,
             path = index.path,
             rev = index.rev,
+            has_base = index.base ~= "",
             svn_version = svn.version,
             svn_href = svn.href
         }
