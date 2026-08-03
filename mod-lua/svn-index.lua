@@ -1,36 +1,85 @@
 local lxp = require "lxp"
 local lustache = require "lustache"
 
--- Resolve template.mustache next to this script, regardless of the
--- current working directory or the absolute path Apache was configured
--- with (LuaOutputFilter takes an absolute path to this file).
+-- Resolve the repo root next to this script, regardless of the current
+-- working directory or the absolute path Apache was configured with
+-- (LuaOutputFilter takes an absolute path to this file).
 local function script_dir()
     local source = debug.getinfo(1, "S").source:match("^@(.*)$")
     return source and source:match("(.*[/\\])") or "./"
 end
 
-local TEMPLATE_PATH = script_dir() .. "svn-index.mustache"
-
--- The template must contain the literal "{{{svn_index}}}" tag exactly once.
--- It is used as a split point, not rendered by lustache as a whole: the
--- preamble (through the opening <ul>) is rendered as soon as the <index>
--- attributes are known, the entries are streamed in verbatim as they are
--- parsed, and the postamble (footer onward) is rendered once the <svn>/
--- <index> element has been fully closed.
-local template_file = assert(io.open(TEMPLATE_PATH, "r"))
-local TEMPLATE = template_file:read("*a")
-template_file:close()
-
-local SVNINDEX_TAG = "{{{svn_index}}}"
-
-local marker_start, marker_end = TEMPLATE:find(SVNINDEX_TAG, 1, true)
-
-if not marker_start then
-    error("template is missing the required '" .. SVNINDEX_TAG .. "' placeholder")
+local function template_dir(template_type)
+    return script_dir() .. "../templates/" .. template_type .. "/"
 end
 
-local PREAMBLE_TEMPLATE = TEMPLATE:sub(1, marker_start - 1)
-local POSTAMBLE_TEMPLATE = TEMPLATE:sub(marker_end + 1)
+local DEFAULT_TEMPLATE_TYPE = "simple"
+local SVNINDEX_TAG = "{{{svn_index}}}"
+
+local function read_file(path)
+    local file, err = io.open(path, "r")
+
+    if not file then
+        error("failed to open template file '" .. path .. "': " .. tostring(err))
+    end
+
+    local content = file:read("*a")
+    file:close()
+
+    return content
+end
+
+-- The page template must contain the literal "{{{svn_index}}}" tag exactly
+-- once. It is used as a split point, not rendered by lustache as a whole:
+-- the preamble (through the opening <ul>) is rendered as soon as the
+-- <index> attributes are known, the entries are streamed in verbatim as
+-- they are parsed, and the postamble (footer onward) is rendered once the
+-- <svn>/<index> element has been fully closed.
+local function split_page_template(page, template_type)
+    local marker_start, marker_end = page:find(SVNINDEX_TAG, 1, true)
+
+    if not marker_start then
+        error("template '" .. template_type .. "/page.mustache' is missing the required '"
+              .. SVNINDEX_TAG .. "' placeholder")
+    end
+
+    return page:sub(1, marker_start - 1), page:sub(marker_end + 1)
+end
+
+-- Cache of already-loaded template sets, keyed by template type. Populated
+-- lazily so a worker that only ever serves one type never reads the other
+-- type's files, but still avoids re-reading a type's files on every request
+-- (subject to Apache's LuaCodeCache directive being "on").
+local template_cache = {}
+
+local function load_template_set(template_type)
+    local cached = template_cache[template_type]
+
+    if cached then
+        return cached
+    end
+
+    if not template_type:match("^[%w%-]+$") then
+        error("invalid template type '" .. tostring(template_type) .. "'")
+    end
+
+    local dir = template_dir(template_type)
+    local preamble, postamble = split_page_template(read_file(dir .. "page.mustache"), template_type)
+
+    local set = {
+        preamble = preamble,
+        postamble = postamble,
+        entries = {
+            updir = read_file(dir .. "updir.mustache"),
+            file = read_file(dir .. "file.mustache"),
+            dir = read_file(dir .. "dir.mustache")
+        }
+    }
+
+    template_cache[template_type] = set
+
+    return set
+end
 
 local function escape_html(value)
     value = tostring(value or "")
@@ -51,44 +100,39 @@ end
 -- r.uri, which is correct per-fragment since each expansion is a genuine
 -- HTTP request to its own directory) anchors every entry to an absolute
 -- path instead, so it works regardless of nesting depth.
-local function render_entry(element, attr, base_href)
-    if element == "updir" then
-        return string.format(
-            '<li class="updir"><a href="%s">../</a></li>\n',
-            escape_html(base_href .. (attr.href or "../"))
-        )
+local ENTRY_CONTEXT_BUILDERS = {
+    updir = function(attr, base_href)
+        return {
+            href = escape_html(base_href .. (attr.href or "../"))
+        }
+    end,
+
+    file = function(attr, base_href)
+        return {
+            name = escape_html(attr.name or attr.href or ""),
+            href = escape_html(base_href .. (attr.href or "#"))
+        }
+    end,
+
+    dir = function(attr, base_href)
+        local name = (attr.name or attr.href or ""):gsub("/$", "")
+
+        return {
+            name = escape_html(name),
+            href = escape_html(base_href .. (attr.href or "#"))
+        }
+    end
+}
+
+local function render_entry(element, attr, base_href, templates)
+    local build_context = ENTRY_CONTEXT_BUILDERS[element]
+    local entry_template = templates.entries[element]
+
+    if not build_context or not entry_template then
+        return nil
     end
 
-    if element == "file" then
-        local name = attr.name or attr.href or ""
-        local href = escape_html(base_href .. (attr.href or "#"))
-
-        return string.format(
-            '<li class="file"><a href="%s">%s</a></li>\n',
-            href,
-            escape_html(name)
-        )
-    end
-
-    if element == "dir" then
-        local name = attr.name or attr.href or ""
-        local href = escape_html(base_href .. (attr.href or "#"))
-
-        name = name:gsub("/$", "")
-
-        -- "closest li" targets the entry's own <li>, and hx-select picks the
-        -- child directory's own listing out of the (otherwise full-page)
-        -- response so it can be nested inline as an accordion; "click once"
-        -- stops a second click from fetching and appending it again.
-        return string.format(
-            '<li class="dir"><a href="%s" hx-get="%s" hx-target="closest li" hx-swap="beforeend" hx-select=".svn-index" hx-trigger="click once">%s/</a></li>\n',
-            href,
-            href,
-            escape_html(name)
-        )
-    end
-
-    return nil
+    return lustache:render(entry_template, build_context(attr, base_href))
 end
 
 function output_filter(r)
@@ -115,6 +159,14 @@ function output_filter(r)
 
     local preamble_sent = false
 
+    local template_type = (r.subprocess_env and r.subprocess_env.SVN_INDEX_TEMPLATE) or ""
+
+    if template_type == "" then
+        template_type = DEFAULT_TEMPLATE_TYPE
+    end
+
+    local templates = load_template_set(template_type)
+
     -- Anchors every entry's href to this directory's own URL (see the note
     -- above render_entry) instead of leaving them relative.
     local base_href = tostring(r.uri or "")
@@ -124,10 +176,11 @@ function output_filter(r)
     end
 
     r:info(string.format(
-        "SVN listing filter entered: method=%s uri=%s content-type=%s",
+        "SVN listing filter entered: method=%s uri=%s content-type=%s template=%s",
         tostring(r.method),
         tostring(r.uri),
-        tostring(r.content_type)
+        tostring(r.content_type),
+        template_type
     ))
 
     -- Set these before emitting any transformed response content.
@@ -150,11 +203,11 @@ function output_filter(r)
     end
 
     local function render_preamble()
-        return lustache:render(PREAMBLE_TEMPLATE, template_context())
+        return lustache:render(templates.preamble, template_context())
     end
 
     local function render_postamble()
-        return lustache:render(POSTAMBLE_TEMPLATE, template_context())
+        return lustache:render(templates.postamble, template_context())
     end
 
     local parser = lxp.new({
@@ -196,7 +249,7 @@ function output_filter(r)
                 return
             end
 
-            local html = render_entry(name, attr, base_href)
+            local html = render_entry(name, attr, base_href, templates)
 
             if html then
                 rendered_count = rendered_count + 1

@@ -12,11 +12,12 @@ local ROOT = spec_dir() .. "../"
 
 dofile(ROOT .. "mod-lua/svn-index.lua")
 
-local function make_request(uri)
+local function make_request(uri, subprocess_env)
     local r = {
         method = "GET",
         uri = uri or "/svn/demo1/",
         content_type = "text/xml; charset=utf-8",
+        subprocess_env = subprocess_env or {},
         headers_out = {
             ["Content-Length"] = "1234",
             ["ETag"] = '"abc"'
@@ -43,8 +44,8 @@ end
 -- (that first yield is the handshake that tells the runtime to fetch
 -- input) -- pre-populating it before the first resume would hide a script
 -- that forgets to yield before ever touching `bucket`.
-local function run_filter(chunks, uri)
-    local r = make_request(uri)
+local function run_filter(chunks, uri, subprocess_env)
+    local r = make_request(uri, subprocess_env)
     local co = coroutine.create(function()
         return output_filter(r)
     end)
@@ -187,5 +188,38 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('hx-get="/svn/demo1/arbortext/dita/"', 1, true))
         assert.truthy(html:find('<a href="/svn/demo1/arbortext/dita/"', 1, true))
         assert.truthy(html:find('<li class="file"><a href="/svn/demo1/arbortext/repos.html">repos.html</a></li>', 1, true))
+    end)
+
+    it("renders identically whether SVN_INDEX_TEMPLATE is unset or explicitly \"simple\"", function()
+        local fixture = {
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<updir href="../"/>
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }
+
+        local default_html = run_filter(fixture)
+        local explicit_html = run_filter(fixture, nil, { SVN_INDEX_TEMPLATE = "simple" })
+
+        assert.are.equal(default_html, explicit_html)
+    end)
+
+    it("renders the wa-page shell when SVN_INDEX_TEMPLATE is \"wa-page\", with entries unchanged", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<updir href="../"/>
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find("<wa-page>", 1, true))
+        assert.truthy(html:find("webawesome.css", 1, true))
+        assert.truthy(html:find('<header slot="header">', 1, true))
+        assert.truthy(html:find('<footer slot="footer">', 1, true))
+        assert.truthy(html:find('<li class="file"><a href="/svn/demo1/README.md">README.md</a></li>', 1, true))
     end)
 end)
