@@ -138,7 +138,7 @@ describe("svn-index output_filter", function()
 
         assert.truthy(html:find("<title>myrepo - Revision 7: &#x2F;trunk&#x2F;</title>", 1, true))
         assert.truthy(html:find("version 1.14.1 (r1886195)", 1, true))
-        assert.truthy(html:find('<li class="file"><a href="/svn/demo1/README.md">README.md</a></li>', 1, true))
+        assert.truthy(html:find('<li class="file"><a href="README.md">README.md</a></li>', 1, true))
     end)
 
     it("HTML-escapes entry names and hrefs", function()
@@ -168,12 +168,14 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("</html>", 1, true))
     end)
 
-    it("anchors entry hrefs to the requested directory, not just the entry name", function()
+    it("anchors a directory's hx-get to the requested directory, while href stays relative", function()
         -- This is what makes htmx-driven expansion work at any nesting
         -- depth: each fragment is a real response to its own directory's
-        -- URL, so anchoring hrefs to r.uri (rather than leaving them as the
-        -- bare relative values svn's XML provides) keeps them correct no
-        -- matter how deep the fragment ends up nested client-side.
+        -- URL, so anchoring hx-get to r.uri (rather than leaving it as the
+        -- bare relative value svn's XML provides) keeps it correct no
+        -- matter how deep the fragment ends up nested client-side. Plain
+        -- href stays relative -- it's shown on whatever page it's actually
+        -- rendered on, so the browser resolves it correctly on its own.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/arbortext/" base="myrepo">
@@ -184,10 +186,9 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, "/svn/demo1/arbortext/")
 
-        assert.truthy(html:find('<li class="updir"><a href="/svn/demo1/arbortext/../">../</a></li>', 1, true))
-        assert.truthy(html:find('hx-get="/svn/demo1/arbortext/dita/"', 1, true))
-        assert.truthy(html:find('<a href="/svn/demo1/arbortext/dita/"', 1, true))
-        assert.truthy(html:find('<li class="file"><a href="/svn/demo1/arbortext/repos.html">repos.html</a></li>', 1, true))
+        assert.truthy(html:find('<li class="updir"><a href="../">../</a></li>', 1, true))
+        assert.truthy(html:find('<a href="dita/" hx-get="/svn/demo1/arbortext/dita/"', 1, true))
+        assert.truthy(html:find('<li class="file"><a href="repos.html">repos.html</a></li>', 1, true))
     end)
 
     it("renders identically whether SVN_INDEX_TEMPLATE is unset or explicitly \"simple\"", function()
@@ -220,6 +221,6 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("webawesome.css", 1, true))
         assert.truthy(html:find('<header slot="header">', 1, true))
         assert.truthy(html:find('<footer slot="footer">', 1, true))
-        assert.truthy(html:find('<li class="file"><a href="/svn/demo1/README.md">README.md</a></li>', 1, true))
+        assert.truthy(html:find('<li class="file"><a href="README.md">README.md</a></li>', 1, true))
     end)
 end)

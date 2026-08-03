@@ -92,34 +92,41 @@ local function escape_html(value)
 end
 
 -- attr.href is always relative to the directory currently being listed
--- (e.g. "dita/"). That resolves fine for the top-level page, but once a
--- directory's entries are inserted into the DOM as a nested <li> via htmx,
--- a relative href/hx-get on them would still resolve against the top-level
--- document's URL rather than the directory they actually belong to -- so
--- expansion would only work one level deep. base_href (the request's own
--- r.uri, which is correct per-fragment since each expansion is a genuine
--- HTTP request to its own directory) anchors every entry to an absolute
--- path instead, so it works regardless of nesting depth.
+-- (e.g. "dita/"), which is what plain <a href> navigation should keep using
+-- (it resolves fine against whatever page it's actually shown on). hx-get
+-- is different: once a directory's entries are inserted into the DOM as a
+-- nested <li> via htmx, a relative hx-get on them would still resolve
+-- against the top-level document's URL rather than the directory they
+-- actually belong to -- so expansion would only work one level deep.
+-- base_href (the request's own r.uri, which is correct per-fragment since
+-- each expansion is a genuine HTTP request to its own directory) anchors
+-- just that hx-get value to an absolute path, so it works regardless of
+-- nesting depth.
 local ENTRY_CONTEXT_BUILDERS = {
     updir = function(attr, base_href)
         return {
-            href = escape_html(base_href .. (attr.href or "../"))
+            href = escape_html(attr.href or "../")
         }
     end,
 
     file = function(attr, base_href)
+        local href = attr.href or "#"
+
         return {
             name = escape_html(attr.name or attr.href or ""),
-            href = escape_html(base_href .. (attr.href or "#"))
+            href = escape_html(href),
+            hx_href = escape_html(base_href .. href)
         }
     end,
 
     dir = function(attr, base_href)
         local name = (attr.name or attr.href or ""):gsub("/$", "")
+        local href = attr.href or "#"
 
         return {
             name = escape_html(name),
-            href = escape_html(base_href .. (attr.href or "#"))
+            href = escape_html(href),
+            hx_href = escape_html(base_href .. href)
         }
     end
 }
