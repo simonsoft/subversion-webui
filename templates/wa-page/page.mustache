@@ -28,12 +28,16 @@ document.addEventListener("wa-lazy-load", (event) => {
     event.target.addEventListener("wa-lazy-load", (e) => e.stopPropagation(), { once: true });
 }, true);
 
-// Completes wa-tree-item's own lazy-loading contract: once a lazy item's
-// fetch has appended its children, the "lazy" attribute must come off so
-// re-expanding the item later just toggles the already-loaded children
-// instead of re-fetching. Scoped to elements that still have "lazy" so this
-// never touches the unrelated htmx request each entry's label link fires to
-// swap #svn-index (see dir.mustache/repo.mustache).
+// dir.mustache's wa-tree-item never sets "lazy" itself, since it's the exact
+// same markup rendered into both #svn-index (main, a strictly flat listing
+// -- its label already swaps main's whole content to browse deeper, one
+// level at a time) and the nav tree (which does want in-place, lazy-loaded
+// expansion). Nav is the one that opts in: whenever it gets newly-fetched
+// dir entries -- whether at the root (the "svn-nav" branch below) or nested
+// under an already-expanded item (the "lazy" branch) -- this marks them
+// lazy=true so *they* become expandable in turn. Main's own copies are left
+// alone entirely, so they're simply never lazy in the first place: no
+// chevron, and no need for anything to suppress wa-lazy-load from firing.
 //
 // wa-tree-item's own "loading" state (the spinner shown while lazy) is
 // separate from the "lazy" attribute -- it only clears once the item
@@ -57,7 +61,13 @@ document.addEventListener("htmx:after:swap", (event) => {
         // one) covers both cases uniformly, regardless of whether anything
         // was actually appended.
         event.target.querySelectorAll(":scope > wa-tree-item:not(.dir)").forEach((child) => child.remove());
-        event.target.isLeaf = !event.target.querySelector(":scope > wa-tree-item.dir");
+
+        const dirChildren = event.target.querySelectorAll(":scope > wa-tree-item.dir");
+        dirChildren.forEach((child) => { child.lazy = true; });
+        event.target.isLeaf = dirChildren.length === 0;
+    } else if (event.target.classList?.contains("svn-nav")) {
+        event.target.querySelectorAll(":scope > wa-tree-item:not(.dir)").forEach((child) => child.remove());
+        event.target.querySelectorAll(":scope > wa-tree-item.dir").forEach((child) => { child.lazy = true; });
     }
 });
 </script>

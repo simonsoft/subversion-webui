@@ -387,14 +387,16 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<wa-breadcrumb-item href="">Collection of Repositories</wa-breadcrumb-item>', 1, true))
     end)
 
-    it("wires wa-page dir entries with real lazy-loading plus a repeatable main-content swap", function()
-        -- The tree item itself uses wa-tree-item's own `lazy` attribute/
-        -- `wa-lazy-load` event contract (fired when the user expands via the
-        -- item's own chevron), so the expand arrow works without duplicating
-        -- children on repeat toggles -- the page-level script removes `lazy`
-        -- once its swap lands (see the "htmx:after:swap" listener assertion
-        -- below), so a later re-expand just toggles the already-loaded
-        -- children instead of re-fetching. Separately, clicking the label
+    it("wires wa-page dir entries with lazy-loading plumbing but never sets lazy itself", function()
+        -- dir.mustache's wa-tree-item never sets "lazy" -- it's the same
+        -- markup rendered into both main (a strictly flat listing) and the
+        -- nav tree (which wants in-place lazy expansion), so main's copies
+        -- would otherwise show a dead expand chevron too. Nav opts in
+        -- itself, marking its own newly-fetched dir children lazy=true
+        -- after the fact (see the "htmx:after:swap" tests below) -- so
+        -- outside of that, hx-trigger="wa-lazy-load" just sits dormant
+        -- until nav sets lazy=true, at which point wa-tree-item's own
+        -- chevron interaction can fire it. Separately, clicking the label
         -- itself (a plain "click", not "click once") re-fetches and swaps
         -- #svn-index's content every time, so main updates no matter how
         -- many times the same or a different entry is clicked.
@@ -407,7 +409,7 @@ describe("svn-index output_filter", function()
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find(
-            '<wa-tree-item class="dir" lazy hx-get="/svn/demo1/arbortext/" hx-trigger="wa-lazy-load" hx-target="this" hx-swap="beforeend" hx-select=".svn-index > wa-tree-item">',
+            '<wa-tree-item class="dir" hx-get="/svn/demo1/arbortext/" hx-trigger="wa-lazy-load" hx-target="this" hx-swap="beforeend" hx-select=".svn-index > wa-tree-item">',
             1, true
         ))
         assert.truthy(html:find(
@@ -501,7 +503,31 @@ describe("svn-index output_filter", function()
 
         assert.truthy(html:find(':scope > wa-tree-item:not(.dir)', 1, true))
         assert.truthy(html:find(':scope > wa-tree-item.dir', 1, true))
-        assert.truthy(html:find('event.target.isLeaf = !event.target.querySelector', 1, true))
+        assert.truthy(html:find('event.target.isLeaf = dirChildren.length === 0', 1, true))
+    end)
+
+    it("marks nav's own newly-fetched dir entries lazy, both at the root and nested under an already-expanded item", function()
+        -- dir.mustache never sets "lazy" itself (see the test above) -- nav
+        -- opts in after the fact instead, in two places: the root-level
+        -- "svn-nav" branch (the tree's own initial hx-get="." population)
+        -- and the existing "lazy" branch (a nested item's own children,
+        -- once it finishes loading). Both need to mark their *own* newly
+        -- fetched .dir children lazy=true so each one gets its own future
+        -- expand capability in turn.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('event.target.classList?.contains("svn-nav")', 1, true))
+        assert.truthy(html:find('dirChildren.forEach((child) => { child.lazy = true; })', 1, true))
+        assert.truthy(html:find(
+            ':scope > wa-tree-item.dir").forEach((child) => { child.lazy = true; })',
+            1, true
+        ))
     end)
 
     it("stops a nested lazy-load from also re-triggering already-loaded ancestor tree items", function()
