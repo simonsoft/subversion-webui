@@ -138,7 +138,7 @@ describe("svn-index output_filter", function()
 
         assert.truthy(html:find("<title>myrepo - Revision 7: &#x2F;trunk&#x2F;</title>", 1, true))
         assert.truthy(html:find("version 1.14.1 (r1886195)", 1, true))
-        assert.truthy(html:find('<li class="file"><a href="/svn/demo1/README.md">README.md</a></li>', 1, true))
+        assert.truthy(html:find('<li class="file"><a href="README.md">README.md</a></li>', 1, true))
     end)
 
     it("HTML-escapes entry names and hrefs", function()
@@ -168,7 +168,29 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("</html>", 1, true))
     end)
 
-    it("anchors both href and hx-get to the requested directory", function()
+    it("renders plain relative hrefs (no htmx) for the default \"simple\" template", function()
+        -- "simple" never does in-place DOM expansion, so a plain relative
+        -- href -- resolved by the browser against the current page's own
+        -- URL on a normal full-page navigation -- is correct at any nesting
+        -- depth without needing to be anchored to r.uri.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/arbortext/" base="myrepo">
+<updir href="../"/>
+<dir name="dita" href="dita/" />
+<file name="repos.html" href="repos.html" />
+</index>
+</svn>]]
+        }, "/svn/demo1/arbortext/")
+
+        assert.truthy(html:find('<li class="updir"><a href="../">../</a></li>', 1, true))
+        assert.truthy(html:find('<li class="dir"><a href="dita/">dita/</a></li>', 1, true))
+        assert.truthy(html:find('<li class="file"><a href="repos.html">repos.html</a></li>', 1, true))
+        assert.falsy(html:find("hx-get", 1, true))
+        assert.falsy(html:find("htmx.org", 1, true))
+    end)
+
+    it("anchors both href and hx-get to the requested directory when SVN_INDEX_TEMPLATE is \"htmx\"", function()
         -- This is what makes expansion (and plain navigation on expanded,
         -- nested entries) work at any nesting depth: each fragment is a
         -- real response to its own directory's URL, so anchoring both href
@@ -185,8 +207,9 @@ describe("svn-index output_filter", function()
 <file name="repos.html" href="repos.html" />
 </index>
 </svn>]]
-        }, "/svn/demo1/arbortext/")
+        }, "/svn/demo1/arbortext/", { SVN_INDEX_TEMPLATE = "htmx" })
 
+        assert.truthy(html:find("htmx.org", 1, true))
         assert.truthy(html:find('<li class="updir"><a href="/svn/demo1/arbortext/../">../</a></li>', 1, true))
         assert.truthy(html:find('<a href="/svn/demo1/arbortext/dita/" hx-get="/svn/demo1/arbortext/dita/"', 1, true))
         assert.truthy(html:find('<li class="file"><a href="/svn/demo1/arbortext/repos.html">repos.html</a></li>', 1, true))
@@ -235,10 +258,10 @@ describe("svn-index output_filter", function()
         -- in-place expansion, since expansion should only ever start from
         -- a repository root, never span across repositories.
         assert.truthy(html:find(
-            '<li class="repo"><a href="/svn/demo1/demo1/">demo1/</a></li>', 1, true
+            '<li class="repo"><a href="demo1/">demo1/</a></li>', 1, true
         ))
         assert.truthy(html:find(
-            '<li class="repo"><a href="/svn/demo1/demo2/">demo2/</a></li>', 1, true
+            '<li class="repo"><a href="demo2/">demo2/</a></li>', 1, true
         ))
         assert.falsy(html:find('<li class="dir"', 1, true))
         assert.falsy(html:find("hx-get", 1, true))
