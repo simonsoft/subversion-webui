@@ -35,8 +35,10 @@ sudo cp -r . /opt/subversion-webui
 environment variable (see `templates/`), defaulting to `simple` when unset.
 `simple` is a plain, dependency-free listing with full-page navigation
 links; `htmx` is the same look with [htmx](https://htmx.org)-driven
-in-place directory expansion instead of full page loads; `wa-page` wraps
-the listing in a Web Awesome `<wa-page>` shell (and also uses htmx).
+in-place directory expansion instead of full page loads; `htmx-remix` is
+`htmx` with [Remix Icon](https://remixicon.com) icons in place of list
+bullets; `wa-page` wraps the listing in a Web Awesome `<wa-page>` shell
+(and also uses htmx).
 Set it per-`<Location>` with Apache's `SetEnv` to opt into a different one,
 e.g. `wa-page`:
 

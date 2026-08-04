@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{#has_base}}{{base}} - Revision {{rev}}: {{/has_base}}{{path}}</title>
+<script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0-beta6" integrity="sha384-6lyVbhrs13b9z7mLOpt/N6R76rtkEBWgCjAXRs/DSWyi2AMnQSs10ijWk+PI8n7W" crossorigin="anonymous"></script>
+<link href="https://cdn.jsdelivr.net/npm/remixicon@4.6.0/fonts/remixicon.css" rel="stylesheet">
+<style>
+body {
+    margin: 2rem auto;
+    padding: 0 1rem;
+    font-family: system-ui, sans-serif;
+}
+
+ul {
+    list-style: none;
+    padding-left: 1.5rem;
+    line-height: 1.8;
+}
+
+li i {
+    margin-right: 0.4rem;
+    color: #666;
+}
+
+.dir > a,
+.repo > a {
+    font-weight: 600;
+}
+
+/* Hide ".." inside an htmx-expanded (nested) directory, keep it at top level. */
+li .updir {
+    display: none;
+}
+
+footer {
+    margin-top: 2rem;
+    color: #666;
+    font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+<h1>{{#has_base}}{{base}} - Revision {{rev}}: {{/has_base}}{{path}}</h1>
+<ul class="svn-index">
+{{{svn_index}}}</ul>
+<footer>
+<hr noshade><em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
+</footer>
+</body>
+</html>
