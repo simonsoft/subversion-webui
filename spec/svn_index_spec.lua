@@ -12,11 +12,12 @@ local ROOT = spec_dir() .. "../"
 
 dofile(ROOT .. "mod-lua/svn-index.lua")
 
-local function make_request()
+local function make_request(uri, subprocess_env)
     local r = {
         method = "GET",
-        uri = "/svn/demo1/",
+        uri = uri or "/svn/demo1/",
         content_type = "text/xml; charset=utf-8",
+        subprocess_env = subprocess_env or {},
         headers_out = {
             ["Content-Length"] = "1234",
             ["ETag"] = '"abc"'
@@ -43,8 +44,8 @@ end
 -- (that first yield is the handshake that tells the runtime to fetch
 -- input) -- pre-populating it before the first resume would hide a script
 -- that forgets to yield before ever touching `bucket`.
-local function run_filter(chunks)
-    local r = make_request()
+local function run_filter(chunks, uri, subprocess_env)
+    local r = make_request(uri, subprocess_env)
     local co = coroutine.create(function()
         return output_filter(r)
     end)
@@ -165,5 +166,169 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("<!DOCTYPE html>", 1, true))
         assert.truthy(html:find("Powered by", 1, true))
         assert.truthy(html:find("</html>", 1, true))
+    end)
+
+    it("renders plain relative hrefs (no htmx) for the default \"simple\" template", function()
+        -- "simple" never does in-place DOM expansion, so a plain relative
+        -- href -- resolved by the browser against the current page's own
+        -- URL on a normal full-page navigation -- is correct at any nesting
+        -- depth without needing to be anchored to r.uri.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/arbortext/" base="myrepo">
+<updir href="../"/>
+<dir name="dita" href="dita/" />
+<file name="repos.html" href="repos.html" />
+</index>
+</svn>]]
+        }, "/svn/demo1/arbortext/")
+
+        assert.truthy(html:find('<li class="updir"><a href="../">../</a></li>', 1, true))
+        assert.truthy(html:find('<li class="dir"><a href="dita/">dita/</a></li>', 1, true))
+        assert.truthy(html:find('<li class="file"><a href="repos.html">repos.html</a></li>', 1, true))
+        assert.falsy(html:find("hx-get", 1, true))
+        assert.falsy(html:find("htmx.org", 1, true))
+    end)
+
+    it("anchors both href and hx-get to the requested directory when SVN_INDEX_TEMPLATE is \"htmx\"", function()
+        -- This is what makes expansion (and plain navigation on expanded,
+        -- nested entries) work at any nesting depth: each fragment is a
+        -- real response to its own directory's URL, so anchoring both href
+        -- and hx-get to r.uri (rather than leaving them as the bare
+        -- relative values svn's XML provides) keeps them correct no matter
+        -- how deep the fragment ends up nested client-side -- a relative
+        -- href would otherwise resolve against the top-level document's
+        -- URL, not the directory the entry actually belongs to.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/arbortext/" base="myrepo">
+<updir href="../"/>
+<dir name="dita" href="dita/" />
+<file name="repos.html" href="repos.html" />
+</index>
+</svn>]]
+        }, "/svn/demo1/arbortext/", { SVN_INDEX_TEMPLATE = "htmx" })
+
+        assert.truthy(html:find("htmx.org", 1, true))
+        assert.truthy(html:find('<li class="updir"><a href="/svn/demo1/arbortext/../">../</a></li>', 1, true))
+        assert.truthy(html:find('<a href="/svn/demo1/arbortext/dita/" hx-get="/svn/demo1/arbortext/dita/"', 1, true))
+        assert.truthy(html:find('<li class="file"><a href="/svn/demo1/arbortext/repos.html">repos.html</a></li>', 1, true))
+    end)
+
+    it("hides .updir via CSS when it lands nested (i.e. added by an htmx expansion), not at the top level", function()
+        -- dir.mustache's hx-swap="beforeend" hx-target="closest li" inserts
+        -- a clicked-open subdirectory's fragment as a child of that
+        -- directory's own <li>, so its <updir> ends up nested inside
+        -- another <li> -- unlike the real top-level <updir>, which sits
+        -- directly under the page's own <ul class="svn-index">. The `li
+        -- .updir` rule distinguishes the two structurally.
+        for _, template_type in ipairs({ "htmx", "wa-page" }) do
+            local html = run_filter({
+                [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<updir href="../"/>
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+            }, nil, { SVN_INDEX_TEMPLATE = template_type })
+
+            assert.truthy(html:find("li .updir {", 1, true), template_type .. " should hide nested .updir")
+            assert.truthy(html:find("display: none;", 1, true), template_type .. " should hide nested .updir")
+        end
+
+        -- "simple" never nests a fragment inside an <li> (no htmx), so the
+        -- top-level <updir> is the only one that can ever appear and the
+        -- rule would be dead weight.
+        local simple_html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<updir href="../"/>
+</index>
+</svn>]]
+        })
+
+        assert.falsy(simple_html:find("li .updir {", 1, true))
+    end)
+
+    it("renders identically whether SVN_INDEX_TEMPLATE is unset or explicitly \"simple\"", function()
+        local fixture = {
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<updir href="../"/>
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }
+
+        local default_html = run_filter(fixture)
+        local explicit_html = run_filter(fixture, nil, { SVN_INDEX_TEMPLATE = "simple" })
+
+        assert.are.equal(default_html, explicit_html)
+    end)
+
+    it("renders an unprefixed title/h1 for the SVNParentPath 'Collection of Repositories' listing", function()
+        -- mod_dav_svn's parentpath-collection resource has no revision and
+        -- no single repository, so it omits both the rev and base
+        -- attributes on <index> (rather than emitting them empty) and never
+        -- emits <updir>. svn's own default rendering skips the
+        -- "{base} - Revision {rev}: " prefix entirely in this case, leaving
+        -- just the bare path ("Collection of Repositories").
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index path="Collection of Repositories">
+<dir name="demo1" href="demo1/" />
+<dir name="demo2" href="demo2/" />
+</index>
+</svn>]]
+        })
+
+        assert.truthy(html:find("<title>Collection of Repositories</title>", 1, true))
+        assert.truthy(html:find("<h1>Collection of Repositories</h1>", 1, true))
+        assert.falsy(html:find("Revision", 1, true))
+        assert.falsy(html:find('<li class="updir"', 1, true))
+
+        -- Each <dir> here is a repository root, not an ordinary
+        -- subdirectory, so it's rendered with the "repo" template/class
+        -- rather than "dir" -- and as a plain link rather than an htmx
+        -- in-place expansion, since expansion should only ever start from
+        -- a repository root, never span across repositories.
+        assert.truthy(html:find(
+            '<li class="repo"><a href="demo1/">demo1/</a></li>', 1, true
+        ))
+        assert.truthy(html:find(
+            '<li class="repo"><a href="demo2/">demo2/</a></li>', 1, true
+        ))
+        assert.falsy(html:find('<li class="dir"', 1, true))
+        assert.falsy(html:find("hx-get", 1, true))
+    end)
+
+    it("renders an ordinary <dir> with the \"dir\" template/class when browsing inside a repository", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext/" />
+</index>
+</svn>]]
+        })
+
+        assert.truthy(html:find('<li class="dir">', 1, true))
+        assert.falsy(html:find('<li class="repo"', 1, true))
+    end)
+
+    it("renders the wa-page shell when SVN_INDEX_TEMPLATE is \"wa-page\", with entries unchanged", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<updir href="../"/>
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find("<wa-page>", 1, true))
+        assert.truthy(html:find("webawesome.css", 1, true))
+        assert.truthy(html:find('<header slot="header">', 1, true))
+        assert.truthy(html:find('<footer slot="footer">', 1, true))
+        assert.truthy(html:find('<li class="file"><a href="/svn/demo1/README.md">README.md</a></li>', 1, true))
     end)
 end)

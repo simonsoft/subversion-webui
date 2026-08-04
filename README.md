@@ -14,12 +14,35 @@ sudo luarocks --lua-version=5.3 install luaexpat
 sudo luarocks --lua-version=5.3 install lustache
 ```
 
+Deploy the whole repository (not just `mod-lua/`) to `/opt/subversion-webui`,
+since `mod-lua/svn-index.lua` resolves its page/entry templates from
+`templates/<type>/` relative to its own location:
+
+```
+sudo git clone <repo-url> /opt/subversion-webui
+```
+
+or, from a local checkout:
+
+```
+sudo cp -r . /opt/subversion-webui
+```
+
 
 ## Apache httpd conf
 
+`svn-index.lua` picks a template type from the `SVN_INDEX_TEMPLATE`
+environment variable (see `templates/`), defaulting to `simple` when unset.
+`simple` is a plain, dependency-free listing with full-page navigation
+links; `htmx` is the same look with [htmx](https://htmx.org)-driven
+in-place directory expansion instead of full page loads; `wa-page` wraps
+the listing in a Web Awesome `<wa-page>` shell (and also uses htmx).
+Set it per-`<Location>` with Apache's `SetEnv` to opt into a different one,
+e.g. `wa-page`:
+
 ```
 LuaOutputFilter SVN_XML_INDEX \
-        "/srv/cms/admin/apache/svn-index.lua" \
+        "/opt/subversion-webui/mod-lua/svn-index.lua" \
         output_filter
 
 <Location /svn>
@@ -38,6 +61,10 @@ LuaOutputFilter SVN_XML_INDEX \
     # TODO: Restore compression
     FilterChain SVN_XML_INDEX
 
+    # Selects mod-lua's page template (templates/<type>/). Defaults to
+    # "simple" when unset; e.g. set to "wa-page" for the Web Awesome
+    # <wa-page> shell instead.
+    # SetEnv SVN_INDEX_TEMPLATE simple
 
 </Location>
 ```
