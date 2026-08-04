@@ -367,9 +367,9 @@ describe("svn-index output_filter", function()
         -- up, trunk is 1 level up, arbortext (current) is unlinked; root_href
         -- (the collection-of-repositories listing) is one level further up
         -- than myrepo, i.e. 3 levels.
-        assert.truthy(html:find('<a href="../../">myrepo</a>', 1, true))
-        assert.truthy(html:find('<a href="../">trunk</a>', 1, true))
-        assert.truthy(html:find('<span>arbortext</span>', 1, true))
+        assert.truthy(html:find('<wa-breadcrumb-item href="../../">myrepo</wa-breadcrumb-item>', 1, true))
+        assert.truthy(html:find('<wa-breadcrumb-item href="../">trunk</wa-breadcrumb-item>', 1, true))
+        assert.truthy(html:find('<wa-breadcrumb-item href="">arbortext</wa-breadcrumb-item>', 1, true))
         assert.truthy(html:find('<wa-button href="../../../" appearance="plain">', 1, true))
         assert.truthy(html:find('<wa-button href="../" appearance="plain">', 1, true))
     end)
@@ -384,7 +384,7 @@ describe("svn-index output_filter", function()
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.falsy(html:find('appearance="plain"><wa-icon name="arrow-up">', 1, true))
-        assert.truthy(html:find('<span>Collection of Repositories</span>', 1, true))
+        assert.truthy(html:find('<wa-breadcrumb-item href="">Collection of Repositories</wa-breadcrumb-item>', 1, true))
     end)
 
     it("wires wa-page dir entries with real lazy-loading plus a repeatable main-content swap", function()
@@ -411,7 +411,7 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find(
-            '<a href="/svn/demo1/arbortext/" hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-trigger="click">',
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-trigger="click">',
             1, true
         ))
         assert.falsy(html:find("click once", 1, true))

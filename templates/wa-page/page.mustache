@@ -69,7 +69,7 @@ header[slot="header"] wa-button::part(base) {
     color: var(--wa-color-neutral-fill-quiet);
 }
 
-div[slot="subheader"] {
+wa-breadcrumb[slot="subheader"] {
     padding: var(--wa-space-2x-small) var(--wa-space-s);
 }
 
@@ -90,6 +90,13 @@ wa-tree.svn-nav .file,
 wa-tree.svn-nav .updir {
     display: none;
 }
+
+/* A tree item's own row is already the click target -- its label doesn't
+   need to look like a hyperlink. */
+wa-tree-item a {
+    color: inherit;
+    text-decoration: none;
+}
 </style>
 </head>
 <body>
@@ -98,9 +105,10 @@ wa-tree.svn-nav .updir {
 <wa-button href="{{{root_href}}}" appearance="plain"><wa-icon name="house"></wa-icon> Start</wa-button>
 {{#has_base}}<wa-button href="../" appearance="plain"><wa-icon name="arrow-up"></wa-icon> Up</wa-button>{{/has_base}}
 </header>
-<div slot="subheader">
-{{#breadcrumbs}}{{^last}}<a href="{{{href}}}">{{name}}</a> / {{/last}}{{#last}}<span>{{name}}</span>{{/last}}{{/breadcrumbs}}
-</div>
+<wa-breadcrumb slot="subheader">
+{{#breadcrumbs}}<wa-breadcrumb-item href="{{{href}}}">{{name}}</wa-breadcrumb-item>
+{{/breadcrumbs}}
+</wa-breadcrumb>
 <nav slot="navigation">
 <wa-tree class="svn-nav">
 <wa-tree-item expanded hx-get="." hx-trigger="load" hx-target="this" hx-swap="beforeend" hx-select=".svn-index > wa-tree-item"><wa-icon name="folder-open"></wa-icon> {{#breadcrumbs}}{{#last}}{{name}}{{/last}}{{/breadcrumbs}}</wa-tree-item>
