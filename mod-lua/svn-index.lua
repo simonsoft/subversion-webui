@@ -92,6 +92,44 @@ local function escape_html(value)
                  :gsub("'", "&#39;"))
 end
 
+-- Builds the breadcrumb trail for a request inside a repository (has_base):
+-- one crumb for the repo root (`base`) followed by one per `path` segment,
+-- each linked via a plain "../" chain -- these are real page navigations,
+-- not htmx fragments, so relative hrefs are correct regardless of how the
+-- app is mounted or how deeply the current directory is nested. The final
+-- crumb (the current location) is marked `last` so the template can render
+-- it unlinked. On the SVNParentPath "Collection of Repositories" listing
+-- (not has_base), `path` is just a label ("Collection of Repositories"),
+-- not a real path, so it's rendered as a single unlinked crumb. Also
+-- returns the total segment count, reused by the caller to compute
+-- `root_href` (one level further up than the repo root).
+local function compute_breadcrumbs(path, base, has_base)
+    if not has_base then
+        return { { name = escape_html(path), last = true } }, 0
+    end
+
+    local segments = {}
+
+    for segment in path:gmatch("[^/]+") do
+        segments[#segments + 1] = segment
+    end
+
+    local total = #segments
+    local breadcrumbs = {
+        { name = escape_html(base), href = escape_html(string.rep("../", total)), last = total == 0 }
+    }
+
+    for i, segment in ipairs(segments) do
+        breadcrumbs[#breadcrumbs + 1] = {
+            name = escape_html(segment),
+            href = escape_html(string.rep("../", total - i)),
+            last = i == total
+        }
+    end
+
+    return breadcrumbs, total
+end
+
 -- attr.href is always relative to the directory currently being listed
 -- (e.g. "dita/"). That's no good for the rendered <a href> once a
 -- directory's entries are inserted into the DOM as a nested <li> via htmx:
@@ -220,13 +258,18 @@ function output_filter(r)
     -- "{base} - Revision {rev}: {path}") from listing the parent path
     -- (where svn's default is just "{path}", unprefixed).
     local function template_context()
+        local has_base = index.base ~= ""
+        local breadcrumbs, segment_count = compute_breadcrumbs(index.path, index.base, has_base)
+
         return {
             base = index.base,
             path = index.path,
             rev = index.rev,
-            has_base = index.base ~= "",
+            has_base = has_base,
             svn_version = svn.version,
-            svn_href = svn.href
+            svn_href = svn.href,
+            breadcrumbs = breadcrumbs,
+            root_href = has_base and escape_html(string.rep("../", segment_count + 1)) or ""
         }
     end
 

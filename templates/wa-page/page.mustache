@@ -8,12 +8,32 @@
 <script type="module" src="https://ka-f.webawesome.com/webawesome@3.10.0/webawesome.loader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0-beta6" integrity="sha384-6lyVbhrs13b9z7mLOpt/N6R76rtkEBWgCjAXRs/DSWyi2AMnQSs10ijWk+PI8n7W" crossorigin="anonymous"></script>
 <style>
+header[slot="header"] {
+    display: flex;
+    gap: var(--wa-space-s);
+    align-items: center;
+    padding: var(--wa-space-s);
+    background: var(--wa-color-brand-fill-loud);
+    color: var(--wa-color-neutral-fill-quiet);
+}
+
+header[slot="header"] wa-button::part(base) {
+    color: var(--wa-color-neutral-fill-quiet);
+}
+
+div[slot="subheader"] {
+    padding: var(--wa-space-2x-small) var(--wa-space-s);
+}
+
 footer[slot="footer"] {
     padding: var(--wa-space-s);
 }
 
-/* Hide ".." inside an htmx-expanded (nested) directory, keep it at top level. */
-li .updir {
+/* The navigation tree only ever browses folders -- files (and the ".."
+   entry, which is superseded by the header's "Up" button) fetched into it
+   via htmx are hidden here regardless of how deeply they end up nested. */
+wa-tree.svn-nav .file,
+wa-tree.svn-nav .updir {
     display: none;
 }
 </style>
@@ -21,10 +41,21 @@ li .updir {
 <body>
 <wa-page>
 <header slot="header">
-<h1>{{#has_base}}{{base}} - Revision {{rev}}: {{/has_base}}{{path}}</h1>
+<wa-button href="{{{root_href}}}" appearance="plain"><wa-icon name="house"></wa-icon> Start</wa-button>
+{{#has_base}}<wa-button href="../" appearance="plain"><wa-icon name="arrow-up"></wa-icon> Up</wa-button>{{/has_base}}
 </header>
-<ul class="svn-index">
-{{{svn_index}}}</ul>
+<div slot="subheader">
+{{#breadcrumbs}}{{^last}}<a href="{{{href}}}">{{name}}</a> / {{/last}}{{#last}}<span>{{name}}</span>{{/last}}{{/breadcrumbs}}
+</div>
+<nav slot="navigation">
+<wa-tree class="svn-nav">
+<wa-tree-item expanded hx-get="." hx-trigger="load" hx-target="this" hx-swap="beforeend" hx-select=".svn-index > wa-tree-item"><wa-icon name="folder-open"></wa-icon> {{#breadcrumbs}}{{#last}}{{name}}{{/last}}{{/breadcrumbs}}</wa-tree-item>
+</wa-tree>
+</nav>
+<div>
+<wa-tree class="svn-index">
+{{{svn_index}}}</wa-tree>
+</div>
 <footer slot="footer">
 <span>{{#has_base}}Repository: {{base}} &middot; Path: {{/has_base}}{{path}} {{#has_base}}&middot; Revision: {{rev}}{{/has_base}}</span>
 <em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>

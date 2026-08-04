@@ -221,20 +221,20 @@ describe("svn-index output_filter", function()
         -- directory's own <li>, so its <updir> ends up nested inside
         -- another <li> -- unlike the real top-level <updir>, which sits
         -- directly under the page's own <ul class="svn-index">. The `li
-        -- .updir` rule distinguishes the two structurally.
-        for _, template_type in ipairs({ "htmx", "wa-page" }) do
-            local html = run_filter({
-                [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+        -- .updir` rule distinguishes the two structurally. "wa-page" no
+        -- longer renders <updir> inline at all (see the next test), so it's
+        -- not part of this one.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
 <updir href="../"/>
 <file name="README.md" href="README.md" />
 </index>
 </svn>]]
-            }, nil, { SVN_INDEX_TEMPLATE = template_type })
+        }, nil, { SVN_INDEX_TEMPLATE = "htmx" })
 
-            assert.truthy(html:find("li .updir {", 1, true), template_type .. " should hide nested .updir")
-            assert.truthy(html:find("display: none;", 1, true), template_type .. " should hide nested .updir")
-        end
+        assert.truthy(html:find("li .updir {", 1, true))
+        assert.truthy(html:find("display: none;", 1, true))
 
         -- "simple" never nests a fragment inside an <li> (no htmx), so the
         -- top-level <updir> is the only one that can ever appear and the
@@ -248,6 +248,25 @@ describe("svn-index output_filter", function()
         })
 
         assert.falsy(simple_html:find("li .updir {", 1, true))
+    end)
+
+    it("hides .file (and .updir) inside the wa-page navigation tree regardless of nesting depth", function()
+        -- "wa-page" no longer renders an inline updir entry at all (it's
+        -- replaced by the header's "Up" button), and its navigation tree
+        -- only ever browses folders -- files fetched into it via htmx are
+        -- hidden by a single non-recursive CSS rule scoped to the nav tree.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<updir href="../"/>
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find("wa-tree.svn-nav .file", 1, true))
+        assert.truthy(html:find("wa-tree.svn-nav .updir", 1, true))
+        assert.falsy(html:find('<wa-tree-item class="updir">', 1, true))
     end)
 
     it("renders identically whether SVN_INDEX_TEMPLATE is unset or explicitly \"simple\"", function()
@@ -329,6 +348,58 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("webawesome.css", 1, true))
         assert.truthy(html:find('<header slot="header">', 1, true))
         assert.truthy(html:find('<footer slot="footer">', 1, true))
-        assert.truthy(html:find('<li class="file"><a href="/svn/demo1/README.md">README.md</a></li>', 1, true))
+        assert.truthy(html:find(
+            '<wa-tree-item class="file"><a href="/svn/demo1/README.md"><wa-icon name="file"></wa-icon> README.md</a></wa-tree-item>',
+            1, true
+        ))
+    end)
+
+    it("builds a breadcrumb trail and the \"Start\"/\"Up\" toolbar hrefs from path depth", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/arbortext/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        -- path has 2 segments ("trunk", "arbortext"), so: myrepo is 2 levels
+        -- up, trunk is 1 level up, arbortext (current) is unlinked; root_href
+        -- (the collection-of-repositories listing) is one level further up
+        -- than myrepo, i.e. 3 levels.
+        assert.truthy(html:find('<a href="../../">myrepo</a>', 1, true))
+        assert.truthy(html:find('<a href="../">trunk</a>', 1, true))
+        assert.truthy(html:find('<span>arbortext</span>', 1, true))
+        assert.truthy(html:find('<wa-button href="../../../" appearance="plain">', 1, true))
+        assert.truthy(html:find('<wa-button href="../" appearance="plain">', 1, true))
+    end)
+
+    it("hides the \"Up\" button and collapses the breadcrumb to a single crumb on the Collection of Repositories listing", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index path="Collection of Repositories">
+<dir name="demo1" href="demo1/" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.falsy(html:find('appearance="plain"><wa-icon name="arrow-up">', 1, true))
+        assert.truthy(html:find('<span>Collection of Repositories</span>', 1, true))
+    end)
+
+    it("wires the wa-page navigation tree's initial item to load this directory's own listing", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<wa-tree class="svn-nav">', 1, true))
+        assert.truthy(html:find(
+            '<wa-tree-item expanded hx-get="." hx-trigger="load" hx-target="this" hx-swap="beforeend" hx-select=".svn-index > wa-tree-item">',
+            1, true
+        ))
     end)
 end)
