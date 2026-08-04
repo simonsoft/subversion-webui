@@ -12,12 +12,13 @@ local ROOT = spec_dir() .. "../"
 
 dofile(ROOT .. "mod-lua/svn-index.lua")
 
-local function make_request(uri, subprocess_env)
+local function make_request(uri, subprocess_env, headers_in)
     local r = {
         method = "GET",
         uri = uri or "/svn/demo1/",
         content_type = "text/xml; charset=utf-8",
         subprocess_env = subprocess_env or {},
+        headers_in = headers_in or {},
         headers_out = {
             ["Content-Length"] = "1234",
             ["ETag"] = '"abc"'
@@ -44,8 +45,8 @@ end
 -- (that first yield is the handshake that tells the runtime to fetch
 -- input) -- pre-populating it before the first resume would hide a script
 -- that forgets to yield before ever touching `bucket`.
-local function run_filter(chunks, uri, subprocess_env)
-    local r = make_request(uri, subprocess_env)
+local function run_filter(chunks, uri, subprocess_env, headers_in)
+    local r = make_request(uri, subprocess_env, headers_in)
     local co = coroutine.create(function()
         return output_filter(r)
     end)
@@ -585,5 +586,72 @@ describe("svn-index output_filter", function()
             '<wa-tree class="svn-nav" hx-get="." hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">',
             1, true
         ))
+    end)
+
+    it("returns HX-Push-Url only for the main-content-swap request, not nav's own in-place expansion", function()
+        -- htmx's own "HX-Target" request header names the resolved swap
+        -- target as "<tagname>#<id>" (confirmed via a real browser), not a
+        -- bare id -- dir.mustache's label targets "#svn-index"
+        -- (hx-target="#svn-index"), so that specific request arrives as
+        -- "wa-tree#svn-index". Only *that* request represents an actual
+        -- "navigate to a new folder", so only it should push a new URL; the
+        -- nav tree's own lazy expansion targets "this" (an element with no
+        -- id), which htmx sends as just "wa-tree-item" -- and must not
+        -- push anything, since it never changes what main is showing.
+        local fixture = {
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/arbortext/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }
+
+        local _, main_swap_r = run_filter(
+            fixture, "/svn/demo1/trunk/arbortext/", { SVN_INDEX_TEMPLATE = "wa-page" },
+            { ["HX-Target"] = "wa-tree#svn-index" }
+        )
+        assert.are.equal("/svn/demo1/trunk/arbortext/", main_swap_r.headers_out["HX-Push-Url"])
+
+        local _, nav_expand_r = run_filter(
+            fixture, "/svn/demo1/trunk/arbortext/", { SVN_INDEX_TEMPLATE = "wa-page" },
+            { ["HX-Target"] = "wa-tree-item" }
+        )
+        assert.is_nil(nav_expand_r.headers_out["HX-Push-Url"])
+
+        local _, no_htmx_r = run_filter(
+            fixture, "/svn/demo1/trunk/arbortext/", { SVN_INDEX_TEMPLATE = "wa-page" }
+        )
+        assert.is_nil(no_htmx_r.headers_out["HX-Push-Url"])
+    end)
+
+    it("logs HX-Current-URL when htmx sends it, and skips the log line otherwise", function()
+        local fixture = {
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }
+
+        local function has_current_url_log(r)
+            for _, entry in ipairs(r.logs) do
+                if entry.msg:find("HX-Current-URL: http://example/here", 1, true) then
+                    return true
+                end
+            end
+
+            return false
+        end
+
+        local _, with_header_r = run_filter(
+            fixture, nil, nil, { ["HX-Current-URL"] = "http://example/here" }
+        )
+        assert.truthy(has_current_url_log(with_header_r))
+
+        local _, without_header_r = run_filter(fixture)
+
+        for _, entry in ipairs(without_header_r.logs) do
+            assert.falsy(entry.msg:find("HX-Current-URL", 1, true))
+        end
     end)
 end)

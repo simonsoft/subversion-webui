@@ -241,6 +241,14 @@ function output_filter(r)
         template_type
     ))
 
+    -- htmx sends this on every request as the browser's currently-displayed
+    -- URL at request time -- logged only when present (a plain, non-htmx
+    -- request never sends it) to help correlate a listing request with
+    -- where the user was actually browsing from.
+    if r.headers_in and r.headers_in["HX-Current-URL"] then
+        r:info("HX-Current-URL: " .. tostring(r.headers_in["HX-Current-URL"]))
+    end
+
     -- Set these before emitting any transformed response content.
     r.content_type = "text/html; charset=utf-8"
 
@@ -249,6 +257,20 @@ function output_filter(r)
 
     -- The original entity validator no longer describes the transformed body.
     r.headers_out["ETag"] = nil
+
+    -- Only the wa-page template's main-content-swap request (dir.mustache's
+    -- label, hx-target="#svn-index") represents an actual "navigate to a
+    -- new folder" -- the nav tree's own in-place lazy expansion
+    -- (hx-target="this", an element with no id) never changes what main is
+    -- showing, so it must not push a new URL. htmx sends the resolved
+    -- target as "<tagname>#<id>", not a bare id (confirmed via a real
+    -- browser), hence matching "wa-tree#svn-index" rather than "svn-index".
+    -- Returning this as a response header, rather than "hx-push-url" on the
+    -- template, keeps the decision here where the true swap target (from
+    -- the incoming request) is actually known.
+    if r.headers_in and r.headers_in["HX-Target"] == "wa-tree#svn-index" then
+        r.headers_out["HX-Push-Url"] = base_href
+    end
 
     -- mod_dav_svn omits the rev/base attributes entirely (rather than
     -- emitting them empty) on the special "Collection of Repositories"
