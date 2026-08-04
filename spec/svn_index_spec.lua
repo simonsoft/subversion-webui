@@ -539,7 +539,14 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<wa-tree class="svn-index" id="svn-index">', 1, true))
     end)
 
-    it("wires the wa-page navigation tree's initial item to load this directory's own listing", function()
+    it("wires the wa-page navigation tree itself to load this directory's own listing, with no top-level wrapper item", function()
+        -- The nav tree used to wrap the fetched entries in a permanently
+        -- "expanded" item representing the current directory -- but that
+        -- was purely redundant (the breadcrumb already shows where you
+        -- are), and it cost an extra indentation level for nothing. Putting
+        -- the hx-get/hx-trigger/hx-select directly on <wa-tree> itself, with
+        -- hx-swap="innerHTML" replacing its own content, makes the fetched
+        -- entries direct (top-level) children instead.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -548,9 +555,8 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<wa-tree class="svn-nav">', 1, true))
         assert.truthy(html:find(
-            '<wa-tree-item expanded hx-get="." hx-trigger="load" hx-target="this" hx-swap="beforeend" hx-select=".svn-index > wa-tree-item">',
+            '<wa-tree class="svn-nav" hx-get="." hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">',
             1, true
         ))
     end)

@@ -133,8 +133,7 @@ wa-tree-item a {
 {{/breadcrumbs}}
 </wa-breadcrumb>
 <nav slot="navigation">
-<wa-tree class="svn-nav">
-<wa-tree-item expanded hx-get="." hx-trigger="load" hx-target="this" hx-swap="beforeend" hx-select=".svn-index > wa-tree-item"><wa-icon name="folder-open"></wa-icon> {{#breadcrumbs}}{{#last}}{{name}}{{/last}}{{/breadcrumbs}}</wa-tree-item>
+<wa-tree class="svn-nav" hx-get="." hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">
 </wa-tree>
 </nav>
 <div class="svn-main">
