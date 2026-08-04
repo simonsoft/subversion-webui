@@ -462,6 +462,29 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('removeAttribute("lazy")', 1, true))
     end)
 
+    it("stops a nested lazy-load from also re-triggering already-loaded ancestor tree items", function()
+        -- "wa-lazy-load" bubbles, and htmx's hx-trigger binding is permanent
+        -- once an element has been processed (removing the hx-trigger/lazy
+        -- *attributes* later doesn't detach it) -- confirmed via a real
+        -- browser that, without this guard, expanding a nested folder two
+        -- levels deep in the nav tree also re-fetches and duplicates every
+        -- already-loaded ancestor above it. The fix injects a one-time
+        -- stopPropagation listener directly onto the real originating
+        -- element from a capture-phase document listener, which runs before
+        -- the event reaches the target and so is in place in time.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('addEventListener("wa-lazy-load"', 1, true))
+        assert.truthy(html:find("stopPropagation()", 1, true))
+        assert.truthy(html:find("{ once: true }", 1, true))
+    end)
+
     it("gives the main listing a stable id for dir/repo entries to target when swapping main content", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">

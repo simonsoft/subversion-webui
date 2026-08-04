@@ -8,13 +8,32 @@
 <script type="module" src="https://ka-f.webawesome.com/webawesome@3.10.0/webawesome.loader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0-beta6" integrity="sha384-6lyVbhrs13b9z7mLOpt/N6R76rtkEBWgCjAXRs/DSWyi2AMnQSs10ijWk+PI8n7W" crossorigin="anonymous"></script>
 <script>
+// "wa-lazy-load" bubbles, and htmx's hx-trigger binds a real, permanent
+// listener to each lazy tree item at the moment it's processed -- removing
+// the "hx-trigger"/"lazy" *attributes* later doesn't detach that listener,
+// so without this, a deeply nested item's own lazy-load event also re-fires
+// every already-loaded ancestor's listener above it, re-fetching and
+// re-appending duplicate children onto each of them.
+//
+// Fixed by injecting a one-time, self-removing stopPropagation listener
+// directly onto the actual originating element (event.target) *before* the
+// event reaches it: this capture-phase document listener runs first (since
+// capture travels document -> ... -> target), so the listener it adds is
+// already in place by the time dispatch reaches the target's own listeners.
+// Because it's added to the same node, it doesn't block htmx's
+// already-bound listener on that same element from firing (stopPropagation
+// only stops the event moving on to the *next* node in the path) -- it only
+// stops the event from then bubbling up into ancestor tree items.
+document.addEventListener("wa-lazy-load", (event) => {
+    event.target.addEventListener("wa-lazy-load", (e) => e.stopPropagation(), { once: true });
+}, true);
+
 // Completes wa-tree-item's own lazy-loading contract: once a lazy item's
-// htmx-driven fetch (triggered by its "wa-lazy-load" event) has appended its
-// children, the "lazy" attribute must come off so re-expanding the item
-// later just toggles the already-loaded children instead of re-fetching and
-// duplicating them. Scoped to elements that still have "lazy" so this never
-// touches the unrelated htmx request each entry's label link fires to swap
-// #svn-index (see dir.mustache/repo.mustache).
+// fetch has appended its children, the "lazy" attribute must come off so
+// re-expanding the item later just toggles the already-loaded children
+// instead of re-fetching. Scoped to elements that still have "lazy" so this
+// never touches the unrelated htmx request each entry's label link fires to
+// swap #svn-index (see dir.mustache/repo.mustache).
 document.addEventListener("htmx:after:swap", (event) => {
     if (event.target.hasAttribute?.("lazy")) {
         event.target.removeAttribute("lazy");
