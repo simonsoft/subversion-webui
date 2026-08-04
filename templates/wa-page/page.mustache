@@ -43,6 +43,12 @@ footer[slot="footer"] {
     padding: var(--wa-space-s);
 }
 
+/* Matches the padding wa-page already applies to the navigation slot, so
+   the main listing doesn't sit flush against the edge while nav has room. */
+div.svn-main {
+    padding: var(--wa-space-m);
+}
+
 /* The navigation tree only ever browses folders -- files (and the ".."
    entry, which is superseded by the header's "Up" button) fetched into it
    via htmx are hidden here regardless of how deeply they end up nested. */
@@ -66,7 +72,7 @@ wa-tree.svn-nav .updir {
 <wa-tree-item expanded hx-get="." hx-trigger="load" hx-target="this" hx-swap="beforeend" hx-select=".svn-index > wa-tree-item"><wa-icon name="folder-open"></wa-icon> {{#breadcrumbs}}{{#last}}{{name}}{{/last}}{{/breadcrumbs}}</wa-tree-item>
 </wa-tree>
 </nav>
-<div>
+<div class="svn-main">
 <wa-tree class="svn-index" id="svn-index">
 {{{svn_index}}}</wa-tree>
 </div>
