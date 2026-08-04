@@ -7,6 +7,20 @@
 <link rel="stylesheet" href="https://ka-f.webawesome.com/webawesome@3.10.0/styles/webawesome.css">
 <script type="module" src="https://ka-f.webawesome.com/webawesome@3.10.0/webawesome.loader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0-beta6" integrity="sha384-6lyVbhrs13b9z7mLOpt/N6R76rtkEBWgCjAXRs/DSWyi2AMnQSs10ijWk+PI8n7W" crossorigin="anonymous"></script>
+<script>
+// Completes wa-tree-item's own lazy-loading contract: once a lazy item's
+// htmx-driven fetch (triggered by its "wa-lazy-load" event) has appended its
+// children, the "lazy" attribute must come off so re-expanding the item
+// later just toggles the already-loaded children instead of re-fetching and
+// duplicating them. Scoped to elements that still have "lazy" so this never
+// touches the unrelated htmx request each entry's label link fires to swap
+// #svn-index (see dir.mustache/repo.mustache).
+document.addEventListener("htmx:after:swap", (event) => {
+    if (event.target.hasAttribute?.("lazy")) {
+        event.target.removeAttribute("lazy");
+    }
+});
+</script>
 <style>
 header[slot="header"] {
     display: flex;
@@ -53,7 +67,7 @@ wa-tree.svn-nav .updir {
 </wa-tree>
 </nav>
 <div>
-<wa-tree class="svn-index">
+<wa-tree class="svn-index" id="svn-index">
 {{{svn_index}}}</wa-tree>
 </div>
 <footer slot="footer">

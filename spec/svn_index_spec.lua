@@ -387,6 +387,93 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<span>Collection of Repositories</span>', 1, true))
     end)
 
+    it("wires wa-page dir entries with real lazy-loading plus a repeatable main-content swap", function()
+        -- The tree item itself uses wa-tree-item's own `lazy` attribute/
+        -- `wa-lazy-load` event contract (fired when the user expands via the
+        -- item's own chevron), so the expand arrow works without duplicating
+        -- children on repeat toggles -- the page-level script removes `lazy`
+        -- once its swap lands (see the "htmx:after:swap" listener assertion
+        -- below), so a later re-expand just toggles the already-loaded
+        -- children instead of re-fetching. Separately, clicking the label
+        -- itself (a plain "click", not "click once") re-fetches and swaps
+        -- #svn-index's content every time, so main updates no matter how
+        -- many times the same or a different entry is clicked.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext/" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(
+            '<wa-tree-item class="dir" lazy hx-get="/svn/demo1/arbortext/" hx-trigger="wa-lazy-load" hx-target="this" hx-swap="beforeend" hx-select=".svn-index > wa-tree-item">',
+            1, true
+        ))
+        assert.truthy(html:find(
+            '<a href="/svn/demo1/arbortext/" hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-trigger="click">',
+            1, true
+        ))
+        assert.falsy(html:find("click once", 1, true))
+    end)
+
+    it("never wires htmx onto wa-page repo entries, since expansion must not span across repositories", function()
+        -- Unlike an ordinary <dir>, a <repo> entry (only rendered on the
+        -- SVNParentPath "Collection of Repositories" listing) is a
+        -- repository root -- crossing into it is a bigger boundary than
+        -- moving between two folders of the same repo, so it stays a plain
+        -- link/full navigation, matching the same invariant the "simple"
+        -- template already enforces above ("renders an unprefixed title/h1
+        -- for the ... 'Collection of Repositories' listing").
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index path="Collection of Repositories">
+<dir name="demo1" href="demo1/" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        -- The immediate "class=\"repo\"...><a href=...>" transition (no
+        -- attributes in between) proves this specific entry carries no
+        -- hx-get/lazy wiring -- a page-wide search for "hx-get"/"lazy" would
+        -- false-fail here since the page's own nav root item and lazy-clear
+        -- script always contain those strings regardless of fixture.
+        assert.truthy(html:find('<wa-tree-item class="repo"><a href="/svn/demo1/demo1/">', 1, true))
+    end)
+
+    it("removes the lazy attribute after its own swap lands, via a page-level htmx:after:swap listener", function()
+        -- htmx 4.0.0-beta6 dispatches fully colon-namespaced lifecycle
+        -- events ("htmx:after:swap", not the "htmx:afterSwap"/"afterSwap"
+        -- naming used by earlier htmx versions), and this build's hx-on
+        -- shorthand doesn't map onto that -- confirmed by driving a real
+        -- browser through this exact flow. A single page-level listener,
+        -- scoped to elements that still have the `lazy` attribute, is what
+        -- actually clears it (see dir.mustache/repo.mustache for the lazy
+        -- tree items this applies to).
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('addEventListener("htmx:after:swap"', 1, true))
+        assert.truthy(html:find('removeAttribute("lazy")', 1, true))
+    end)
+
+    it("gives the main listing a stable id for dir/repo entries to target when swapping main content", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<wa-tree class="svn-index" id="svn-index">', 1, true))
+    end)
+
     it("wires the wa-page navigation tree's initial item to load this directory's own listing", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
