@@ -414,7 +414,7 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-trigger="click">',
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#subheader" hx-trigger="click">',
             1, true
         ))
         assert.falsy(html:find("click once", 1, true))
@@ -653,5 +653,31 @@ describe("svn-index output_filter", function()
         for _, entry in ipairs(without_header_r.logs) do
             assert.falsy(entry.msg:find("HX-Current-URL", 1, true))
         end
+    end)
+
+    it("pulls the breadcrumb along via hx-select-oob on dir.mustache's own main-swap label", function()
+        -- The breadcrumb would otherwise go stale once main's content is
+        -- swapped to a different directory. Rather than a server-side
+        -- distinction (like HX-Push-Url's "wa-tree#svn-index" HX-Target
+        -- check above), this is scoped entirely client-side: only
+        -- dir.mustache's label itself (the element with
+        -- hx-target="#svn-index") carries hx-select-oob="#subheader", so
+        -- only *its own* requests ever pull the fetched page's breadcrumb
+        -- along -- nav's own in-place lazy-load fetch is a different
+        -- element entirely (no hx-select-oob at all) and is naturally
+        -- unaffected, with no header-sniffing needed on the Lua side.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext/" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<nav slot="subheader" id="subheader">', 1, true))
+        assert.truthy(html:find(
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#subheader" hx-trigger="click">',
+            1, true
+        ))
     end)
 end)

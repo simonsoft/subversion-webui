@@ -267,7 +267,11 @@ function output_filter(r)
     -- browser), hence matching "wa-tree#svn-index" rather than "svn-index".
     -- Returning this as a response header, rather than "hx-push-url" on the
     -- template, keeps the decision here where the true swap target (from
-    -- the incoming request) is actually known.
+    -- the incoming request) is actually known. (The breadcrumb itself
+    -- doesn't need this: dir.mustache's label carries its own
+    -- hx-select-oob="#subheader" directly, so only that specific element's
+    -- own requests ever pull the breadcrumb along -- nav's own lazy-load
+    -- fetch is a different element entirely and never has that attribute.)
     if r.headers_in and r.headers_in["HX-Target"] == "wa-tree#svn-index" then
         r.headers_out["HX-Push-Url"] = base_href
     end
