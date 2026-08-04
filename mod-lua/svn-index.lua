@@ -92,20 +92,25 @@ local function escape_html(value)
 end
 
 -- attr.href is always relative to the directory currently being listed
--- (e.g. "dita/"), which is what plain <a href> navigation should keep using
--- (it resolves fine against whatever page it's actually shown on). hx-get
--- is different: once a directory's entries are inserted into the DOM as a
--- nested <li> via htmx, a relative hx-get on them would still resolve
--- against the top-level document's URL rather than the directory they
--- actually belong to -- so expansion would only work one level deep.
--- base_href (the request's own r.uri, which is correct per-fragment since
--- each expansion is a genuine HTTP request to its own directory) anchors
--- just that hx-get value to an absolute path, so it works regardless of
--- nesting depth.
+-- (e.g. "dita/"). That's no good for the rendered <a href> once a
+-- directory's entries are inserted into the DOM as a nested <li> via htmx:
+-- relative URLs resolve against the top-level document's URL regardless of
+-- where in the DOM the link sits, not against the directory the entry
+-- actually belongs to -- so a plain click (or hx-get, which has the exact
+-- same problem) on a twice-nested entry would resolve one level too
+-- shallow. base_href (the request's own r.uri, which is correct
+-- per-fragment since each expansion is a genuine HTTP request to its own
+-- directory) anchors both href and hx_href to an absolute path, so both
+-- work regardless of nesting depth. The original relative value is kept
+-- available to templates as `href` in case it's ever needed, but the
+-- rendered anchor's href attribute should use the absolute `hx_href`.
 local ENTRY_CONTEXT_BUILDERS = {
     updir = function(attr, base_href)
+        local href = attr.href or "../"
+
         return {
-            href = escape_html(attr.href or "../")
+            href = escape_html(href),
+            hx_href = escape_html(base_href .. href)
         }
     end,
 
