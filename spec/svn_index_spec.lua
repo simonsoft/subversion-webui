@@ -349,7 +349,7 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<header slot="header">', 1, true))
         assert.truthy(html:find('<footer slot="footer">', 1, true))
         assert.truthy(html:find(
-            '<wa-tree-item class="file"><a href="/svn/demo1/README.md"><wa-icon name="file"></wa-icon> README.md</a></wa-tree-item>',
+            '<wa-tree-item class="file"><a href="/svn/demo1/README.md"><wa-icon name="file" variant="regular"></wa-icon> README.md</a></wa-tree-item>',
             1, true
         ))
     end)
