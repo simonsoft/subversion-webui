@@ -215,6 +215,41 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<li class="file"><a href="/svn/demo1/arbortext/repos.html">repos.html</a></li>', 1, true))
     end)
 
+    it("hides .updir via CSS when it lands nested (i.e. added by an htmx expansion), not at the top level", function()
+        -- dir.mustache's hx-swap="beforeend" hx-target="closest li" inserts
+        -- a clicked-open subdirectory's fragment as a child of that
+        -- directory's own <li>, so its <updir> ends up nested inside
+        -- another <li> -- unlike the real top-level <updir>, which sits
+        -- directly under the page's own <ul class="svn-index">. The `li
+        -- .updir` rule distinguishes the two structurally.
+        for _, template_type in ipairs({ "htmx", "wa-page" }) do
+            local html = run_filter({
+                [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<updir href="../"/>
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+            }, nil, { SVN_INDEX_TEMPLATE = template_type })
+
+            assert.truthy(html:find("li .updir {", 1, true), template_type .. " should hide nested .updir")
+            assert.truthy(html:find("display: none;", 1, true), template_type .. " should hide nested .updir")
+        end
+
+        -- "simple" never nests a fragment inside an <li> (no htmx), so the
+        -- top-level <updir> is the only one that can ever appear and the
+        -- rule would be dead weight.
+        local simple_html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<updir href="../"/>
+</index>
+</svn>]]
+        })
+
+        assert.falsy(simple_html:find("li .updir {", 1, true))
+    end)
+
     it("renders identically whether SVN_INDEX_TEMPLATE is unset or explicitly \"simple\"", function()
         local fixture = {
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">

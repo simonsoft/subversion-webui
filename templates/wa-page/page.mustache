@@ -11,6 +11,11 @@
 footer[slot="footer"] {
     padding: var(--wa-space-s);
 }
+
+/* Hide ".." inside an htmx-expanded (nested) directory, keep it at top level. */
+li .updir {
+    display: none;
+}
 </style>
 </head>
 <body>

@@ -22,6 +22,11 @@ ul {
     font-weight: 600;
 }
 
+/* Hide ".." inside an htmx-expanded (nested) directory, keep it at top level. */
+li .updir {
+    display: none;
+}
+
 footer {
     margin-top: 2rem;
     color: #666;
