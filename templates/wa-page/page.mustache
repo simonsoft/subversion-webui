@@ -100,13 +100,18 @@ header[slot="header"] wa-button::part(base) {
     color: var(--wa-color-neutral-fill-quiet);
 }
 
-wa-breadcrumb[slot="subheader"] {
+nav[slot="subheader"] {
     padding: var(--wa-space-m);
+    border-block-end: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
+}
+
+nav[slot="subheader"] wa-breadcrumb {
     font-size: var(--wa-font-size-l);
 }
 
 footer[slot="footer"] {
     padding: var(--wa-space-s);
+    border-block-start: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
 }
 
 /* Matches the padding wa-page already applies to the navigation slot, so
@@ -137,11 +142,13 @@ wa-tree-item a {
 <wa-button href="{{{root_href}}}" appearance="plain"><wa-icon name="house"></wa-icon> Start</wa-button>
 {{#has_base}}<wa-button href="../" appearance="plain"><wa-icon name="arrow-up"></wa-icon> Up</wa-button>{{/has_base}}
 </header>
-<wa-breadcrumb slot="subheader">
+<nav slot="subheader">
+<wa-breadcrumb>
 <span slot="separator">/</span>
 {{#breadcrumbs}}<wa-breadcrumb-item href="{{{href}}}">{{name}}</wa-breadcrumb-item>
 {{/breadcrumbs}}
 </wa-breadcrumb>
+</nav>
 <nav slot="navigation">
 <wa-tree class="svn-nav" hx-get="." hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">
 </wa-tree>
