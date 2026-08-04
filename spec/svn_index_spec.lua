@@ -228,6 +228,33 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("<h1>Collection of Repositories</h1>", 1, true))
         assert.falsy(html:find("Revision", 1, true))
         assert.falsy(html:find('<li class="updir"', 1, true))
+
+        -- Each <dir> here is a repository root, not an ordinary
+        -- subdirectory, so it's rendered with the "repo" template/class
+        -- rather than "dir" -- and as a plain link rather than an htmx
+        -- in-place expansion, since expansion should only ever start from
+        -- a repository root, never span across repositories.
+        assert.truthy(html:find(
+            '<li class="repo"><a href="/svn/demo1/demo1/">demo1/</a></li>', 1, true
+        ))
+        assert.truthy(html:find(
+            '<li class="repo"><a href="/svn/demo1/demo2/">demo2/</a></li>', 1, true
+        ))
+        assert.falsy(html:find('<li class="dir"', 1, true))
+        assert.falsy(html:find("hx-get", 1, true))
+    end)
+
+    it("renders an ordinary <dir> with the \"dir\" template/class when browsing inside a repository", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext/" />
+</index>
+</svn>]]
+        })
+
+        assert.truthy(html:find('<li class="dir">', 1, true))
+        assert.falsy(html:find('<li class="repo"', 1, true))
     end)
 
     it("renders the wa-page shell when SVN_INDEX_TEMPLATE is \"wa-page\", with entries unchanged", function()

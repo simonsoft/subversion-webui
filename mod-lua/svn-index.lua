@@ -72,7 +72,8 @@ local function load_template_set(template_type)
         entries = {
             updir = read_file(dir .. "updir.mustache"),
             file = read_file(dir .. "file.mustache"),
-            dir = read_file(dir .. "dir.mustache")
+            dir = read_file(dir .. "dir.mustache"),
+            repo = read_file(dir .. "repo.mustache")
         }
     }
 
@@ -135,6 +136,13 @@ local ENTRY_CONTEXT_BUILDERS = {
         }
     end
 }
+
+-- A <dir> on the SVNParentPath "Collection of Repositories" listing (see
+-- the has_base note above) is itself a repository root rather than an
+-- ordinary subdirectory, but the XML shape mod_dav_svn emits for it is
+-- identical -- so it's rendered with the "repo" entry template using the
+-- same context shape as "dir".
+ENTRY_CONTEXT_BUILDERS.repo = ENTRY_CONTEXT_BUILDERS.dir
 
 local function render_entry(element, attr, base_href, templates)
     local build_context = ENTRY_CONTEXT_BUILDERS[element]
@@ -269,7 +277,18 @@ function output_filter(r)
                 return
             end
 
-            local html = render_entry(name, attr, base_href, templates)
+            -- <index> is always parsed before any entry (it's their parent
+            -- element), so index.base is already known here: on the
+            -- SVNParentPath "Collection of Repositories" listing (no base)
+            -- every <dir> is a repository root, not an ordinary
+            -- subdirectory -- render it with the "repo" template instead.
+            local element = name
+
+            if element == "dir" and index.base == "" then
+                element = "repo"
+            end
+
+            local html = render_entry(element, attr, base_href, templates)
 
             if html then
                 rendered_count = rendered_count + 1
@@ -278,7 +297,7 @@ function output_filter(r)
                 r:debug(string.format(
                     "Rendered SVN entry #%d: type=%s name=%s href=%s",
                     rendered_count,
-                    tostring(name),
+                    tostring(element),
                     tostring(attr.name or ""),
                     tostring(attr.href or "")
                 ))
