@@ -34,9 +34,18 @@ document.addEventListener("wa-lazy-load", (event) => {
 // instead of re-fetching. Scoped to elements that still have "lazy" so this
 // never touches the unrelated htmx request each entry's label link fires to
 // swap #svn-index (see dir.mustache/repo.mustache).
+//
+// wa-tree-item's own "loading" state (the spinner shown while lazy) is
+// separate from the "lazy" attribute -- it only clears once the item
+// actually observes its children change. When the expanded directory is
+// empty, hx-select matches nothing, so beforeend appends zero nodes: no
+// child-list mutation ever happens, and "loading" (confirmed via aria-busy)
+// is left stuck forever. Setting the "loading" property directly ends it
+// regardless of whether any children actually got appended.
 document.addEventListener("htmx:after:swap", (event) => {
     if (event.target.hasAttribute?.("lazy")) {
         event.target.removeAttribute("lazy");
+        event.target.loading = false;
     }
 });
 </script>

@@ -462,6 +462,25 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('removeAttribute("lazy")', 1, true))
     end)
 
+    it("also clears wa-tree-item's own loading state, not just the lazy attribute", function()
+        -- wa-tree-item's "loading" spinner (aria-busy) is a separate reactive
+        -- property from "lazy", and only clears once the item observes an
+        -- actual child-list mutation -- confirmed via a real browser that
+        -- expanding a directory with zero entries appends nothing (hx-select
+        -- matches nothing, so beforeend inserts no nodes), leaving "loading"
+        -- stuck forever since no mutation ever happens. Setting the property
+        -- directly ends it regardless of whether anything was appended.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find("event.target.loading = false", 1, true))
+    end)
+
     it("stops a nested lazy-load from also re-triggering already-loaded ancestor tree items", function()
         -- "wa-lazy-load" bubbles, and htmx's hx-trigger binding is permanent
         -- once an element has been processed (removing the hx-trigger/lazy
