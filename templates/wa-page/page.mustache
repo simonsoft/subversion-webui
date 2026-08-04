@@ -46,6 +46,18 @@ document.addEventListener("htmx:after:swap", (event) => {
     if (event.target.hasAttribute?.("lazy")) {
         event.target.removeAttribute("lazy");
         event.target.loading = false;
+
+        // wa-tree-item shows its expand chevron based on actually having
+        // child wa-tree-item elements, regardless of their own visibility --
+        // but the nav tree only ever wants to browse folders (files/updir
+        // are hidden via CSS, see wa-tree.svn-nav .file/.updir above), so a
+        // folder containing only files (or nothing at all) would otherwise
+        // still show a chevron that reveals nothing when clicked. Setting
+        // "isLeaf" directly (a real, settable property, not just a computed
+        // one) covers both cases uniformly, regardless of whether anything
+        // was actually appended.
+        event.target.querySelectorAll(":scope > wa-tree-item:not(.dir)").forEach((child) => child.remove());
+        event.target.isLeaf = !event.target.querySelector(":scope > wa-tree-item.dir");
     }
 });
 </script>

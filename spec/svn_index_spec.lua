@@ -481,6 +481,29 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("event.target.loading = false", 1, true))
     end)
 
+    it("drops the nav expand chevron once a lazy item has no folder children left", function()
+        -- wa-tree-item's expand chevron is driven by actually having child
+        -- wa-tree-item elements, not by whether they're visible -- so a
+        -- folder containing only files (hidden from nav via CSS), or no
+        -- entries at all, would otherwise still show a chevron that reveals
+        -- nothing. wa-tree-item exposes "isLeaf" as a real, settable
+        -- property (not just a computed one), so setting it directly covers
+        -- both cases uniformly -- confirmed via a real browser, including
+        -- that this works even for a directory with zero entries (where
+        -- hx-select matches nothing and nothing is ever appended at all).
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(':scope > wa-tree-item:not(.dir)', 1, true))
+        assert.truthy(html:find(':scope > wa-tree-item.dir', 1, true))
+        assert.truthy(html:find('event.target.isLeaf = !event.target.querySelector', 1, true))
+    end)
+
     it("stops a nested lazy-load from also re-triggering already-loaded ancestor tree items", function()
         -- "wa-lazy-load" bubbles, and htmx's hx-trigger binding is permanent
         -- once an element has been processed (removing the hx-trigger/lazy
