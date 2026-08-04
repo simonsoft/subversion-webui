@@ -22,6 +22,21 @@ document.addEventListener("htmx:after:swap", (event) => {
 });
 </script>
 <style>
+wa-page {
+    --menu-width: 25rem;
+    --aside-width: 15rem;
+}
+
+wa-page[view='desktop'] {
+    [slot*='navigation'] {
+        border-inline-end: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
+    }
+}
+wa-page[view='mobile'] {
+    --menu-width: auto;
+    --aside-width: auto;
+}
+
 header[slot="header"] {
     display: flex;
     gap: var(--wa-space-s);
