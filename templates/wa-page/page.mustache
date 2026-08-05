@@ -116,6 +116,7 @@ document.addEventListener("htmx:after:swap", (event) => {
 wa-page {
     --menu-width: 25rem;
     --aside-width: 15rem;
+    font-size: var(--wa-font-size-s);
 }
 
 wa-page[view='desktop'] {
@@ -129,6 +130,7 @@ wa-page[view='mobile'] {
 }
 
 header[slot="header"] {
+    font-size: var(--wa-font-size-m);
     --wa-link-decoration-default: none;
     /*--wa-color-text-link: var(--wa-color-text-normal);*/
     display: flex;
@@ -210,7 +212,7 @@ wa-tree-item a {
 {{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
 {{/breadcrumbs}}
 </wa-breadcrumb>
-<wa-switch>Show folders</wa-switch>
+<wa-switch class="wa-font-size-s">Show folders</wa-switch>
 </nav>
 <nav slot="navigation">
 <wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">
