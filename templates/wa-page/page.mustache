@@ -129,6 +129,8 @@ wa-page[view='mobile'] {
 }
 
 header[slot="header"] {
+    --wa-link-decoration-default: none;
+    /*--wa-color-text-link: var(--wa-color-text-normal);*/
     display: flex;
     gap: var(--wa-space-s);
     align-items: center;
@@ -139,7 +141,6 @@ header[slot="header"] {
 
 header[slot="header"] a {
     color: inherit;
-    text-decoration: none;
     font-weight: var(--wa-font-weight-action);
 }
 
