@@ -137,8 +137,10 @@ header[slot="header"] {
     color: var(--wa-color-neutral-fill-quiet);
 }
 
-header[slot="header"] wa-button::part(base) {
-    color: var(--wa-color-neutral-fill-quiet);
+header[slot="header"] a {
+    color: inherit;
+    text-decoration: none;
+    font-weight: var(--wa-font-weight-action);
 }
 
 nav[slot="subheader"] {
@@ -181,8 +183,10 @@ wa-tree-item a {
 <body>
 <wa-page>
 <header slot="header">
-<wa-button href="{{{root_href}}}" appearance="plain"><wa-icon name="house"></wa-icon> Start</wa-button>
-{{#has_base}}<wa-button href="../" appearance="plain"><wa-icon name="arrow-up"></wa-icon> Up</wa-button>{{/has_base}}
+<div class="wa-cluster">
+<a href="{{{root_href}}}"><wa-icon name="house"></wa-icon> Start</a>
+{{#has_base}}<a href="../"><wa-icon name="arrow-up"></wa-icon> Up</a>{{/has_base}}
+</div>
 </header>
 <nav slot="subheader" id="subheader">
 <wa-breadcrumb>

@@ -442,11 +442,11 @@ describe("svn-index output_filter", function()
             '<wa-breadcrumb-item><wa-icon name="folder" variant="regular"></wa-icon> arbortext</wa-breadcrumb-item>',
             1, true
         ))
-        assert.truthy(html:find('<wa-button href="../../../" appearance="plain">', 1, true))
-        assert.truthy(html:find('<wa-button href="../" appearance="plain">', 1, true))
+        assert.truthy(html:find('<a href="../../../"><wa-icon name="house">', 1, true))
+        assert.truthy(html:find('<a href="../"><wa-icon name="arrow-up">', 1, true))
     end)
 
-    it("hides the \"Up\" button and collapses the breadcrumb to a single, icon-less, unlinked crumb on the Collection of Repositories listing", function()
+    it("hides the \"Up\" link and collapses the breadcrumb to a single, icon-less, unlinked crumb on the Collection of Repositories listing", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index path="Collection of Repositories">
@@ -455,7 +455,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.falsy(html:find('appearance="plain"><wa-icon name="arrow-up">', 1, true))
+        assert.falsy(html:find('<wa-icon name="arrow-up">', 1, true))
         assert.truthy(html:find('<wa-breadcrumb-item>Collection of Repositories</wa-breadcrumb-item>', 1, true))
     end)
 
