@@ -47,27 +47,65 @@ document.addEventListener("wa-lazy-load", (event) => {
 // is left stuck forever. Setting the "loading" property directly ends it
 // regardless of whether any children actually got appended.
 document.addEventListener("htmx:after:swap", (event) => {
-    if (event.target.hasAttribute?.("lazy")) {
-        event.target.removeAttribute("lazy");
-        event.target.loading = false;
-
+    // Covers a directory's own content finishing loading, whether that was
+    // triggered by a real chevron click (lazy="true" -> wa-lazy-load), an
+    // on-path entry's own hx-trigger="load" auto-firing, or the nav tree's
+    // own root-level population -- event.target is either a
+    // "wa-tree-item.dir" or the "svn-nav" tree itself in every such case,
+    // and both always sit inside (or, for the tree itself, at the root of)
+    // ".svn-nav", so a single ancestor check covers all of them uniformly.
+    // Never fires for main's own copies: their hx-trigger="wa-lazy-load"
+    // never actually fires there (no chevron is ever shown, since they're
+    // never marked lazy and never on-path), so this swap target never
+    // occurs for them, and main's own tree doesn't carry the "svn-nav"
+    // class anyway.
+    if (event.target.closest?.(".svn-nav")) {
         // wa-tree-item shows its expand chevron based on actually having
-        // child wa-tree-item elements, regardless of their own visibility --
-        // but the nav tree only ever wants to browse folders (files/updir
-        // are hidden via CSS, see wa-tree.svn-nav .file/.updir above), so a
-        // folder containing only files (or nothing at all) would otherwise
-        // still show a chevron that reveals nothing when clicked. Setting
-        // "isLeaf" directly (a real, settable property, not just a computed
-        // one) covers both cases uniformly, regardless of whether anything
-        // was actually appended.
+        // child wa-tree-item elements, regardless of their own visibility
+        // -- but the nav tree only ever wants to browse folders
+        // (files/updir are hidden via CSS, see wa-tree.svn-nav
+        // .file/.updir above), so a folder containing only files (or
+        // nothing at all) would otherwise still show a chevron that
+        // reveals nothing when clicked.
         event.target.querySelectorAll(":scope > wa-tree-item:not(.dir)").forEach((child) => child.remove());
 
+        // hx-trigger="load" is dir.mustache's own on-path marker (set
+        // server-side; see "on_path" in ENTRY_CONTEXT_BUILDERS.dir) --
+        // reading it back here, rather than templating a separate
+        // "expanded" attribute too, keeps on-path-ness expressed in
+        // exactly one place. Either way this sets "expanded"/"lazy" as a
+        // real JS property, never relying on a static HTML attribute
+        // alone: confirmed via a real browser that an "expanded" attribute
+        // present in the server-rendered markup itself can still end up
+        // visually collapsed somewhere in this actual htmx-driven
+        // insert-then-self-fetch flow (not reproducible from a plain,
+        // non-htmx element in isolation).
         const dirChildren = event.target.querySelectorAll(":scope > wa-tree-item.dir");
-        dirChildren.forEach((child) => { child.lazy = true; });
-        event.target.isLeaf = dirChildren.length === 0;
-    } else if (event.target.classList?.contains("svn-nav")) {
-        event.target.querySelectorAll(":scope > wa-tree-item:not(.dir)").forEach((child) => child.remove());
-        event.target.querySelectorAll(":scope > wa-tree-item.dir").forEach((child) => { child.lazy = true; });
+        dirChildren.forEach((child) => {
+            if (child.getAttribute("hx-trigger") === "load") {
+                child.expanded = true;
+            } else {
+                child.lazy = true;
+            }
+        });
+
+        // "lazy"/"loading"/"isLeaf" are only meaningful on a wa-tree-item
+        // itself, not on the root <wa-tree> (the "svn-nav" branch of this
+        // same check, i.e. the tree's own initial population) --
+        // wa-tree-item's own "loading" state (the spinner shown while
+        // lazy) is separate from the "lazy" attribute and only clears once
+        // the item actually observes its children change; when the
+        // expanded directory is empty, hx-select matches nothing, so
+        // beforeend appends zero nodes and "loading" (confirmed via
+        // aria-busy) would otherwise be left stuck forever. Setting
+        // "loading"/"isLeaf" directly, as real settable properties rather
+        // than just computed ones, covers both regardless of whether
+        // anything was actually appended.
+        if (event.target.matches?.("wa-tree-item.dir")) {
+            event.target.removeAttribute("lazy");
+            event.target.loading = false;
+            event.target.isLeaf = dirChildren.length === 0;
+        }
     }
 });
 </script>
@@ -151,7 +189,7 @@ wa-tree-item a {
 </wa-breadcrumb>
 </nav>
 <nav slot="navigation">
-<wa-tree class="svn-nav" hx-get="." hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">
+<wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">
 </wa-tree>
 </nav>
 <div class="svn-main">

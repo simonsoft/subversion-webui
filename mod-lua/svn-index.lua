@@ -92,6 +92,28 @@ local function escape_html(value)
                  :gsub("'", "&#39;"))
 end
 
+-- Strips a full URL (e.g. htmx's "HX-Current-URL" request header, which
+-- mirrors the browser's own location.href) down to just its path, for
+-- comparing against this filter's own path-only hrefs -- drops the
+-- scheme://host[:port] prefix and any trailing query string/fragment.
+local function url_path(url)
+    local path = url:match("^%a[%w+.-]*://[^/]*(/.*)$") or url
+
+    return path:match("^([^?#]*)")
+end
+
+-- htmx resolves the "HX-Target" request header to "<tagname>#<id>" when the
+-- swap target has an id, or just "<tagname>" when it doesn't (confirmed via
+-- a real browser). Every template here gives an id only to the element
+-- meant to receive a full "navigate to a new folder" swap; in-place
+-- expansion targets (hx-target="this") are deliberately never given one.
+-- Checking for the presence of "#" rather than hardcoding a specific
+-- "<tagname>#<id>" string keeps this independent of which template is
+-- active or what its swap target happens to be named.
+local function is_named_swap_target(hx_target)
+    return hx_target ~= nil and hx_target:find("#", 1, true) ~= nil
+end
+
 -- Builds the breadcrumb trail for a request inside a repository (has_base):
 -- one crumb for the repo root (`base`) followed by one per `path` segment,
 -- each linked via a plain "../" chain -- these are real page navigations,
@@ -163,14 +185,35 @@ local ENTRY_CONTEXT_BUILDERS = {
         }
     end,
 
-    dir = function(attr, base_href)
+    -- nav_target_path (the path portion of htmx's "HX-Current-URL" request
+    -- header, only ever computed for nav's own requests -- see the
+    -- "nav_target_path" comment in output_filter()) is nil for every other
+    -- request, so "on_path" is naturally false/omitted everywhere else,
+    -- including every "repo" entry (aliased below): a repo's own hx_href
+    -- is never a prefix match unless the request is literally for the
+    -- Collection-of-Repositories page itself, which compares against a
+    -- *shorter* path that can't "start with" a longer one.
+    dir = function(attr, base_href, nav_target_path, r)
         local name = (attr.name or attr.href or ""):gsub("/$", "")
         local href = attr.href or "#"
+
+        -- "on_path" below is a prefix check that relies on every directory
+        -- href ending in "/" to avoid false-matching a sibling with a
+        -- shared prefix (e.g. "trunk" vs "trunk-extra") -- warn loudly if
+        -- mod_dav_svn ever emits one without it, since that assumption
+        -- would otherwise fail silently.
+        if href:sub(-1) ~= "/" then
+            r:warn("svn-index: dir href does not end with '/': " .. tostring(href))
+        end
+
+        local hx_href = base_href .. href
+        local on_path = nav_target_path and nav_target_path:sub(1, #hx_href) == hx_href
 
         return {
             name = escape_html(name),
             href = escape_html(href),
-            hx_href = escape_html(base_href .. href)
+            hx_href = escape_html(hx_href),
+            on_path = on_path
         }
     end
 }
@@ -182,7 +225,7 @@ local ENTRY_CONTEXT_BUILDERS = {
 -- same context shape as "dir".
 ENTRY_CONTEXT_BUILDERS.repo = ENTRY_CONTEXT_BUILDERS.dir
 
-local function render_entry(element, attr, base_href, templates)
+local function render_entry(element, attr, base_href, templates, nav_target_path, r)
     local build_context = ENTRY_CONTEXT_BUILDERS[element]
     local entry_template = templates.entries[element]
 
@@ -190,7 +233,7 @@ local function render_entry(element, attr, base_href, templates)
         return nil
     end
 
-    return lustache:render(entry_template, build_context(attr, base_href))
+    return lustache:render(entry_template, build_context(attr, base_href, nav_target_path, r))
 end
 
 function output_filter(r)
@@ -249,6 +292,25 @@ function output_filter(r)
         r:info("HX-Current-URL: " .. tostring(r.headers_in["HX-Current-URL"]))
     end
 
+    -- Powers nav's auto-expand-to-current-folder: since location.href never
+    -- actually changes during nav's own background fetches (only real page
+    -- loads do that), every request in the chain sees the same
+    -- HX-Current-URL -- the one real target the whole cascade is walking
+    -- toward -- so each one can independently decide, from this alone,
+    -- whether any of its own entries sit on the path to it (see "on_path"
+    -- in ENTRY_CONTEXT_BUILDERS.dir). Excluded for main's own
+    -- content-swap request (a named swap target, the same distinction
+    -- HX-Push-Url below also uses) -- otherwise, browsing several
+    -- levels deep via main and then clicking a *shallower* ancestor's
+    -- label in nav would see HX-Current-URL still pointing at the deeper
+    -- (pre-navigation) URL and could wrongly mark one of main's own,
+    -- supposedly-always-flat entries as on the path.
+    local nav_target_path = nil
+
+    if r.headers_in and r.headers_in["HX-Current-URL"] and not is_named_swap_target(r.headers_in["HX-Target"]) then
+        nav_target_path = url_path(r.headers_in["HX-Current-URL"])
+    end
+
     -- Set these before emitting any transformed response content.
     r.content_type = "text/html; charset=utf-8"
 
@@ -258,21 +320,19 @@ function output_filter(r)
     -- The original entity validator no longer describes the transformed body.
     r.headers_out["ETag"] = nil
 
-    -- Only the wa-page template's main-content-swap request (dir.mustache's
-    -- label, hx-target="#svn-index") represents an actual "navigate to a
-    -- new folder" -- the nav tree's own in-place lazy expansion
-    -- (hx-target="this", an element with no id) never changes what main is
-    -- showing, so it must not push a new URL. htmx sends the resolved
-    -- target as "<tagname>#<id>", not a bare id (confirmed via a real
-    -- browser), hence matching "wa-tree#svn-index" rather than "svn-index".
-    -- Returning this as a response header, rather than "hx-push-url" on the
-    -- template, keeps the decision here where the true swap target (from
-    -- the incoming request) is actually known. (The breadcrumb itself
-    -- doesn't need this: dir.mustache's label carries its own
+    -- Only a main-content-swap request (dir.mustache's label, targeting a
+    -- named element such as wa-page's "#svn-index") represents an actual
+    -- "navigate to a new folder" -- the nav tree's own in-place lazy
+    -- expansion (hx-target="this", an element with no id) never changes
+    -- what main is showing, so it must not push a new URL. Returning this
+    -- as a response header, rather than "hx-push-url" on the template,
+    -- keeps the decision here where the true swap target (from the
+    -- incoming request) is actually known. (The breadcrumb itself doesn't
+    -- need this: dir.mustache's label carries its own
     -- hx-select-oob="#subheader" directly, so only that specific element's
     -- own requests ever pull the breadcrumb along -- nav's own lazy-load
     -- fetch is a different element entirely and never has that attribute.)
-    if r.headers_in and r.headers_in["HX-Target"] == "wa-tree#svn-index" then
+    if r.headers_in and is_named_swap_target(r.headers_in["HX-Target"]) then
         r.headers_out["HX-Push-Url"] = base_href
     end
 
@@ -295,7 +355,13 @@ function output_filter(r)
             svn_version = svn.version,
             svn_href = svn.href,
             breadcrumbs = breadcrumbs,
-            root_href = has_base and escape_html(string.rep("../", segment_count + 1)) or ""
+            root_href = has_base and escape_html(string.rep("../", segment_count + 1)) or "",
+            -- nav starts at the repo root (breadcrumbs[1] is that crumb --
+            -- lustache can't reach it directly as {{breadcrumbs.1.href}},
+            -- since breadcrumbs is an integer-indexed array, not
+            -- string-keyed), falling back to today's "." on the
+            -- Collection-of-Repositories listing (no repo to root at).
+            nav_root_path = has_base and breadcrumbs[1].href or "."
         }
     end
 
@@ -357,7 +423,7 @@ function output_filter(r)
                 element = "repo"
             end
 
-            local html = render_entry(element, attr, base_href, templates)
+            local html = render_entry(element, attr, base_href, templates, nav_target_path, r)
 
             if html then
                 rendered_count = rendered_count + 1

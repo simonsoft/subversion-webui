@@ -34,6 +34,7 @@ local function make_request(uri, subprocess_env, headers_in)
 
     r.info = logger("info")
     r.debug = logger("debug")
+    r.warn = logger("warn")
     r.err = logger("err")
 
     return r
@@ -335,6 +336,26 @@ describe("svn-index output_filter", function()
         assert.falsy(html:find('<li class="repo"', 1, true))
     end)
 
+    it("warns via r:warn when a <dir> href doesn't end with '/', since on_path's prefix check relies on that", function()
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext" />
+</index>
+</svn>]]
+        })
+
+        local warning = nil
+        for _, entry in ipairs(r.logs) do
+            if entry.level == "warn" then
+                warning = entry.msg
+            end
+        end
+
+        assert.truthy(warning)
+        assert.truthy(warning:find("arbortext", 1, true))
+    end)
+
     it("renders the wa-page shell when SVN_INDEX_TEMPLATE is \"wa-page\", with entries unchanged", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
@@ -507,14 +528,19 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('event.target.isLeaf = dirChildren.length === 0', 1, true))
     end)
 
-    it("marks nav's own newly-fetched dir entries lazy, both at the root and nested under an already-expanded item", function()
+    it("marks nav's own newly-fetched dir entries lazy, both at the root and nested under an already-expanded item -- except ones already on the auto-expand path", function()
         -- dir.mustache never sets "lazy" itself (see the test above) -- nav
-        -- opts in after the fact instead, in two places: the root-level
-        -- "svn-nav" branch (the tree's own initial hx-get="." population)
-        -- and the existing "lazy" branch (a nested item's own children,
-        -- once it finishes loading). Both need to mark their *own* newly
-        -- fetched .dir children lazy=true so each one gets its own future
-        -- expand capability in turn.
+        -- opts in after the fact instead, via a single unified check
+        -- covering both the root-level population (event.target is the
+        -- "svn-nav" tree itself) and a nested item's own children (once it
+        -- finishes loading), since both sit inside/at ".svn-nav". It marks
+        -- newly fetched .dir children lazy=true so each one gets its own
+        -- future expand capability in turn -- except a child whose own
+        -- hx-trigger is "load" (i.e. is itself on the auto-expand path,
+        -- server-rendered that way -- see "on_path" in
+        -- ENTRY_CONTEXT_BUILDERS.dir), which must be marked expanded=true
+        -- instead: confirmed via a real browser that marking it lazy=true
+        -- too visually collapses it, undoing its own auto-expansion.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -523,12 +549,10 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('event.target.classList?.contains("svn-nav")', 1, true))
-        assert.truthy(html:find('dirChildren.forEach((child) => { child.lazy = true; })', 1, true))
-        assert.truthy(html:find(
-            ':scope > wa-tree-item.dir").forEach((child) => { child.lazy = true; })',
-            1, true
-        ))
+        assert.truthy(html:find('if (event.target.closest?.(".svn-nav")) {', 1, true))
+        assert.truthy(html:find('if (child.getAttribute("hx-trigger") === "load") {', 1, true))
+        assert.truthy(html:find("child.expanded = true;", 1, true))
+        assert.truthy(html:find("child.lazy = true;", 1, true))
     end)
 
     it("stops a nested lazy-load from also re-triggering already-loaded ancestor tree items", function()
@@ -566,14 +590,18 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<wa-tree class="svn-index" id="svn-index">', 1, true))
     end)
 
-    it("wires the wa-page navigation tree itself to load this directory's own listing, with no top-level wrapper item", function()
+    it("wires the wa-page navigation tree itself to load the repo root's own listing, with no top-level wrapper item", function()
         -- The nav tree used to wrap the fetched entries in a permanently
         -- "expanded" item representing the current directory -- but that
         -- was purely redundant (the breadcrumb already shows where you
         -- are), and it cost an extra indentation level for nothing. Putting
         -- the hx-get/hx-trigger/hx-select directly on <wa-tree> itself, with
         -- hx-swap="innerHTML" replacing its own content, makes the fetched
-        -- entries direct (top-level) children instead.
+        -- entries direct (top-level) children instead. It now always starts
+        -- at the *repo root* (nav_root_path, "../" for this one-segment
+        -- fixture) rather than the current directory ("."), so ancestors
+        -- above the current folder are visible too, not just its own
+        -- children.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -583,7 +611,123 @@ describe("svn-index output_filter", function()
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find(
-            '<wa-tree class="svn-nav" hx-get="." hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">',
+            '<wa-tree class="svn-nav" hx-get="../" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">',
+            1, true
+        ))
+    end)
+
+    it("nav_root_path resolves to \".\"-equivalent both on the Collection of Repositories listing and at the repo root itself", function()
+        -- Not has_base (the Collection listing) falls back to the literal
+        -- "." (today's behavior, unchanged). At the repo root itself
+        -- (has_base true, zero path segments), nav_root_path is instead
+        -- breadcrumbs[1].href with zero segments -- an empty string, which
+        -- resolves identically to "." (both mean "this same directory"),
+        -- just via a different literal.
+        local collection_html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index path="Collection of Repositories">
+<dir name="demo1" href="demo1/" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(collection_html:find('hx-get="."', 1, true))
+
+        local repo_root_html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(repo_root_html:find('hx-get=""', 1, true))
+    end)
+
+    it("marks only the entry on the path to HX-Current-URL as expanded/load-triggered, leaving siblings unchanged", function()
+        -- Nav's own auto-expand-to-current-folder feature: HX-Current-URL
+        -- reflects the browser's actual target throughout the whole
+        -- cascade (location.href never changes during nav's own background
+        -- fetches), so each request can independently decide, from that
+        -- alone, whether one of its own entries sits on the path to it --
+        -- no query-string state threading needed. HX-Target="wa-tree"
+        -- marks this as one of nav's own requests (see the main-swap
+        -- exclusion test below).
+        local fixture = {
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name="trunk" href="trunk/" />
+<dir name="branches" href="branches/" />
+</index>
+</svn>]]
+        }
+
+        local html = run_filter(
+            fixture, "/svn/demo1/", { SVN_INDEX_TEMPLATE = "wa-page" },
+            { ["HX-Current-URL"] = "http://host/svn/demo1/trunk/arbortext/", ["HX-Target"] = "wa-tree" }
+        )
+
+        assert.truthy(html:find(
+            '<wa-tree-item class="dir" hx-get="/svn/demo1/trunk/" hx-trigger="load"',
+            1, true
+        ))
+        assert.truthy(html:find(
+            '<wa-tree-item class="dir" hx-get="/svn/demo1/branches/" hx-trigger="wa-lazy-load"',
+            1, true
+        ))
+    end)
+
+    it("marks the final target directory itself on-path too, not just its strict ancestors", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name="trunk" href="trunk/" />
+</index>
+</svn>]]
+        }, "/svn/demo1/", { SVN_INDEX_TEMPLATE = "wa-page" },
+            { ["HX-Current-URL"] = "http://host/svn/demo1/trunk/", ["HX-Target"] = "wa-tree" }
+        )
+
+        assert.truthy(html:find(
+            '<wa-tree-item class="dir" hx-get="/svn/demo1/trunk/" hx-trigger="load"',
+            1, true
+        ))
+    end)
+
+    it("never marks an entry on-path for main's own content-swap request, even with a matching HX-Current-URL", function()
+        -- The edge case this whole is_named_swap_target guard exists for:
+        -- without it, an entry in main's response (dir.mustache is the
+        -- exact same shared markup) could get incorrectly marked
+        -- load-triggered just because HX-Current-URL happens to still point
+        -- somewhere below it (sent at request time, before this response's
+        -- own HX-Push-Url takes effect) -- main must always stay flat.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name="trunk" href="trunk/" />
+</index>
+</svn>]]
+        }, "/svn/demo1/", { SVN_INDEX_TEMPLATE = "wa-page" },
+            { ["HX-Current-URL"] = "http://host/svn/demo1/trunk/arbortext/", ["HX-Target"] = "wa-tree#svn-index" }
+        )
+
+        assert.truthy(html:find(
+            '<wa-tree-item class="dir" hx-get="/svn/demo1/trunk/" hx-trigger="wa-lazy-load"',
+            1, true
+        ))
+    end)
+
+    it("never marks anything on-path without HX-Current-URL at all, e.g. a plain non-htmx page load", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name="trunk" href="trunk/" />
+</index>
+</svn>]]
+        }, "/svn/demo1/", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(
+            '<wa-tree-item class="dir" hx-get="/svn/demo1/trunk/" hx-trigger="wa-lazy-load"',
             1, true
         ))
     end)
@@ -593,11 +737,13 @@ describe("svn-index output_filter", function()
         -- target as "<tagname>#<id>" (confirmed via a real browser), not a
         -- bare id -- dir.mustache's label targets "#svn-index"
         -- (hx-target="#svn-index"), so that specific request arrives as
-        -- "wa-tree#svn-index". Only *that* request represents an actual
-        -- "navigate to a new folder", so only it should push a new URL; the
-        -- nav tree's own lazy expansion targets "this" (an element with no
-        -- id), which htmx sends as just "wa-tree-item" -- and must not
-        -- push anything, since it never changes what main is showing.
+        -- "wa-tree#svn-index": a named target, per is_named_swap_target.
+        -- Only *that* request represents an actual "navigate to a new
+        -- folder", so only it should push a new URL; the nav tree's own
+        -- lazy expansion targets "this" (an element with no id), which
+        -- htmx sends as just "wa-tree-item" -- an unnamed target, so it
+        -- must not push anything, since it never changes what main is
+        -- showing.
         local fixture = {
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/arbortext/" base="myrepo">
