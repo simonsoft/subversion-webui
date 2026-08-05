@@ -336,7 +336,7 @@ describe("svn-index output_filter", function()
         assert.falsy(html:find('<li class="repo"', 1, true))
     end)
 
-    it("warns via r:warn when a <dir> href doesn't end with '/', since on_path's prefix check relies on that", function()
+    it("warns via r:warn when a <dir> href doesn't end with '/', since is_target_any's prefix check relies on that", function()
         local _, r = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -537,7 +537,7 @@ describe("svn-index output_filter", function()
         -- newly fetched .dir children lazy=true so each one gets its own
         -- future expand capability in turn -- except a child whose own
         -- hx-trigger is "load" (i.e. is itself on the auto-expand path,
-        -- server-rendered that way -- see "on_path" in
+        -- server-rendered that way -- see "is_target_any" in
         -- ENTRY_CONTEXT_BUILDERS.dir), which must be marked expanded=true
         -- instead: confirmed via a real browser that marking it lazy=true
         -- too visually collapses it, undoing its own auto-expansion.
@@ -689,7 +689,31 @@ describe("svn-index output_filter", function()
         )
 
         assert.truthy(html:find(
+            '<wa-tree-item class="dir" selected hx-get="/svn/demo1/trunk/" hx-trigger="load"',
+            1, true
+        ))
+    end)
+
+    it("marks only the exact target directory (not a strict ancestor) as selected", function()
+        local fixture = {
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name="trunk" href="trunk/" />
+</index>
+</svn>]]
+        }
+
+        local html = run_filter(
+            fixture, "/svn/demo1/", { SVN_INDEX_TEMPLATE = "wa-page" },
+            { ["HX-Current-URL"] = "http://host/svn/demo1/trunk/arbortext/", ["HX-Target"] = "wa-tree" }
+        )
+
+        assert.truthy(html:find(
             '<wa-tree-item class="dir" hx-get="/svn/demo1/trunk/" hx-trigger="load"',
+            1, true
+        ))
+        assert.falsy(html:find(
+            '<wa-tree-item class="dir" selected',
             1, true
         ))
     end)

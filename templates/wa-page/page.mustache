@@ -69,17 +69,20 @@ document.addEventListener("htmx:after:swap", (event) => {
         // reveals nothing when clicked.
         event.target.querySelectorAll(":scope > wa-tree-item:not(.dir)").forEach((child) => child.remove());
 
-        // hx-trigger="load" is dir.mustache's own on-path marker (set
-        // server-side; see "on_path" in ENTRY_CONTEXT_BUILDERS.dir) --
-        // reading it back here, rather than templating a separate
-        // "expanded" attribute too, keeps on-path-ness expressed in
-        // exactly one place. Either way this sets "expanded"/"lazy" as a
-        // real JS property, never relying on a static HTML attribute
-        // alone: confirmed via a real browser that an "expanded" attribute
-        // present in the server-rendered markup itself can still end up
-        // visually collapsed somewhere in this actual htmx-driven
-        // insert-then-self-fetch flow (not reproducible from a plain,
-        // non-htmx element in isolation).
+        // hx-trigger="load" is dir.mustache's own is_target_any marker (set
+        // server-side; see ENTRY_CONTEXT_BUILDERS.dir) -- reading it back
+        // here, rather than templating a separate "expanded" attribute
+        // too, keeps that expressed in exactly one place. Either way this
+        // sets "expanded"/"lazy" as a real JS property, never relying on a
+        // static HTML attribute alone: confirmed via a real browser that
+        // an "expanded" attribute present in the server-rendered markup
+        // itself can still end up visually collapsed somewhere in this
+        // actual htmx-driven insert-then-self-fetch flow (not
+        // reproducible from a plain, non-htmx element in isolation).
+        // "selected" marks dir.mustache's own is_target_leaf match (see
+        // ENTRY_CONTEXT_BUILDERS.dir) -- unlike "expanded" above, the
+        // static attribute alone renders correctly here, confirmed via a
+        // real browser, so it needs no JS re-assertion.
         const dirChildren = event.target.querySelectorAll(":scope > wa-tree-item.dir");
         dirChildren.forEach((child) => {
             if (child.getAttribute("hx-trigger") === "load") {

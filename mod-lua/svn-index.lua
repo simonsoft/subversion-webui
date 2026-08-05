@@ -188,32 +188,44 @@ local ENTRY_CONTEXT_BUILDERS = {
     -- nav_target_path (the path portion of htmx's "HX-Current-URL" request
     -- header, only ever computed for nav's own requests -- see the
     -- "nav_target_path" comment in output_filter()) is nil for every other
-    -- request, so "on_path" is naturally false/omitted everywhere else,
-    -- including every "repo" entry (aliased below): a repo's own hx_href
-    -- is never a prefix match unless the request is literally for the
-    -- Collection-of-Repositories page itself, which compares against a
+    -- request, so "is_target_any" is naturally false/omitted everywhere
+    -- else, including every "repo" entry (aliased below): a repo's own
+    -- hx_href is never a prefix match unless the request is literally for
+    -- the Collection-of-Repositories page itself, which compares against a
     -- *shorter* path that can't "start with" a longer one.
     dir = function(attr, base_href, nav_target_path, r)
         local name = (attr.name or attr.href or ""):gsub("/$", "")
         local href = attr.href or "#"
 
-        -- "on_path" below is a prefix check that relies on every directory
-        -- href ending in "/" to avoid false-matching a sibling with a
-        -- shared prefix (e.g. "trunk" vs "trunk-extra") -- warn loudly if
-        -- mod_dav_svn ever emits one without it, since that assumption
-        -- would otherwise fail silently.
+        -- "is_target_any" below is a prefix check that relies on every
+        -- directory href ending in "/" to avoid false-matching a sibling
+        -- with a shared prefix (e.g. "trunk" vs "trunk-extra") -- warn
+        -- loudly if mod_dav_svn ever emits one without it, since that
+        -- assumption would otherwise fail silently.
         if href:sub(-1) ~= "/" then
             r:warn("svn-index: dir href does not end with '/': " .. tostring(href))
         end
 
         local hx_href = base_href .. href
-        local on_path = nav_target_path and nav_target_path:sub(1, #hx_href) == hx_href
+
+        -- Three mutually-informing views of the same relationship between
+        -- this entry and nav_target_path: "is_target_any" (a strict
+        -- ancestor of the target, or the target itself -- i.e. "should
+        -- this be walked open at all"), "is_target_leaf" (an exact match
+        -- -- i.e. "is this the one nav's current selection points at"),
+        -- and "is_target_ancestor" (on the path but not the target itself
+        -- -- i.e. "should this be opened, but isn't itself the selection").
+        local is_target_any = nav_target_path and nav_target_path:sub(1, #hx_href) == hx_href
+        local is_target_leaf = nav_target_path == hx_href
+        local is_target_ancestor = is_target_any and not is_target_leaf
 
         return {
             name = escape_html(name),
             href = escape_html(href),
             hx_href = escape_html(hx_href),
-            on_path = on_path
+            is_target_any = is_target_any,
+            is_target_leaf = is_target_leaf,
+            is_target_ancestor = is_target_ancestor
         }
     end
 }
@@ -297,8 +309,8 @@ function output_filter(r)
     -- loads do that), every request in the chain sees the same
     -- HX-Current-URL -- the one real target the whole cascade is walking
     -- toward -- so each one can independently decide, from this alone,
-    -- whether any of its own entries sit on the path to it (see "on_path"
-    -- in ENTRY_CONTEXT_BUILDERS.dir). Excluded for main's own
+    -- whether any of its own entries sit on the path to it (see
+    -- "is_target_any" in ENTRY_CONTEXT_BUILDERS.dir). Excluded for main's own
     -- content-swap request (a named swap target, the same distinction
     -- HX-Push-Url below also uses) -- otherwise, browsing several
     -- levels deep via main and then clicking a *shallower* ancestor's
