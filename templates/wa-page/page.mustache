@@ -145,12 +145,27 @@ header[slot="header"] a {
 }
 
 nav[slot="subheader"] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--wa-space-m);
     padding: var(--wa-space-m);
     border-block-end: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
 }
 
 nav[slot="subheader"] wa-breadcrumb {
     font-size: var(--wa-font-size-m);
+}
+
+/* Pure-CSS show/hide, no JS: wa-switch exposes its checked state via the
+   standard custom-element-internals ":state()" pseudo-class (confirmed via
+   a real browser -- unlike its "checked" *attribute*, which does NOT
+   reflect back when toggled by a user click, only on initial render), so
+   "#subheader:has(...)" can react live to the switch without any listener
+   at all. ".svn-main" is #subheader's own sibling (both direct children of
+   <wa-page>), so the general sibling combinator reaches it directly. */
+#subheader:has(wa-switch:not(:state(checked))) ~ .svn-main .dir {
+    display: none;
 }
 
 footer[slot="footer"] {
@@ -195,6 +210,7 @@ wa-tree-item a {
 {{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#subheader" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
 {{/breadcrumbs}}
 </wa-breadcrumb>
+<wa-switch>Show folders</wa-switch>
 </nav>
 <nav slot="navigation">
 <wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">
