@@ -373,9 +373,11 @@ function output_filter(r)
     -- keeps the decision here where the true swap target (from the
     -- incoming request) is actually known. (The breadcrumb itself doesn't
     -- need this: dir.mustache's label carries its own
-    -- hx-select-oob="#subheader" directly, so only that specific element's
-    -- own requests ever pull the breadcrumb along -- nav's own lazy-load
-    -- fetch is a different element entirely and never has that attribute.)
+    -- hx-select-oob="#breadcrumb" directly, so only that specific
+    -- element's own requests ever pull the breadcrumb along -- nav's own
+    -- lazy-load fetch is a different element entirely and never has that
+    -- attribute. Scoped to "#breadcrumb", not the whole "#subheader", so
+    -- this swap leaves the "Show folders" wa-switch's own state alone.)
     if r.headers_in and is_named_swap_target(r.headers_in["HX-Target"]) then
         r.headers_out["HX-Push-Url"] = request_href
     end

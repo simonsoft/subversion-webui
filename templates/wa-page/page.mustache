@@ -205,9 +205,9 @@ wa-tree-item a {
 </div>
 </header>
 <nav slot="subheader" id="subheader">
-<wa-breadcrumb>
+<wa-breadcrumb id="breadcrumb">
 <span slot="separator">/</span>
-{{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#subheader" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
+{{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
 {{/breadcrumbs}}
 </wa-breadcrumb>
 <wa-switch>Show folders</wa-switch>
