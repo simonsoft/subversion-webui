@@ -12,10 +12,17 @@ local ROOT = spec_dir() .. "../"
 
 dofile(ROOT .. "mod-lua/svn-index.lua")
 
-local function make_request(uri, subprocess_env, headers_in)
+-- unparsed_uri defaults to mirroring `uri` -- correct for every existing
+-- fixture, which only ever uses plain ASCII paths where the encoded
+-- (r.unparsed_uri) and decoded (r.uri) forms are identical anyway. Pass it
+-- explicitly to test percent-encoding-sensitive behavior (see the
+-- "request_href" note in output_filter for why the real filter reads
+-- r.unparsed_uri, not r.uri).
+local function make_request(uri, subprocess_env, headers_in, unparsed_uri)
     local r = {
         method = "GET",
         uri = uri or "/svn/demo1/",
+        unparsed_uri = unparsed_uri or uri or "/svn/demo1/",
         content_type = "text/xml; charset=utf-8",
         subprocess_env = subprocess_env or {},
         headers_in = headers_in or {},
@@ -46,8 +53,8 @@ end
 -- (that first yield is the handshake that tells the runtime to fetch
 -- input) -- pre-populating it before the first resume would hide a script
 -- that forgets to yield before ever touching `bucket`.
-local function run_filter(chunks, uri, subprocess_env, headers_in)
-    local r = make_request(uri, subprocess_env, headers_in)
+local function run_filter(chunks, uri, subprocess_env, headers_in, unparsed_uri)
+    local r = make_request(uri, subprocess_env, headers_in, unparsed_uri)
     local co = coroutine.create(function()
         return output_filter(r)
     end)
@@ -334,6 +341,36 @@ describe("svn-index output_filter", function()
 
         assert.truthy(html:find('<li class="dir">', 1, true))
         assert.falsy(html:find('<li class="repo"', 1, true))
+    end)
+
+    it("builds a consistently percent-encoded hx_href for entries under a directory whose own name needed encoding", function()
+        -- mod_dav_svn's own XML "href" attribute is always percent-encoded
+        -- (e.g. "140%20Securing/"). request_href (the prefix every entry's
+        -- hx_href is anchored to) must be too -- built from
+        -- "r.unparsed_uri" (the raw, still-encoded request URI), not
+        -- "r.uri" (Apache's own *decoded* parsed path, which for a
+        -- directory like "140 Maintenance and Service" would otherwise
+        -- inject a literal space into the very same hx_href that also
+        -- contains "%20" elsewhere -- exactly the inconsistency a real
+        -- browser hit, reproduced here with mismatched uri/unparsed_uri).
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/graphics/140 Maintenance and Service/" base="demo3">
+<dir name="140 Securing" href="140%20Securing/" />
+</index>
+</svn>]]
+        },
+            "/svn/demo3/graphics/140 Maintenance and Service/",
+            { SVN_INDEX_TEMPLATE = "wa-page" },
+            {},
+            "/svn/demo3/graphics/140%20Maintenance%20and%20Service/"
+        )
+
+        assert.truthy(html:find(
+            'hx-get="/svn/demo3/graphics/140%20Maintenance%20and%20Service/140%20Securing/"',
+            1, true
+        ))
+        assert.falsy(html:find(' Maintenance and Service/', 1, true))
     end)
 
     it("warns via r:warn when a <dir> href doesn't end with '/', since is_target_any's prefix check relies on that", function()

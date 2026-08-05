@@ -183,7 +183,7 @@ end
 -- where in the DOM the link sits, not against the directory the entry
 -- actually belongs to -- so a plain click (or hx-get, which has the exact
 -- same problem) on a twice-nested entry would resolve one level too
--- shallow. request_href (the request's own r.uri, which is correct
+-- shallow. request_href (this request's own URL, which is correct
 -- per-fragment since each expansion is a genuine HTTP request to its own
 -- directory) anchors both href and hx_href to an absolute path, so both
 -- work regardless of nesting depth. The original relative value is kept
@@ -305,8 +305,16 @@ function output_filter(r)
     local templates = load_template_set(template_type)
 
     -- Anchors every entry's href to this directory's own URL (see the note
-    -- above render_entry) instead of leaving them relative.
-    local request_href = tostring(r.uri or "")
+    -- above render_entry) instead of leaving them relative. Built from
+    -- "r.unparsed_uri" (the raw request URI as the client actually sent
+    -- it, still percent-encoded), not "r.uri" (Apache's own *decoded*
+    -- parsed path) -- confirmed via a real browser that mod_dav_svn's own
+    -- XML "href" attribute is percent-encoded (e.g. "140%20Securing/"), so
+    -- concatenating a decoded "r.uri" prefix onto one of those silently
+    -- produced a broken, inconsistently-encoded URL (literal spaces mixed
+    -- with "%20" in the very same hx_href) for any directory whose name
+    -- needs encoding.
+    local request_href = url_path(tostring(r.unparsed_uri or r.uri or ""))
 
     if request_href ~= "" and not request_href:match("/$") then
         request_href = request_href .. "/"
