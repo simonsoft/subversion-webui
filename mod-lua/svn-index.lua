@@ -115,17 +115,19 @@ local function is_named_swap_target(hx_target)
 end
 
 -- Builds the breadcrumb trail for a request inside a repository (has_base):
--- one crumb for the repo root (`base`) followed by one per `path` segment,
--- each linked via a plain "../" chain -- these are real page navigations,
--- not htmx fragments, so relative hrefs are correct regardless of how the
--- app is mounted or how deeply the current directory is nested. The final
--- crumb (the current location) is marked `last` so the template can render
--- it unlinked. On the SVNParentPath "Collection of Repositories" listing
--- (not has_base), `path` is just a label ("Collection of Repositories"),
--- not a real path, so it's rendered as a single unlinked crumb. Also
--- returns the total segment count, reused by the caller to compute
--- `root_href` (one level further up than the repo root).
-local function compute_breadcrumbs(path, base, has_base)
+-- one crumb for the repo root (`base`, marked "is_repo") followed by one
+-- per `path` segment (each marked "is_dir"), every one carrying an
+-- "hx_href" for htmx expansion (dir.mustache-style: swaps main content in
+-- place rather than a real page navigation). The final crumb (the current
+-- location) is marked `last` so the template can render it unlinked --
+-- clicking it would just re-fetch what's already showing. On the
+-- SVNParentPath "Collection of Repositories" listing (not has_base), `path`
+-- is just a label ("Collection of Repositories"), not a real path, so it's
+-- rendered as a single unlinked crumb (neither "is_repo" nor "is_dir", so
+-- the template gives it no icon either). Also returns the total segment
+-- count, reused by the caller to compute `root_href` (one level further up
+-- than the repo root).
+local function compute_breadcrumbs(path, base, has_base, request_href)
     if not has_base then
         return { { name = escape_html(path), last = true } }, 0
     end
@@ -137,14 +139,36 @@ local function compute_breadcrumbs(path, base, has_base)
     end
 
     local total = #segments
+
+    -- Every crumb's own "hx_href" is built from request_href's own segments
+    -- (the same URL-encoded coordinate space every other hx_href in this
+    -- file already uses -- see the note above render_entry) rather than by
+    -- re-deriving it from `path`'s own text: sidesteps any mismatch
+    -- between mod_dav_svn's XML `path` attribute and the request URI's own
+    -- percent-encoding for segments containing spaces/Unicode/reserved
+    -- characters. `total` is used only as a segment *count* here, never
+    -- compared character-for-character against request_href.
+    local request_segments = {}
+
+    for segment in request_href:gmatch("[^/]+") do
+        request_segments[#request_segments + 1] = segment
+    end
+
+    local repo_root_segment_count = #request_segments - total
+
+    local function href_through(extra_segment_count)
+        return "/" .. table.concat(request_segments, "/", 1, repo_root_segment_count + extra_segment_count) .. "/"
+    end
+
     local breadcrumbs = {
-        { name = escape_html(base), href = escape_html(string.rep("../", total)), last = total == 0 }
+        { name = escape_html(base), hx_href = escape_html(href_through(0)), is_repo = true, last = total == 0 }
     }
 
     for i, segment in ipairs(segments) do
         breadcrumbs[#breadcrumbs + 1] = {
             name = escape_html(segment),
-            href = escape_html(string.rep("../", total - i)),
+            hx_href = escape_html(href_through(i)),
+            is_dir = true,
             last = i == total
         }
     end
@@ -159,29 +183,29 @@ end
 -- where in the DOM the link sits, not against the directory the entry
 -- actually belongs to -- so a plain click (or hx-get, which has the exact
 -- same problem) on a twice-nested entry would resolve one level too
--- shallow. base_href (the request's own r.uri, which is correct
+-- shallow. request_href (the request's own r.uri, which is correct
 -- per-fragment since each expansion is a genuine HTTP request to its own
 -- directory) anchors both href and hx_href to an absolute path, so both
 -- work regardless of nesting depth. The original relative value is kept
 -- available to templates as `href` in case it's ever needed, but the
 -- rendered anchor's href attribute should use the absolute `hx_href`.
 local ENTRY_CONTEXT_BUILDERS = {
-    updir = function(attr, base_href)
+    updir = function(attr, request_href)
         local href = attr.href or "../"
 
         return {
             href = escape_html(href),
-            hx_href = escape_html(base_href .. href)
+            hx_href = escape_html(request_href .. href)
         }
     end,
 
-    file = function(attr, base_href)
+    file = function(attr, request_href)
         local href = attr.href or "#"
 
         return {
             name = escape_html(attr.name or attr.href or ""),
             href = escape_html(href),
-            hx_href = escape_html(base_href .. href)
+            hx_href = escape_html(request_href .. href)
         }
     end,
 
@@ -193,7 +217,7 @@ local ENTRY_CONTEXT_BUILDERS = {
     -- hx_href is never a prefix match unless the request is literally for
     -- the Collection-of-Repositories page itself, which compares against a
     -- *shorter* path that can't "start with" a longer one.
-    dir = function(attr, base_href, nav_target_path, r)
+    dir = function(attr, request_href, nav_target_path, r)
         local name = (attr.name or attr.href or ""):gsub("/$", "")
         local href = attr.href or "#"
 
@@ -206,7 +230,7 @@ local ENTRY_CONTEXT_BUILDERS = {
             r:warn("svn-index: dir href does not end with '/': " .. tostring(href))
         end
 
-        local hx_href = base_href .. href
+        local hx_href = request_href .. href
 
         -- Three mutually-informing views of the same relationship between
         -- this entry and nav_target_path: "is_target_any" (a strict
@@ -237,7 +261,7 @@ local ENTRY_CONTEXT_BUILDERS = {
 -- same context shape as "dir".
 ENTRY_CONTEXT_BUILDERS.repo = ENTRY_CONTEXT_BUILDERS.dir
 
-local function render_entry(element, attr, base_href, templates, nav_target_path, r)
+local function render_entry(element, attr, request_href, templates, nav_target_path, r)
     local build_context = ENTRY_CONTEXT_BUILDERS[element]
     local entry_template = templates.entries[element]
 
@@ -245,7 +269,7 @@ local function render_entry(element, attr, base_href, templates, nav_target_path
         return nil
     end
 
-    return lustache:render(entry_template, build_context(attr, base_href, nav_target_path, r))
+    return lustache:render(entry_template, build_context(attr, request_href, nav_target_path, r))
 end
 
 function output_filter(r)
@@ -282,10 +306,10 @@ function output_filter(r)
 
     -- Anchors every entry's href to this directory's own URL (see the note
     -- above render_entry) instead of leaving them relative.
-    local base_href = tostring(r.uri or "")
+    local request_href = tostring(r.uri or "")
 
-    if base_href ~= "" and not base_href:match("/$") then
-        base_href = base_href .. "/"
+    if request_href ~= "" and not request_href:match("/$") then
+        request_href = request_href .. "/"
     end
 
     r:info(string.format(
@@ -345,7 +369,7 @@ function output_filter(r)
     -- own requests ever pull the breadcrumb along -- nav's own lazy-load
     -- fetch is a different element entirely and never has that attribute.)
     if r.headers_in and is_named_swap_target(r.headers_in["HX-Target"]) then
-        r.headers_out["HX-Push-Url"] = base_href
+        r.headers_out["HX-Push-Url"] = request_href
     end
 
     -- mod_dav_svn omits the rev/base attributes entirely (rather than
@@ -357,7 +381,7 @@ function output_filter(r)
     -- (where svn's default is just "{path}", unprefixed).
     local function template_context()
         local has_base = index.base ~= ""
-        local breadcrumbs, segment_count = compute_breadcrumbs(index.path, index.base, has_base)
+        local breadcrumbs, segment_count = compute_breadcrumbs(index.path, index.base, has_base, request_href)
 
         return {
             base = index.base,
@@ -369,11 +393,11 @@ function output_filter(r)
             breadcrumbs = breadcrumbs,
             root_href = has_base and escape_html(string.rep("../", segment_count + 1)) or "",
             -- nav starts at the repo root (breadcrumbs[1] is that crumb --
-            -- lustache can't reach it directly as {{breadcrumbs.1.href}},
+            -- lustache can't reach it directly as {{breadcrumbs.1.hx_href}},
             -- since breadcrumbs is an integer-indexed array, not
             -- string-keyed), falling back to today's "." on the
             -- Collection-of-Repositories listing (no repo to root at).
-            nav_root_path = has_base and breadcrumbs[1].href or "."
+            nav_root_path = has_base and breadcrumbs[1].hx_href or "."
         }
     end
 
@@ -435,7 +459,7 @@ function output_filter(r)
                 element = "repo"
             end
 
-            local html = render_entry(element, attr, base_href, templates, nav_target_path, r)
+            local html = render_entry(element, attr, request_href, templates, nav_target_path, r)
 
             if html then
                 rendered_count = rendered_count + 1

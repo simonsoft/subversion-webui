@@ -376,27 +376,40 @@ describe("svn-index output_filter", function()
         ))
     end)
 
-    it("builds a breadcrumb trail and the \"Start\"/\"Up\" toolbar hrefs from path depth", function()
+    it("builds a breadcrumb trail (with htmx expansion and repo/dir icons) and the \"Start\"/\"Up\" toolbar hrefs from path depth", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/arbortext/" base="myrepo">
 <file name="README.md" href="README.md" />
 </index>
 </svn>]]
-        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+        }, "/svn/myrepo/trunk/arbortext/", { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        -- path has 2 segments ("trunk", "arbortext"), so: myrepo is 2 levels
-        -- up, trunk is 1 level up, arbortext (current) is unlinked; root_href
-        -- (the collection-of-repositories listing) is one level further up
-        -- than myrepo, i.e. 3 levels.
-        assert.truthy(html:find('<wa-breadcrumb-item href="../../">myrepo</wa-breadcrumb-item>', 1, true))
-        assert.truthy(html:find('<wa-breadcrumb-item href="../">trunk</wa-breadcrumb-item>', 1, true))
-        assert.truthy(html:find('<wa-breadcrumb-item href="">arbortext</wa-breadcrumb-item>', 1, true))
+        -- path has 2 segments ("trunk", "arbortext"): myrepo (is_repo) is
+        -- the repo root, trunk and arbortext (both is_dir) descend from it;
+        -- arbortext (current) is unlinked, the other two carry hx-get for
+        -- htmx's own click-triggered swap (dir.mustache's own pattern --
+        -- no plain "href", deliberately: confirmed via a real browser that
+        -- combining a real href with hx-get on wa-breadcrumb-item fires
+        -- BOTH htmx's own fetch AND the anchor's native default navigation,
+        -- racing each other into a real full-page reload).
+        assert.truthy(html:find(
+            '<wa-breadcrumb-item hx-get="/svn/myrepo/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#subheader" hx-trigger="click"><wa-icon name="database"></wa-icon> myrepo</wa-breadcrumb-item>',
+            1, true
+        ))
+        assert.truthy(html:find(
+            '<wa-breadcrumb-item hx-get="/svn/myrepo/trunk/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#subheader" hx-trigger="click"><wa-icon name="folder" variant="regular"></wa-icon> trunk</wa-breadcrumb-item>',
+            1, true
+        ))
+        assert.truthy(html:find(
+            '<wa-breadcrumb-item><wa-icon name="folder" variant="regular"></wa-icon> arbortext</wa-breadcrumb-item>',
+            1, true
+        ))
         assert.truthy(html:find('<wa-button href="../../../" appearance="plain">', 1, true))
         assert.truthy(html:find('<wa-button href="../" appearance="plain">', 1, true))
     end)
 
-    it("hides the \"Up\" button and collapses the breadcrumb to a single crumb on the Collection of Repositories listing", function()
+    it("hides the \"Up\" button and collapses the breadcrumb to a single, icon-less, unlinked crumb on the Collection of Repositories listing", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index path="Collection of Repositories">
@@ -406,7 +419,7 @@ describe("svn-index output_filter", function()
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.falsy(html:find('appearance="plain"><wa-icon name="arrow-up">', 1, true))
-        assert.truthy(html:find('<wa-breadcrumb-item href="">Collection of Repositories</wa-breadcrumb-item>', 1, true))
+        assert.truthy(html:find('<wa-breadcrumb-item>Collection of Repositories</wa-breadcrumb-item>', 1, true))
     end)
 
     it("wires wa-page dir entries with lazy-loading plumbing but never sets lazy itself", function()
@@ -598,31 +611,33 @@ describe("svn-index output_filter", function()
         -- the hx-get/hx-trigger/hx-select directly on <wa-tree> itself, with
         -- hx-swap="innerHTML" replacing its own content, makes the fetched
         -- entries direct (top-level) children instead. It now always starts
-        -- at the *repo root* (nav_root_path, "../" for this one-segment
-        -- fixture) rather than the current directory ("."), so ancestors
-        -- above the current folder are visible too, not just its own
-        -- children.
+        -- at the *repo root* (nav_root_path, the absolute "/svn/myrepo/"
+        -- for this one-segment fixture) rather than the current directory
+        -- ("."), so ancestors above the current folder are visible too,
+        -- not just its own children.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
 <file name="README.md" href="README.md" />
 </index>
 </svn>]]
-        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+        }, "/svn/myrepo/trunk/", { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find(
-            '<wa-tree class="svn-nav" hx-get="../" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">',
+            '<wa-tree class="svn-nav" hx-get="/svn/myrepo/" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">',
             1, true
         ))
     end)
 
-    it("nav_root_path resolves to \".\"-equivalent both on the Collection of Repositories listing and at the repo root itself", function()
+    it("nav_root_path resolves to \".\" on the Collection of Repositories listing, and to the repo's own absolute root href at the repo root itself", function()
         -- Not has_base (the Collection listing) falls back to the literal
         -- "." (today's behavior, unchanged). At the repo root itself
         -- (has_base true, zero path segments), nav_root_path is instead
-        -- breadcrumbs[1].href with zero segments -- an empty string, which
-        -- resolves identically to "." (both mean "this same directory"),
-        -- just via a different literal.
+        -- breadcrumbs[1].hx_href with zero segments -- the current
+        -- directory's own absolute href, which also just means "this same
+        -- directory", now spelled out explicitly rather than via a
+        -- relative "" that only resolved correctly by relying on the
+        -- browser's own current-location context.
         local collection_html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index path="Collection of Repositories">
@@ -639,9 +654,9 @@ describe("svn-index output_filter", function()
 <file name="README.md" href="README.md" />
 </index>
 </svn>]]
-        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+        }, "/svn/myrepo/", { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(repo_root_html:find('hx-get=""', 1, true))
+        assert.truthy(repo_root_html:find('hx-get="/svn/myrepo/"', 1, true))
     end)
 
     it("marks only the entry on the path to HX-Current-URL as expanded/load-triggered, leaving siblings unchanged", function()
