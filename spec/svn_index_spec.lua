@@ -1006,7 +1006,7 @@ describe("svn-index output_filter", function()
         assert.falsy(head_html:find('<span class="revision-badge">', 1, true))
     end)
 
-    it("\"Up\" preserves the revision pin, \"Start\" resets to HEAD (confirmed with the user)", function()
+    it("\"Up\" preserves the revision pin while staying inside the same repository, \"Start\" resets to HEAD (confirmed with the user)", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="10" path="/trunk/arbortext/" base="myrepo">
@@ -1017,6 +1017,19 @@ describe("svn-index output_filter", function()
 
         assert.truthy(html:find('<a href="../?p=10"><wa-icon name="turn-up">', 1, true))
         assert.truthy(html:find('<a href="../../../"><wa-icon name="house">', 1, true))
+    end)
+
+    it("\"Up\" drops the revision pin at the repo root, since it exits to the Collection-of-Repositories listing there, which has no revision concept at all", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/" base="myrepo">
+<file name="README.md" href="README.md?p=10" />
+</index>
+</svn>]]
+        }, "/svn/myrepo/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<a href="../"><wa-icon name="turn-up">', 1, true))
+        assert.falsy(html:find('<a href="../?p=10">', 1, true))
     end)
 
     it("never marks an entry on-path for main's own content-swap request, even with a matching HX-Current-URL", function()

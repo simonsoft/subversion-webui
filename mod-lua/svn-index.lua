@@ -492,9 +492,12 @@ function output_filter(r)
             -- generated href in this file, root_href never gets
             -- revision_suffix appended.
             root_href = has_base and escape_html(string.rep("../", segment_count + 1)) or "",
-            -- "Up" (page.mustache's hardcoded href="../") does preserve the
-            -- pin, via this field appended directly in the template.
-            revision_suffix = escape_html(revision_suffix),
+            -- "Up" (page.mustache's hardcoded href="../") preserves the pin
+            -- only when staying inside the same repository -- from the
+            -- repo root itself (zero path segments), "Up" instead exits to
+            -- the Collection-of-Repositories listing, which has no
+            -- revision concept at all, so the pin is dropped there.
+            revision_suffix_up = escape_html(segment_count > 0 and revision_suffix or ""),
             -- Only truthy when actually pinned -- lets the template show
             -- the revision badge conditionally, and never show a "?p="
             -- artifact while at HEAD.
