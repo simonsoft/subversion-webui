@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="wa-cloak">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,24 +7,278 @@
 <link rel="stylesheet" href="https://ka-f.webawesome.com/webawesome@3.10.0/styles/webawesome.css">
 <script type="module" src="https://ka-f.webawesome.com/webawesome@3.10.0/webawesome.loader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0-beta6" integrity="sha384-6lyVbhrs13b9z7mLOpt/N6R76rtkEBWgCjAXRs/DSWyi2AMnQSs10ijWk+PI8n7W" crossorigin="anonymous"></script>
+<script>
+// "wa-lazy-load" bubbles, and htmx's hx-trigger binds a real, permanent
+// listener to each lazy tree item at the moment it's processed -- removing
+// the "hx-trigger"/"lazy" *attributes* later doesn't detach that listener,
+// so without this, a deeply nested item's own lazy-load event also re-fires
+// every already-loaded ancestor's listener above it, re-fetching and
+// re-appending duplicate children onto each of them.
+//
+// Fixed by injecting a one-time, self-removing stopPropagation listener
+// directly onto the actual originating element (event.target) *before* the
+// event reaches it: this capture-phase document listener runs first (since
+// capture travels document -> ... -> target), so the listener it adds is
+// already in place by the time dispatch reaches the target's own listeners.
+// Because it's added to the same node, it doesn't block htmx's
+// already-bound listener on that same element from firing (stopPropagation
+// only stops the event moving on to the *next* node in the path) -- it only
+// stops the event from then bubbling up into ancestor tree items.
+document.addEventListener("wa-lazy-load", (event) => {
+    event.target.addEventListener("wa-lazy-load", (e) => e.stopPropagation(), { once: true });
+}, true);
+
+// dir.mustache's wa-tree-item never sets "lazy" itself, since it's the exact
+// same markup rendered into both #svn-index (main, a strictly flat listing
+// -- its label already swaps main's whole content to browse deeper, one
+// level at a time) and the nav tree (which does want in-place, lazy-loaded
+// expansion). Nav is the one that opts in: whenever it gets newly-fetched
+// dir entries -- whether at the root (the "svn-nav" branch below) or nested
+// under an already-expanded item (the "lazy" branch) -- this marks them
+// lazy=true so *they* become expandable in turn. Main's own copies are left
+// alone entirely, so they're simply never lazy in the first place: no
+// chevron, and no need for anything to suppress wa-lazy-load from firing.
+//
+// wa-tree-item's own "loading" state (the spinner shown while lazy) is
+// separate from the "lazy" attribute -- it only clears once the item
+// actually observes its children change. When the expanded directory is
+// empty, hx-select matches nothing, so beforeend appends zero nodes: no
+// child-list mutation ever happens, and "loading" (confirmed via aria-busy)
+// is left stuck forever. Setting the "loading" property directly ends it
+// regardless of whether any children actually got appended.
+document.addEventListener("htmx:after:swap", (event) => {
+    // Covers a directory's own content finishing loading, whether that was
+    // triggered by a real chevron click (lazy="true" -> wa-lazy-load), an
+    // on-path entry's own hx-trigger="load" auto-firing, or the nav tree's
+    // own root-level population -- event.target is either a
+    // "wa-tree-item.dir" or the "svn-nav" tree itself in every such case,
+    // and both always sit inside (or, for the tree itself, at the root of)
+    // ".svn-nav", so a single ancestor check covers all of them uniformly.
+    // Never fires for main's own copies: their hx-trigger="wa-lazy-load"
+    // never actually fires there (no chevron is ever shown, since they're
+    // never marked lazy and never on-path), so this swap target never
+    // occurs for them, and main's own tree doesn't carry the "svn-nav"
+    // class anyway.
+    if (event.target.closest?.(".svn-nav")) {
+        // wa-tree-item shows its expand chevron based on actually having
+        // child wa-tree-item elements, regardless of their own visibility
+        // -- but the nav tree only ever wants to browse folders
+        // (files/updir are hidden via CSS, see wa-tree.svn-nav
+        // .file/.updir above), so a folder containing only files (or
+        // nothing at all) would otherwise still show a chevron that
+        // reveals nothing when clicked.
+        event.target.querySelectorAll(":scope > wa-tree-item:not(.dir)").forEach((child) => child.remove());
+
+        // hx-trigger="load" is dir.mustache's own is_target_any marker (set
+        // server-side; see ENTRY_CONTEXT_BUILDERS.dir) -- reading it back
+        // here, rather than templating a separate "expanded" attribute
+        // too, keeps that expressed in exactly one place. Either way this
+        // sets "expanded"/"lazy" as a real JS property, never relying on a
+        // static HTML attribute alone: confirmed via a real browser that
+        // an "expanded" attribute present in the server-rendered markup
+        // itself can still end up visually collapsed somewhere in this
+        // actual htmx-driven insert-then-self-fetch flow (not
+        // reproducible from a plain, non-htmx element in isolation).
+        // "selected" marks dir.mustache's own is_target_leaf match (see
+        // ENTRY_CONTEXT_BUILDERS.dir) -- unlike "expanded" above, the
+        // static attribute alone renders correctly here, confirmed via a
+        // real browser, so it needs no JS re-assertion.
+        const dirChildren = event.target.querySelectorAll(":scope > wa-tree-item.dir");
+        dirChildren.forEach((child) => {
+            if (child.getAttribute("hx-trigger") === "load") {
+                child.expanded = true;
+            } else {
+                child.lazy = true;
+            }
+        });
+
+        // "lazy"/"loading"/"isLeaf" are only meaningful on a wa-tree-item
+        // itself, not on the root <wa-tree> (the "svn-nav" branch of this
+        // same check, i.e. the tree's own initial population) --
+        // wa-tree-item's own "loading" state (the spinner shown while
+        // lazy) is separate from the "lazy" attribute and only clears once
+        // the item actually observes its children change; when the
+        // expanded directory is empty, hx-select matches nothing, so
+        // beforeend appends zero nodes and "loading" (confirmed via
+        // aria-busy) would otherwise be left stuck forever. Setting
+        // "loading"/"isLeaf" directly, as real settable properties rather
+        // than just computed ones, covers both regardless of whether
+        // anything was actually appended.
+        if (event.target.matches?.("wa-tree-item.dir")) {
+            event.target.removeAttribute("lazy");
+            event.target.loading = false;
+            event.target.isLeaf = dirChildren.length === 0;
+        }
+    }
+});
+
+// Nav's own [selected] wa-tree-item is only a one-time snapshot, taken
+// when nav rendered that item itself (root population or lazy-expansion,
+// both hx-target="this" -- see the ".svn-nav" branch above). Clicking a
+// folder's label *within nav* already keeps selection correct on its own,
+// via wa-tree's own built-in single-selection behavior -- but main's label
+// clicks and breadcrumb clicks both swap "#svn-index" instead, without
+// ever touching nav, so nav's stale snapshot is never told the current
+// directory changed.
+//
+// This can't key off "htmx:after:swap"'s own event.target: htmx dispatches
+// that event on the request's source element only if it's still connected
+// to the DOM at dispatch time, falling back to `document` otherwise
+// (confirmed via htmx's own source) -- and for both cases above, the
+// clicked element sits inside whatever this very swap (or its
+// accompanying "#breadcrumb" oob swap) just replaced, so it's already
+// disconnected by dispatch time and event.target is just `document`,
+// unrelated to "#svn-index" or nav either way. "htmx:after:history:push"
+// sidesteps that entirely: htmx dispatches it on `document`, unconditionally,
+// exactly when it performs history.pushState() -- i.e. only when the
+// response actually carried HX-Push-Url (svn-index.lua never sends
+// HX-Replace-Url, so "push" is the only variant this app produces), with
+// the exact destination path already provided, no response-header parsing
+// needed. That also means no extra condition is needed here: nav's own
+// root/lazy-expansion fetches never receive HX-Push-Url and so never
+// trigger this at all.
+document.addEventListener("htmx:after:history:push", (event) => {
+    const pushedPath = event.detail?.path;
+
+    if (!pushedPath) {
+        return;
+    }
+
+    // Cleared via querySelectorAll rather than assuming exactly one stale
+    // match, for the same reason every other cleanup in this file does.
+    document.querySelectorAll(".svn-nav wa-tree-item.dir[selected]").forEach((item) => {
+        item.selected = false;
+    });
+
+    // A plain per-element attribute comparison, not a dynamically-built
+    // CSS attribute-selector string, since pushedPath can contain
+    // arbitrary percent-encoded/Unicode segments that would need escaping
+    // for selector syntax (see request_href/hx_href in svn-index.lua).
+    const matched = [...document.querySelectorAll(".svn-nav wa-tree-item.dir[hx-get]")]
+        .find((item) => item.getAttribute("hx-get") === pushedPath);
+
+    // No match just means the destination was never fetched/expanded in
+    // nav (off the original auto-expand-on-load path) -- nav and main stay
+    // only loosely coupled after initial load by design, so this leaves no
+    // selection at all rather than forcing a new fetch/expand to reveal it.
+    if (matched) {
+        matched.selected = true;
+    }
+});
+</script>
 <style>
-footer[slot="footer"] {
-    padding: var(--wa-space-s);
+wa-page {
+    --menu-width: 25rem;
+    --aside-width: 15rem;
+    font-size: var(--wa-font-size-s);
 }
 
-/* Hide ".." inside an htmx-expanded (nested) directory, keep it at top level. */
-li .updir {
+wa-page[view='desktop'] {
+    [slot*='navigation'] {
+        border-inline-end: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
+    }
+}
+wa-page[view='mobile'] {
+    --menu-width: auto;
+    --aside-width: auto;
+}
+
+header[slot="header"] {
+    font-size: var(--wa-font-size-m);
+    --wa-link-decoration-default: none;
+    /*--wa-color-text-link: var(--wa-color-text-normal);*/
+    display: flex;
+    gap: var(--wa-space-s);
+    align-items: center;
+    padding: var(--wa-space-s);
+    background: var(--wa-color-brand-fill-loud);
+    color: var(--wa-color-neutral-fill-quiet);
+}
+
+header[slot="header"] a {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--wa-space-2xs);
+    color: inherit;
+    font-weight: var(--wa-font-weight-action);
+}
+
+nav[slot="subheader"] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--wa-space-m);
+    padding: var(--wa-space-m);
+    border-block-end: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
+}
+
+nav[slot="subheader"] wa-breadcrumb {
+    font-size: var(--wa-font-size-m);
+}
+
+/* Pure-CSS show/hide, no JS: wa-switch exposes its checked state via the
+   standard custom-element-internals ":state()" pseudo-class (confirmed via
+   a real browser -- unlike its "checked" *attribute*, which does NOT
+   reflect back when toggled by a user click, only on initial render), so
+   "#subheader:has(...)" can react live to the switch without any listener
+   at all. ".svn-main" is #subheader's own sibling (both direct children of
+   <wa-page>), so the general sibling combinator reaches it directly. */
+#subheader:has(wa-switch:not(:state(checked))) ~ .svn-main .dir {
     display: none;
+}
+
+footer[slot="footer"] {
+    font-size: var(--wa-font-size-xs);
+    padding: var(--wa-space-xs);
+    border-block-start: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
+}
+
+/* Matches the padding wa-page already applies to the navigation slot, so
+   the main listing doesn't sit flush against the edge while nav has room. */
+div.svn-main {
+    padding: var(--wa-space-m);
+}
+
+/* The navigation tree only ever browses folders -- files (and the ".."
+   entry, which is superseded by the header's "Up" button) fetched into it
+   via htmx are hidden here regardless of how deeply they end up nested. */
+wa-tree.svn-nav .file,
+wa-tree.svn-nav .updir {
+    display: none;
+}
+
+/* A tree item's own row is already the click target -- its label doesn't
+   need to look like a hyperlink. */
+wa-tree-item a {
+    color: inherit;
+    text-decoration: none;
 }
 </style>
 </head>
 <body>
 <wa-page>
 <header slot="header">
-<h1>{{#has_base}}{{base}} - Revision {{rev}}: {{/has_base}}{{path}}</h1>
+<div class="wa-cluster">
+<a href="{{{root_href}}}"><wa-icon name="house"></wa-icon>Start</a>
+{{#has_base}}<a href="../"><wa-icon name="turn-up"></wa-icon>Up</a>{{/has_base}}
+</div>
 </header>
-<ul class="svn-index">
-{{{svn_index}}}</ul>
+<nav slot="subheader" id="subheader">
+<wa-breadcrumb id="breadcrumb">
+<span slot="separator">/</span>
+{{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
+{{/breadcrumbs}}
+</wa-breadcrumb>
+<wa-switch class="wa-font-size-s">Show folders</wa-switch>
+</nav>
+<nav slot="navigation">
+<wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">
+</wa-tree>
+</nav>
+<div class="svn-main">
+<wa-tree class="svn-index" id="svn-index">
+{{{svn_index}}}</wa-tree>
+</div>
 <footer slot="footer">
 <span>{{#has_base}}Repository: {{base}} &middot; Path: {{/has_base}}{{path}} {{#has_base}}&middot; Revision: {{rev}}{{/has_base}}</span>
 <em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
