@@ -1212,10 +1212,17 @@ describe("svn-index output_filter", function()
         assert.falsy(r.headers_out["ETag"])
     end)
 
-    it("does not set the new ETag on the Collection of Repositories listing, which has no revision concept at all", function()
+    it("does not set the new ETag on the Collection of Repositories listing, which has no revision concept at all, even though mod_dav_svn still emits a \"rev\" attribute there", function()
+        -- Confirmed against a real server: mod_dav_svn's Collection-of-
+        -- Repositories listing omits "base" but NOT necessarily "rev"
+        -- (e.g. still emits rev="0") -- this fixture deliberately includes
+        -- it, proving the ETag guard keys off "index.base ~= \"\"" (the
+        -- same has_base signal used everywhere else in this file), not
+        -- "index.rev ~= \"\"", which would otherwise wrongly treat this
+        -- page as having a real revision.
         local _, r = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
-<index path="Collection of Repositories">
+<index rev="0" path="Collection of Repositories">
 <dir name="demo1" href="demo1/" />
 </index>
 </svn>]]

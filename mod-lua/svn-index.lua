@@ -471,13 +471,17 @@ function output_filter(r)
         r.headers_out["HX-Push-Url"] = request_href .. revision_suffix
     end
 
-    -- mod_dav_svn omits the rev/base attributes entirely (rather than
-    -- emitting them empty) on the special "Collection of Repositories"
-    -- listing served from an SVNParentPath -- that's the only case where
-    -- <index> lacks a base, so its absence is what distinguishes browsing a
-    -- single repository (where svn's own default title/heading is
-    -- "{base} - Revision {rev}: {path}") from listing the parent path
-    -- (where svn's default is just "{path}", unprefixed).
+    -- mod_dav_svn omits the "base" attribute entirely (rather than emitting
+    -- it empty) on the special "Collection of Repositories" listing served
+    -- from an SVNParentPath -- that's the only case where <index> lacks a
+    -- base, so its absence is what distinguishes browsing a single
+    -- repository (where svn's own default title/heading is "{base} -
+    -- Revision {rev}: {path}") from listing the parent path (where svn's
+    -- default is just "{path}", unprefixed). Confirmed against a real
+    -- server that "rev" is NOT necessarily omitted alongside it (mod_dav_svn
+    -- can still emit e.g. rev="0" there) -- "base", not "rev", is the only
+    -- reliable signal, which is why every other "has_base"-gated decision
+    -- in this file (including the ETag guard below) keys off it alone.
     local function template_context()
         local has_base = index.base ~= ""
         local breadcrumbs, segment_count = compute_breadcrumbs(index.path, index.base, has_base, request_href, revision_suffix)
@@ -564,12 +568,17 @@ function output_filter(r)
                 -- identical URL+revision depending on the browser's
                 -- current HX-Current-URL; also omitted on the Collection-
                 -- of-Repositories listing, which has no revision concept
-                -- at all (index.rev is empty there, mod_dav_svn never
-                -- emits a "rev" attribute for it). index.rev is
-                -- mod_dav_svn's own trusted XML output (always a plain
-                -- integer), not client-supplied, so no separate escaping
-                -- is needed for the header value.
-                if index.rev ~= "" and not nav_target_path then
+                -- at all -- gated on "index.base ~= \"\"" (the same
+                -- has_base signal template_context() already relies on),
+                -- NOT "index.rev ~= \"\"": confirmed against a real server
+                -- that mod_dav_svn still emits a "rev" attribute (e.g.
+                -- "0") on the Collection-of-Repositories listing even
+                -- though it omits "base" there, so index.rev alone isn't a
+                -- reliable signal for "is this a real repository". index.rev
+                -- is mod_dav_svn's own trusted XML output (always a plain
+                -- integer), not client-supplied, so no separate escaping is
+                -- needed for the header value.
+                if index.base ~= "" and not nav_target_path then
                     r.headers_out["ETag"] = 'W/"' .. index.rev .. '-lua"'
                 end
 

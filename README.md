@@ -74,8 +74,6 @@ LuaOutputFilter SVN_XML_INDEX \
 
 The transfer will be chunked unless returned in a single brigade. This is already the case with mod_dav_svn regardless of additional filter. However, if deflate or other compression filter is enabled, the compressed response might fit into the compression filter's buffer and then become a regular transfer with Content-Length header.
 
-TODO: Need to restore ETag which is removed when FilterProtocol has change=yes.
-
 
 ## Running tests
 
