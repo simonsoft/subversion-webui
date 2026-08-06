@@ -71,6 +71,11 @@ LuaOutputFilter SVN_XML_INDEX \
 </Location>
 ```
 
+For serving XML responses (e.g. `SVNIndexXSLT` output) to browsers that
+have dropped native client-side XSLT support, see
+[README-xslt-polyfill.md](README-xslt-polyfill.md) for an independent
+output filter that polyfills it instead.
+
 
 ## Running tests
 
