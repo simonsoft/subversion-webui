@@ -19,10 +19,16 @@ dofile(ROOT .. "mod-lua/svn-index.lua")
 -- "request_href" note in output_filter for why the real filter reads
 -- r.unparsed_uri, not r.uri).
 local function make_request(uri, subprocess_env, headers_in, unparsed_uri)
+    local raw_target = unparsed_uri or uri or "/svn/demo1/"
+
     local r = {
         method = "GET",
         uri = uri or "/svn/demo1/",
-        unparsed_uri = unparsed_uri or uri or "/svn/demo1/",
+        unparsed_uri = raw_target,
+        -- Derived from the same request-target real Apache would, rather
+        -- than a separate explicit parameter -- r.args and r.unparsed_uri
+        -- are never inconsistent with each other in production.
+        args = raw_target:match("%?(.*)$"),
         content_type = "text/xml; charset=utf-8",
         subprocess_env = subprocess_env or {},
         headers_in = headers_in or {},
@@ -798,6 +804,234 @@ describe("svn-index output_filter", function()
         ))
     end)
 
+    it("carries mod_dav_svn's own revision-pin suffix (\"?p=10\") on ordinary entries with zero code changes needed, via the existing request_href .. href concatenation", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/marketing/" base="demo3">
+<dir name="lang" href="lang/?p=10" />
+</index>
+</svn>]]
+        }, "/svn/demo3/marketing/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('hx-get="/svn/demo3/marketing/lang/?p=10"', 1, true))
+    end)
+
+    it("carries the revision pin through breadcrumbs and nav_root_path, which this filter builds itself with no XML href to inherit it from", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/trunk/arbortext/" base="myrepo">
+<file name="README.md" href="README.md?p=10" />
+</index>
+</svn>]]
+        }, "/svn/myrepo/trunk/arbortext/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<wa-breadcrumb-item hx-get="/svn/myrepo/?p=10"', 1, true))
+        assert.truthy(html:find('<wa-breadcrumb-item hx-get="/svn/myrepo/trunk/?p=10"', 1, true))
+        assert.truthy(html:find('<wa-tree class="svn-nav" hx-get="/svn/myrepo/?p=10" hx-trigger="load"', 1, true))
+    end)
+
+    it("carries the revision pin in HX-Push-Url too, so a reload or copy-pasted URL doesn't silently lose it", function()
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/trunk/arbortext/" base="myrepo">
+<file name="README.md" href="README.md?p=10" />
+</index>
+</svn>]]
+        }, "/svn/myrepo/trunk/arbortext/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" },
+            { ["HX-Target"] = "wa-tree#svn-index" }
+        )
+
+        assert.are.equal("/svn/myrepo/trunk/arbortext/?p=10", r.headers_out["HX-Push-Url"])
+    end)
+
+    it("marks an ancestor on-path even though its own hx_href (with \"?p=10\") is never a whole-string prefix of the deeper, query-bearing target -- proves path and revision must be compared independently", function()
+        -- An ancestor's own hx_href (".../trunk/?p=10") is never a string-
+        -- prefix of the deeper target's own path (".../trunk/arbortext/",
+        -- nav_target_path is already query-free) even with the query kept
+        -- on both sides -- they diverge exactly where one has "?p=10" and
+        -- the other continues with "arbortext/". Path and revision-pin are
+        -- compared independently instead (see "same_revision" in
+        -- ENTRY_CONTEXT_BUILDERS.dir).
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/" base="myrepo">
+<dir name="trunk" href="trunk/?p=10" />
+</index>
+</svn>]]
+        }, "/svn/demo1/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" },
+            { ["HX-Current-URL"] = "http://host/svn/demo1/trunk/arbortext/?p=10", ["HX-Target"] = "wa-tree" }
+        )
+
+        assert.truthy(html:find(
+            '<wa-tree-item class="dir" hx-get="/svn/demo1/trunk/?p=10" hx-trigger="load"',
+            1, true
+        ))
+    end)
+
+    it("marks the exact target directory selected when both its path and revision pin match HX-Current-URL", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/" base="myrepo">
+<dir name="trunk" href="trunk/?p=10" />
+</index>
+</svn>]]
+        }, "/svn/demo1/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" },
+            { ["HX-Current-URL"] = "http://host/svn/demo1/trunk/?p=10", ["HX-Target"] = "wa-tree" }
+        )
+
+        assert.truthy(html:find(
+            '<wa-tree-item class="dir" selected hx-get="/svn/demo1/trunk/?p=10" hx-trigger="load"',
+            1, true
+        ))
+    end)
+
+    it("does not mark an entry on-path when its own revision doesn't match HX-Current-URL's, even at the identical path", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name="trunk" href="trunk/" />
+</index>
+</svn>]]
+        }, "/svn/demo1/", { SVN_INDEX_TEMPLATE = "wa-page" },
+            { ["HX-Current-URL"] = "http://host/svn/demo1/trunk/?p=10", ["HX-Target"] = "wa-tree" }
+        )
+
+        assert.truthy(html:find(
+            '<wa-tree-item class="dir" hx-get="/svn/demo1/trunk/" hx-trigger="wa-lazy-load"',
+            1, true
+        ))
+        assert.falsy(html:find('<wa-tree-item class="dir" selected', 1, true))
+    end)
+
+    it("does not false-fire r:warn on a valid revision-pinned href, since the trailing-slash check now looks before any \"?p=REV\" suffix", function()
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext/?p=10" />
+</index>
+</svn>]]
+        }, "/svn/demo1/trunk/?p=10")
+
+        for _, entry in ipairs(r.logs) do
+            assert.are_not.equal("warn", entry.level)
+        end
+    end)
+
+    it("still fires r:warn for a genuinely missing trailing slash even when a query string is present, proving the fix checks \"before the query\", not \"disabled entirely\"", function()
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext?p=10" />
+</index>
+</svn>]]
+        }, "/svn/demo1/trunk/?p=10")
+
+        local warning = nil
+
+        for _, entry in ipairs(r.logs) do
+            if entry.level == "warn" then
+                warning = entry.msg
+            end
+        end
+
+        assert.truthy(warning)
+    end)
+
+    it("appends SVN_INDEX_QUERY_FILE's own literal query-string value to file entries' own links only, layering after an existing \"?p=REV\" when both apply", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext/?p=10" />
+<file name="README.md" href="README.md?p=10" />
+</index>
+</svn>]]
+        }, "/svn/demo1/trunk/?p=10",
+            { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_QUERY_FILE = "view=details&this=that" }
+        )
+
+        -- "&amp;", not "&": hx_href goes through escape_html (like every
+        -- other href in this file) before being placed in the template,
+        -- same as any other HTML attribute value.
+        assert.truthy(html:find(
+            '<a href="/svn/demo1/trunk/README.md?p=10&amp;view=details&amp;this=that">',
+            1, true
+        ))
+        assert.truthy(html:find(
+            '<wa-tree-item class="dir" hx-get="/svn/demo1/trunk/arbortext/?p=10" hx-trigger="wa-lazy-load"',
+            1, true
+        ))
+    end)
+
+    it("appends SVN_INDEX_QUERY_FILE's own literal query-string value using \"?\" rather than \"&\" when the file entry has no existing query", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, "/svn/demo1/trunk/",
+            { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_QUERY_FILE = "view=details&this=that" }
+        )
+
+        assert.truthy(html:find(
+            '<a href="/svn/demo1/trunk/README.md?view=details&amp;this=that">',
+            1, true
+        ))
+    end)
+
+    it("shows the revision badge only while actively pinned, never for ordinary HEAD browsing", function()
+        local pinned_html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md?p=10" />
+</index>
+</svn>]]
+        }, "/svn/demo1/trunk/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(pinned_html:find('<span class="revision-badge">10</span>', 1, true))
+
+        local head_html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, "/svn/demo1/trunk/", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        -- The bare class name alone would also match the static ".revision
+        -- -badge { ... }" CSS rule, which is always present in <style>
+        -- regardless of whether anything actually pinned -- checking for
+        -- the <span> markup itself is what actually proves the badge is
+        -- (or isn't) rendered.
+        assert.falsy(head_html:find('<span class="revision-badge">', 1, true))
+    end)
+
+    it("\"Up\" preserves the revision pin while staying inside the same repository, \"Start\" resets to HEAD (confirmed with the user)", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/trunk/arbortext/" base="myrepo">
+<file name="README.md" href="README.md?p=10" />
+</index>
+</svn>]]
+        }, "/svn/myrepo/trunk/arbortext/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<a href="../?p=10"><wa-icon name="turn-up">', 1, true))
+        assert.truthy(html:find('<a href="../../../"><wa-icon name="house">', 1, true))
+    end)
+
+    it("\"Up\" drops the revision pin at the repo root, since it exits to the Collection-of-Repositories listing there, which has no revision concept at all", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/" base="myrepo">
+<file name="README.md" href="README.md?p=10" />
+</index>
+</svn>]]
+        }, "/svn/myrepo/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<a href="../"><wa-icon name="turn-up">', 1, true))
+        assert.falsy(html:find('<a href="../?p=10">', 1, true))
+    end)
+
     it("never marks an entry on-path for main's own content-swap request, even with a matching HX-Current-URL", function()
         -- The edge case this whole is_named_swap_target guard exists for:
         -- without it, an entry in main's response (dir.mustache is the
@@ -916,10 +1150,13 @@ describe("svn-index output_filter", function()
         -- along -- nav's own in-place lazy-load fetch is a different
         -- element entirely (no hx-select-oob at all) and is naturally
         -- unaffected, with no header-sniffing needed on the Lua side.
-        -- Scoped to "#breadcrumb" specifically, not the whole
-        -- "#subheader", so this swap leaves the "Show folders" wa-switch
-        -- (also inside #subheader) alone -- its own checked state would
-        -- otherwise reset every time main navigates to a new directory.
+        -- "#breadcrumb" is the wrapping div (not just <wa-breadcrumb>
+        -- itself), so the revision badge -- a sibling inside that same
+        -- div -- rides along with it as one conceptual unit. Scoped to
+        -- that div, not the whole "#subheader", so this swap leaves the
+        -- "Show folders" wa-switch (also inside #subheader) alone -- its
+        -- own checked state would otherwise reset every time main
+        -- navigates to a new directory.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -928,7 +1165,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<wa-breadcrumb id="breadcrumb">', 1, true))
+        assert.truthy(html:find('<div class="wa-cluster" id="breadcrumb">', 1, true))
         assert.truthy(html:find(
             '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb" hx-trigger="click">',
             1, true
