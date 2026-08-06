@@ -243,6 +243,17 @@ nav[slot="subheader"] wa-breadcrumb {
     font-size: var(--wa-font-size-m);
 }
 
+/* "Display the revision to the right of the breadcrumbs in a square
+   (non-rounded but dashed)" -- shown only while actively pinned to a past
+   revision via "?p=REV" (see "revision_pinned" in template_context()),
+   never for ordinary HEAD browsing. */
+.revision-badge {
+    border: var(--wa-border-width-s) dashed var(--wa-color-surface-border);
+    border-radius: 0;
+    padding: 0 var(--wa-space-2xs);
+    font-size: var(--wa-font-size-s);
+}
+
 /* Pure-CSS show/hide, no JS: wa-switch exposes its checked state via the
    standard custom-element-internals ":state()" pseudo-class (confirmed via
    a real browser -- unlike its "checked" *attribute*, which does NOT
@@ -287,15 +298,18 @@ wa-tree-item a {
 <header slot="header">
 <div class="wa-cluster">
 <a href="{{{root_href}}}"><wa-icon name="house"></wa-icon>Start</a>
-{{#has_base}}<a href="../"><wa-icon name="turn-up"></wa-icon>Up</a>{{/has_base}}
+{{#has_base}}<a href="../{{{revision_suffix}}}"><wa-icon name="turn-up"></wa-icon>Up</a>{{/has_base}}
 </div>
 </header>
 <nav slot="subheader" id="subheader">
-<wa-breadcrumb id="breadcrumb">
+<div class="wa-cluster" id="breadcrumb">
+<wa-breadcrumb>
 <span slot="separator">/</span>
 {{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
 {{/breadcrumbs}}
 </wa-breadcrumb>
+{{#revision_pinned}}<span class="revision-badge">{{{revision_pinned}}}</span>{{/revision_pinned}}
+</div>
 <wa-switch class="wa-font-size-s">Show folders</wa-switch>
 </nav>
 <nav slot="navigation">
