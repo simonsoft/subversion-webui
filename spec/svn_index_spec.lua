@@ -443,7 +443,7 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find('<a href="../../../"><wa-icon name="house">', 1, true))
-        assert.truthy(html:find('<a href="../"><wa-icon name="arrow-up">', 1, true))
+        assert.truthy(html:find('<a href="../"><wa-icon name="turn-up">', 1, true))
     end)
 
     it("hides the \"Up\" link and collapses the breadcrumb to a single, icon-less, unlinked crumb on the Collection of Repositories listing", function()
@@ -455,7 +455,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.falsy(html:find('<wa-icon name="arrow-up">', 1, true))
+        assert.falsy(html:find('<wa-icon name="turn-up">', 1, true))
         assert.truthy(html:find('<wa-breadcrumb-item>Collection of Repositories</wa-breadcrumb-item>', 1, true))
     end)
 
@@ -553,6 +553,34 @@ describe("svn-index output_filter", function()
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find("event.target.loading = false", 1, true))
+    end)
+
+    it("re-syncs nav's stale [selected] highlight via htmx:after:history:push, since main label/breadcrumb clicks never touch nav's own render path", function()
+        -- Nav's own label clicks already keep [selected] correct on their
+        -- own (wa-tree's built-in single-selection behavior), but main's
+        -- label clicks and breadcrumb clicks both swap "#svn-index"
+        -- without ever re-rendering anything in nav, leaving its
+        -- server-rendered snapshot stale. This can't key off
+        -- "htmx:after:swap"'s own event.target -- confirmed via a real
+        -- browser that htmx dispatches that event on the request's source
+        -- element only if still connected at dispatch time, falling back
+        -- to `document` otherwise, and for both of those flows the clicked
+        -- element sits inside whatever this very swap (or its "#breadcrumb"
+        -- oob swap) just replaced, so it's already disconnected --
+        -- "htmx:after:history:push" sidesteps that, firing on `document`
+        -- unconditionally with the exact pushed path already available.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('addEventListener("htmx:after:history:push"', 1, true))
+        assert.truthy(html:find("event.detail?.path", 1, true))
+        assert.truthy(html:find('.svn-nav wa-tree-item.dir[selected]', 1, true))
+        assert.truthy(html:find('.svn-nav wa-tree-item.dir[hx-get]', 1, true))
     end)
 
     it("drops the nav expand chevron once a lazy item has no folder children left", function()

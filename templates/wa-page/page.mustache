@@ -111,6 +111,60 @@ document.addEventListener("htmx:after:swap", (event) => {
         }
     }
 });
+
+// Nav's own [selected] wa-tree-item is only a one-time snapshot, taken
+// when nav rendered that item itself (root population or lazy-expansion,
+// both hx-target="this" -- see the ".svn-nav" branch above). Clicking a
+// folder's label *within nav* already keeps selection correct on its own,
+// via wa-tree's own built-in single-selection behavior -- but main's label
+// clicks and breadcrumb clicks both swap "#svn-index" instead, without
+// ever touching nav, so nav's stale snapshot is never told the current
+// directory changed.
+//
+// This can't key off "htmx:after:swap"'s own event.target: htmx dispatches
+// that event on the request's source element only if it's still connected
+// to the DOM at dispatch time, falling back to `document` otherwise
+// (confirmed via htmx's own source) -- and for both cases above, the
+// clicked element sits inside whatever this very swap (or its
+// accompanying "#breadcrumb" oob swap) just replaced, so it's already
+// disconnected by dispatch time and event.target is just `document`,
+// unrelated to "#svn-index" or nav either way. "htmx:after:history:push"
+// sidesteps that entirely: htmx dispatches it on `document`, unconditionally,
+// exactly when it performs history.pushState() -- i.e. only when the
+// response actually carried HX-Push-Url (svn-index.lua never sends
+// HX-Replace-Url, so "push" is the only variant this app produces), with
+// the exact destination path already provided, no response-header parsing
+// needed. That also means no extra condition is needed here: nav's own
+// root/lazy-expansion fetches never receive HX-Push-Url and so never
+// trigger this at all.
+document.addEventListener("htmx:after:history:push", (event) => {
+    const pushedPath = event.detail?.path;
+
+    if (!pushedPath) {
+        return;
+    }
+
+    // Cleared via querySelectorAll rather than assuming exactly one stale
+    // match, for the same reason every other cleanup in this file does.
+    document.querySelectorAll(".svn-nav wa-tree-item.dir[selected]").forEach((item) => {
+        item.selected = false;
+    });
+
+    // A plain per-element attribute comparison, not a dynamically-built
+    // CSS attribute-selector string, since pushedPath can contain
+    // arbitrary percent-encoded/Unicode segments that would need escaping
+    // for selector syntax (see request_href/hx_href in svn-index.lua).
+    const matched = [...document.querySelectorAll(".svn-nav wa-tree-item.dir[hx-get]")]
+        .find((item) => item.getAttribute("hx-get") === pushedPath);
+
+    // No match just means the destination was never fetched/expanded in
+    // nav (off the original auto-expand-on-load path) -- nav and main stay
+    // only loosely coupled after initial load by design, so this leaves no
+    // selection at all rather than forcing a new fetch/expand to reveal it.
+    if (matched) {
+        matched.selected = true;
+    }
+});
 </script>
 <style>
 wa-page {
