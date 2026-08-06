@@ -183,6 +183,26 @@ wa-page[view='mobile'] {
     --aside-width: auto;
 }
 
+/* On small screens, wa-page renders its own hamburger navigation-toggle
+   button in a shadow-DOM wrapper (part="header") that sits alongside the
+   light-DOM <header slot="header"> content below, slotted directly inside
+   it -- confirmed via a real browser that this wrapper has no background
+   or color of its own by default, leaving the toggle floating outside the
+   blue header bar rather than looking like part of it. Both set once here
+   rather than also on "header[slot='header']" below: "background" paints
+   directly behind that slotted content anyway, and "color" is inherited
+   property, so it flows down through the flattened tree into both the
+   navigation-toggle button (a shadow-DOM child of this same wrapper) and
+   the slotted light-DOM header content alike (confirmed via a real
+   browser) -- no need to set it on either individually.
+   "::part(header)" reaches the wrapper directly (it's exposed by wa-page
+   itself, not nested inside a further shadow root). */
+wa-page::part(header) {
+    align-items: center;
+    background: var(--wa-color-brand-fill-loud);
+    color: var(--wa-color-neutral-fill-quiet);
+}
+
 header[slot="header"] {
     font-size: var(--wa-font-size-m);
     --wa-link-decoration-default: none;
@@ -191,8 +211,15 @@ header[slot="header"] {
     gap: var(--wa-space-s);
     align-items: center;
     padding: var(--wa-space-s);
-    background: var(--wa-color-brand-fill-loud);
-    color: var(--wa-color-neutral-fill-quiet);
+    /* Web Awesome's own base stylesheet gives semantic elements like
+       <header> an opaque default background (confirmed via a real browser
+       -- not visible in this file's own CSSOM introspection, since that
+       stylesheet is cross-origin) -- overridden explicitly here so the
+       actual blue shows through from "wa-page::part(header)" behind it,
+       the one place both background and text color are actually defined
+       (this element's own "color" is inherited from there, see the comment
+       above that rule). */
+    background: transparent;
 }
 
 header[slot="header"] a {
