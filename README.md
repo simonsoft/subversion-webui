@@ -60,7 +60,6 @@ LuaOutputFilter SVN_XML_INDEX \
             && %{REQUEST_URI} =~ m#/$#"
 
     FilterProtocol SVN_XML_INDEX "change=yes;byteranges=no"
-    # TODO: Restore compression
     FilterChain SVN_XML_INDEX
 
     # Selects mod-lua's page template (templates/<type>/). Defaults to
@@ -70,6 +69,12 @@ LuaOutputFilter SVN_XML_INDEX \
 
 </Location>
 ```
+
+### Apache httpd transfer
+
+The transfer will be chunked unless returned in a single brigade. This is already the case with mod_dav_svn regardless of additional filter. However, if deflate or other compression filter is enabled, the compressed response might fit into the compression filter's buffer and then become a regular transfer with Content-Length header.
+
+TODO: Need to restore ETag which is removed when FilterProtocol has change=yes.
 
 
 ## Running tests
