@@ -444,7 +444,10 @@ function output_filter(r)
     -- The transformed body has a different length.
     r.headers_out["Content-Length"] = nil
 
-    -- The original entity validator no longer describes the transformed body.
+    -- The original entity validator no longer describes the transformed
+    -- body -- cleared unconditionally here; a new one for the transformed
+    -- body itself may be re-set below, once the revision is known (see the
+    -- "index" branch of the StartElement handler).
     r.headers_out["ETag"] = nil
 
     -- Only a main-content-swap request (dir.mustache's label, targeting a
@@ -547,6 +550,28 @@ function output_filter(r)
                 index.path = attr.path or ""
                 index.base = attr.base or ""
                 index_seen = true
+
+                -- A new entity validator for the *transformed* body
+                -- (mirrors mod_dav_svn's own ETag convention, minus the
+                -- path component -- HTTP already scopes ETag validation to
+                -- the requested URL itself). Weak (W/), since this is a
+                -- semantically-equivalent rendering of the underlying
+                -- revision, not a byte-precise one. Only set when this
+                -- response is provably a pure function of (repo, path,
+                -- revision): omitted for nav's own root/lazy-expansion
+                -- fetches (nav_target_path truthy -- see the comment above
+                -- it), whose expanded/selected markers can differ for the
+                -- identical URL+revision depending on the browser's
+                -- current HX-Current-URL; also omitted on the Collection-
+                -- of-Repositories listing, which has no revision concept
+                -- at all (index.rev is empty there, mod_dav_svn never
+                -- emits a "rev" attribute for it). index.rev is
+                -- mod_dav_svn's own trusted XML output (always a plain
+                -- integer), not client-supplied, so no separate escaping
+                -- is needed for the header value.
+                if index.rev ~= "" and not nav_target_path then
+                    r.headers_out["ETag"] = 'W/"' .. index.rev .. '-lua"'
+                end
 
                 r:debug(string.format(
                     "SVN index metadata: rev=%s path=%s base=%s",
