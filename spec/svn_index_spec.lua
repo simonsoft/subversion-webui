@@ -1171,4 +1171,63 @@ describe("svn-index output_filter", function()
             1, true
         ))
     end)
+
+    it("sets a new weak ETag for the transformed body on a plain page load, replacing mod_dav_svn's own original one", function()
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        })
+
+        assert.are.equal('W/"7-lua"', r.headers_out["ETag"])
+    end)
+
+    it("still sets the new ETag for a main-content-swap request even with HX-Current-URL present -- the omission below is scoped to nav's own fetches specifically, not to \"any htmx request\"", function()
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, nil,
+            { ["HX-Current-URL"] = "http://host/svn/demo1/trunk/", ["HX-Target"] = "wa-tree#svn-index" }
+        )
+
+        assert.are.equal('W/"7-lua"', r.headers_out["ETag"])
+    end)
+
+    it("does not set the new ETag for nav's own root/lazy-expansion fetches, since their expanded/selected markers can differ for the identical URL+revision depending on HX-Current-URL", function()
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, nil,
+            { ["HX-Current-URL"] = "http://host/svn/demo1/trunk/", ["HX-Target"] = "wa-tree" }
+        )
+
+        assert.falsy(r.headers_out["ETag"])
+    end)
+
+    it("does not set the new ETag on the Collection of Repositories listing, which has no revision concept at all, even though mod_dav_svn still emits a \"rev\" attribute there", function()
+        -- Confirmed against a real server: mod_dav_svn's Collection-of-
+        -- Repositories listing omits "base" but NOT necessarily "rev"
+        -- (e.g. still emits rev="0") -- this fixture deliberately includes
+        -- it, proving the ETag guard keys off "index.base ~= \"\"" (the
+        -- same has_base signal used everywhere else in this file), not
+        -- "index.rev ~= \"\"", which would otherwise wrongly treat this
+        -- page as having a real revision.
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="0" path="Collection of Repositories">
+<dir name="demo1" href="demo1/" />
+</index>
+</svn>]]
+        })
+
+        assert.falsy(r.headers_out["ETag"])
+    end)
 end)

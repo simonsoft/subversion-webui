@@ -444,7 +444,10 @@ function output_filter(r)
     -- The transformed body has a different length.
     r.headers_out["Content-Length"] = nil
 
-    -- The original entity validator no longer describes the transformed body.
+    -- The original entity validator no longer describes the transformed
+    -- body -- cleared unconditionally here; a new one for the transformed
+    -- body itself may be re-set below, once the revision is known (see the
+    -- "index" branch of the StartElement handler).
     r.headers_out["ETag"] = nil
 
     -- Only a main-content-swap request (dir.mustache's label, targeting a
@@ -468,13 +471,17 @@ function output_filter(r)
         r.headers_out["HX-Push-Url"] = request_href .. revision_suffix
     end
 
-    -- mod_dav_svn omits the rev/base attributes entirely (rather than
-    -- emitting them empty) on the special "Collection of Repositories"
-    -- listing served from an SVNParentPath -- that's the only case where
-    -- <index> lacks a base, so its absence is what distinguishes browsing a
-    -- single repository (where svn's own default title/heading is
-    -- "{base} - Revision {rev}: {path}") from listing the parent path
-    -- (where svn's default is just "{path}", unprefixed).
+    -- mod_dav_svn omits the "base" attribute entirely (rather than emitting
+    -- it empty) on the special "Collection of Repositories" listing served
+    -- from an SVNParentPath -- that's the only case where <index> lacks a
+    -- base, so its absence is what distinguishes browsing a single
+    -- repository (where svn's own default title/heading is "{base} -
+    -- Revision {rev}: {path}") from listing the parent path (where svn's
+    -- default is just "{path}", unprefixed). Confirmed against a real
+    -- server that "rev" is NOT necessarily omitted alongside it (mod_dav_svn
+    -- can still emit e.g. rev="0" there) -- "base", not "rev", is the only
+    -- reliable signal, which is why every other "has_base"-gated decision
+    -- in this file (including the ETag guard below) keys off it alone.
     local function template_context()
         local has_base = index.base ~= ""
         local breadcrumbs, segment_count = compute_breadcrumbs(index.path, index.base, has_base, request_href, revision_suffix)
@@ -547,6 +554,33 @@ function output_filter(r)
                 index.path = attr.path or ""
                 index.base = attr.base or ""
                 index_seen = true
+
+                -- A new entity validator for the *transformed* body
+                -- (mirrors mod_dav_svn's own ETag convention, minus the
+                -- path component -- HTTP already scopes ETag validation to
+                -- the requested URL itself). Weak (W/), since this is a
+                -- semantically-equivalent rendering of the underlying
+                -- revision, not a byte-precise one. Only set when this
+                -- response is provably a pure function of (repo, path,
+                -- revision): omitted for nav's own root/lazy-expansion
+                -- fetches (nav_target_path truthy -- see the comment above
+                -- it), whose expanded/selected markers can differ for the
+                -- identical URL+revision depending on the browser's
+                -- current HX-Current-URL; also omitted on the Collection-
+                -- of-Repositories listing, which has no revision concept
+                -- at all -- gated on "index.base ~= \"\"" (the same
+                -- has_base signal template_context() already relies on),
+                -- NOT "index.rev ~= \"\"": confirmed against a real server
+                -- that mod_dav_svn still emits a "rev" attribute (e.g.
+                -- "0") on the Collection-of-Repositories listing even
+                -- though it omits "base" there, so index.rev alone isn't a
+                -- reliable signal for "is this a real repository". index.rev
+                -- is mod_dav_svn's own trusted XML output (always a plain
+                -- integer), not client-supplied, so no separate escaping is
+                -- needed for the header value.
+                if index.base ~= "" and not nav_target_path then
+                    r.headers_out["ETag"] = 'W/"' .. index.rev .. '-lua"'
+                end
 
                 r:debug(string.format(
                     "SVN index metadata: rev=%s path=%s base=%s",
