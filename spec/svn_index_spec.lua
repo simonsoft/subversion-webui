@@ -979,6 +979,94 @@ describe("svn-index output_filter", function()
         ))
     end)
 
+    it("tags a dir entry matching SVN_INDEX_HIDE_DIR with the \"navhidden\" class, leaving a non-matching sibling plain", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name=".cms" href=".cms/" />
+<dir name="trunk" href="trunk/" />
+</index>
+</svn>]]
+        }, "/svn/demo1/",
+            { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_HIDE_DIR = "^\\." }
+        )
+
+        assert.truthy(html:find('<wa-tree-item class="dir navhidden"', 1, true))
+        assert.truthy(html:find('<wa-tree-item class="dir" hx-get="/svn/demo1/trunk/"', 1, true))
+    end)
+
+    it("supports native PCRE alternation in SVN_INDEX_HIDE_DIR to match several distinct names at once", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name="lang" href="lang/" />
+<dir name="release" href="release/" />
+<dir name="trunk" href="trunk/" />
+</index>
+</svn>]]
+        }, "/svn/demo1/",
+            { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_HIDE_DIR = "^lang$|^release$" }
+        )
+
+        assert.truthy(html:find('<wa-tree-item class="dir navhidden" hx-get="/svn/demo1/lang/"', 1, true))
+        assert.truthy(html:find('<wa-tree-item class="dir navhidden" hx-get="/svn/demo1/release/"', 1, true))
+        assert.truthy(html:find('<wa-tree-item class="dir" hx-get="/svn/demo1/trunk/"', 1, true))
+    end)
+
+    it("never tags any entry \"navhidden\" when SVN_INDEX_HIDE_DIR is unset", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name=".cms" href=".cms/" />
+</index>
+</svn>]]
+        }, "/svn/demo1/", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        -- Note: a plain substring search for "navhidden" would always match
+        -- the CSS rule text in the page's own <style> block -- this checks
+        -- for the class actually being applied to an entry instead.
+        assert.falsy(html:find('class="dir navhidden"', 1, true))
+    end)
+
+    it("logs a warning and treats a malformed SVN_INDEX_HIDE_DIR regex as unset, rather than crashing the filter", function()
+        local html, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name="trunk" href="trunk/" />
+</index>
+</svn>]]
+        }, "/svn/demo1/",
+            { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_HIDE_DIR = "(" }
+        )
+
+        assert.falsy(html:find('class="dir navhidden"', 1, true))
+
+        local warning = nil
+
+        for _, entry in ipairs(r.logs) do
+            if entry.level == "warn" then
+                warning = entry.msg
+            end
+        end
+
+        assert.truthy(warning)
+    end)
+
+    it("never tags a \"repo\" entry (Collection of Repositories) \"navhidden\", even when its name matches SVN_INDEX_HIDE_DIR", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="0" path="Collection of Repositories">
+<dir name="lang" href="lang/" />
+</index>
+</svn>]]
+        }, "/svn/",
+            { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_HIDE_DIR = "^lang$" }
+        )
+
+        assert.truthy(html:find('<wa-tree-item class="repo">', 1, true))
+        assert.falsy(html:find('class="repo navhidden"', 1, true))
+    end)
+
     it("shows the revision badge only while actively pinned, never for ordinary HEAD browsing", function()
         local pinned_html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">

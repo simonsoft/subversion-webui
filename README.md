@@ -8,10 +8,11 @@ Tested on Ubuntu 24.04
 
 ```
 # TODO: Confirm if all are needed.
-sudo apt install     lua5.3     liblua5.3-dev     luarocks     libexpat1-dev
+sudo apt install     lua5.3     liblua5.3-dev     luarocks     libexpat1-dev     libpcre2-dev
 
 sudo luarocks --lua-version=5.3 install luaexpat
 sudo luarocks --lua-version=5.3 install lustache
+sudo luarocks --lua-version=5.3 install lrexlib-pcre2
 ```
 
 Deploy the whole repository (not just `mod-lua/`) to `/opt/subversion-webui`,
