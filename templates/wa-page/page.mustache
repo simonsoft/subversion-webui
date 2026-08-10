@@ -165,6 +165,32 @@ document.addEventListener("htmx:after:history:push", (event) => {
         matched.selected = true;
     }
 });
+
+// wa-tree's own keyboard handling (arrow keys to move focus, Enter/Space
+// to "select" the focused item) never fires a native "click" -- its own
+// keydown handler calls event.preventDefault() and drives selection
+// purely by mutating state (confirmed via wa-tree's own source,
+// packages/webawesome/src/components/tree/tree.ts), so neither
+// dir.mustache's own hx-trigger="click" span nor a plain <a href> on
+// file/repo entries ever activates via keyboard. Deliberately keyed off
+// the raw "keyup" event here, not wa-tree's own "wa-selection-change" --
+// that event *also* fires for ordinary mouse clicks (wa-tree's internal
+// click handler runs the same selectItem()/dispatch path a real click
+// already triggered independently of htmx), so reacting to it here too
+// would fire a second, duplicate request/navigation for every plain
+// mouse click. A real "keyup" never occurs as a side effect of a mouse
+// click, so this can only ever fire from actual keyboard use, leaving
+// every click-driven path (including re-clicking an already-selected
+// item to re-fetch it) untouched.
+document.addEventListener("keyup", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+        return;
+    }
+
+    const item = event.target.closest?.("wa-tree-item");
+
+    item?.querySelector(":scope > span[hx-get], :scope > a[href]")?.click();
+});
 </script>
 <style>
 wa-page {
