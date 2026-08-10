@@ -285,6 +285,17 @@ wa-tree.svn-nav .updir {
     display: none;
 }
 
+/* SVN_INDEX_HIDE_DIR-matched entries (see ENTRY_CONTEXT_BUILDERS.dir in
+   svn-index.lua) are hidden in the nav tree specifically -- the main
+   content panel always shows every entry mod_dav_svn returns regardless of
+   this setting. Revealed by the same "Show folders" switch that already
+   reveals directories in the main panel (same ":not(:state(checked))"
+   condition as the ".svn-main .dir" rule above): one switch for "show
+   everything this UI otherwise hides by default", nav and main alike. */
+#subheader:has(wa-switch:not(:state(checked))) ~ nav[slot="navigation"] wa-tree.svn-nav .navhidden {
+    display: none;
+}
+
 /* A tree item's own row is already the click target -- its label doesn't
    need to look like a hyperlink. */
 wa-tree-item a {
