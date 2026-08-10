@@ -92,6 +92,133 @@ local function escape_html(value)
                  :gsub("'", "&#39;"))
 end
 
+-- Strips a full URL (e.g. htmx's "HX-Current-URL" request header, which
+-- mirrors the browser's own location.href) down to just its path, for
+-- comparing against this filter's own path-only hrefs -- drops the
+-- scheme://host[:port] prefix and any trailing query string/fragment.
+local function url_path(url)
+    local path = url:match("^%a[%w+.-]*://[^/]*(/.*)$") or url
+
+    return path:match("^([^?#]*)")
+end
+
+-- Extracts the value of `key` from a query string. Works uniformly whether
+-- `str` is a bare query string (r.args, no leading "?"), a path-plus-query
+-- value (hx_href, e.g. "/svn/demo3/lang/?p=10"), or a full URL
+-- (HX-Current-URL) -- if there's a "?", only what follows it is treated as
+-- the query. mod_lua's own r:parseargs() only ever parses the *current
+-- request's* own r.args, which covers just one of the three call sites
+-- this is used from (the other two are a request header value and a
+-- string this filter builds itself) -- using one hand-rolled mechanism
+-- uniformly, rather than mixing that in for just the one case it covers,
+-- keeps this simpler and testable without a real Apache request object.
+local function parse_query_param(str, key)
+    if not str then
+        return nil
+    end
+
+    -- "?" is a Lua pattern magic character (a quantifier) outside a
+    -- character class -- must be escaped as "%?", confirmed via a quick
+    -- interpreter check: the unescaped form silently returns nil (no
+    -- error, just never matches) rather than failing loudly.
+    local query = (str:match("%?(.*)$") or str):match("^([^#]*)")
+
+    for pair in query:gmatch("[^&]+") do
+        local k, v = pair:match("^([^=]+)=(.*)$")
+        if k == key then
+            return v
+        end
+    end
+
+    return nil
+end
+
+-- Merges an extra literal query-string fragment (SVN_INDEX_QUERY_FILE,
+-- see ENTRY_CONTEXT_BUILDERS.file) onto an href that may or may not
+-- already have its own query (e.g. a simultaneous "?p=REV" revision pin).
+local function append_query(href, extra_query)
+    if not extra_query or extra_query == "" then
+        return href
+    end
+
+    return href .. (href:find("?", 1, true) and "&" or "?") .. extra_query
+end
+
+-- htmx resolves the "HX-Target" request header to "<tagname>#<id>" when the
+-- swap target has an id, or just "<tagname>" when it doesn't (confirmed via
+-- a real browser). Every template here gives an id only to the element
+-- meant to receive a full "navigate to a new folder" swap; in-place
+-- expansion targets (hx-target="this") are deliberately never given one.
+-- Checking for the presence of "#" rather than hardcoding a specific
+-- "<tagname>#<id>" string keeps this independent of which template is
+-- active or what its swap target happens to be named.
+local function is_named_swap_target(hx_target)
+    return hx_target ~= nil and hx_target:find("#", 1, true) ~= nil
+end
+
+-- Builds the breadcrumb trail for a request inside a repository (has_base):
+-- one crumb for the repo root (`base`, marked "is_repo") followed by one
+-- per `path` segment (each marked "is_dir"), every one carrying an
+-- "hx_href" for htmx expansion (dir.mustache-style: swaps main content in
+-- place rather than a real page navigation). The final crumb (the current
+-- location) is marked `last` so the template can render it unlinked --
+-- clicking it would just re-fetch what's already showing. On the
+-- SVNParentPath "Collection of Repositories" listing (not has_base), `path`
+-- is just a label ("Collection of Repositories"), not a real path, so it's
+-- rendered as a single unlinked crumb (neither "is_repo" nor "is_dir", so
+-- the template gives it no icon either). Also returns the total segment
+-- count, reused by the caller to compute `root_href` (one level further up
+-- than the repo root).
+local function compute_breadcrumbs(path, base, has_base, request_href, revision_suffix)
+    if not has_base then
+        return { { name = escape_html(path), last = true } }, 0
+    end
+
+    local segments = {}
+
+    for segment in path:gmatch("[^/]+") do
+        segments[#segments + 1] = segment
+    end
+
+    local total = #segments
+
+    -- Every crumb's own "hx_href" is built from request_href's own segments
+    -- (the same URL-encoded coordinate space every other hx_href in this
+    -- file already uses -- see the note above render_entry) rather than by
+    -- re-deriving it from `path`'s own text: sidesteps any mismatch
+    -- between mod_dav_svn's XML `path` attribute and the request URI's own
+    -- percent-encoding for segments containing spaces/Unicode/reserved
+    -- characters. `total` is used only as a segment *count* here, never
+    -- compared character-for-character against request_href.
+    local request_segments = {}
+
+    for segment in request_href:gmatch("[^/]+") do
+        request_segments[#request_segments + 1] = segment
+    end
+
+    local repo_root_segment_count = #request_segments - total
+
+    local function href_through(extra_segment_count)
+        return "/" .. table.concat(request_segments, "/", 1, repo_root_segment_count + extra_segment_count)
+               .. "/" .. revision_suffix
+    end
+
+    local breadcrumbs = {
+        { name = escape_html(base), hx_href = escape_html(href_through(0)), is_repo = true, last = total == 0 }
+    }
+
+    for i, segment in ipairs(segments) do
+        breadcrumbs[#breadcrumbs + 1] = {
+            name = escape_html(segment),
+            hx_href = escape_html(href_through(i)),
+            is_dir = true,
+            last = i == total
+        }
+    end
+
+    return breadcrumbs, total
+end
+
 -- attr.href is always relative to the directory currently being listed
 -- (e.g. "dita/"). That's no good for the rendered <a href> once a
 -- directory's entries are inserted into the DOM as a nested <li> via htmx:
@@ -99,40 +226,110 @@ end
 -- where in the DOM the link sits, not against the directory the entry
 -- actually belongs to -- so a plain click (or hx-get, which has the exact
 -- same problem) on a twice-nested entry would resolve one level too
--- shallow. base_href (the request's own r.uri, which is correct
+-- shallow. request_href (this request's own URL, which is correct
 -- per-fragment since each expansion is a genuine HTTP request to its own
 -- directory) anchors both href and hx_href to an absolute path, so both
 -- work regardless of nesting depth. The original relative value is kept
 -- available to templates as `href` in case it's ever needed, but the
 -- rendered anchor's href attribute should use the absolute `hx_href`.
 local ENTRY_CONTEXT_BUILDERS = {
-    updir = function(attr, base_href)
+    updir = function(attr, request_href)
         local href = attr.href or "../"
 
         return {
             href = escape_html(href),
-            hx_href = escape_html(base_href .. href)
+            hx_href = escape_html(request_href .. href)
         }
     end,
 
-    file = function(attr, base_href)
+    -- query_file_params (SVN_INDEX_QUERY_FILE) is applied only to file
+    -- entries' own links (confirmed with the user) -- dir/updir/repo never
+    -- receive it.
+    file = function(attr, request_href, query_file_params)
         local href = attr.href or "#"
+        local hx_href = append_query(request_href .. href, query_file_params)
 
         return {
             name = escape_html(attr.name or attr.href or ""),
             href = escape_html(href),
-            hx_href = escape_html(base_href .. href)
+            hx_href = escape_html(hx_href)
         }
     end,
 
-    dir = function(attr, base_href)
+    -- nav_target_path/nav_target_revision (the path and "?p=" revision
+    -- portions of htmx's "HX-Current-URL" request header, only ever
+    -- computed for nav's own requests -- see the "nav_target_path" comment
+    -- in output_filter()) are nil for every other request, so
+    -- "is_target_any" is naturally false/omitted everywhere else,
+    -- including every "repo" entry (aliased below): a repo's own hx_href
+    -- is never a prefix match unless the request is literally for the
+    -- Collection-of-Repositories page itself, which compares against a
+    -- *shorter* path that can't "start with" a longer one.
+    -- hide_dir_pattern (SVN_INDEX_HIDE_DIR, see output_filter) is only
+    -- ever meant for ordinary directories -- this same function also runs
+    -- for "repo" entries via the alias below, so "navhidden" ends up
+    -- computed (but unused) there too: repo.mustache deliberately never
+    -- references it, so a repo name matching the pattern has no visible
+    -- effect.
+    dir = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern)
         local name = (attr.name or attr.href or ""):gsub("/$", "")
         local href = attr.href or "#"
+
+        -- "is_target_any" below is a prefix check that relies on every
+        -- directory href ending in "/" (before any "?p=REV" revision-pin
+        -- suffix mod_dav_svn may have attached) to avoid false-matching a
+        -- sibling with a shared prefix (e.g. "trunk" vs "trunk-extra") --
+        -- warn loudly if mod_dav_svn ever emits one without it, since that
+        -- assumption would otherwise fail silently.
+        if url_path(href):sub(-1) ~= "/" then
+            r:warn("svn-index: dir href does not end with '/': " .. tostring(href))
+        end
+
+        local hx_href = request_href .. href
+        local hx_href_path = url_path(hx_href)
+        local hx_href_revision = parse_query_param(hx_href, "p")
+
+        -- Path and revision-pin must independently agree for this entry to
+        -- be considered on the path to nav_target_path -- they can't be
+        -- folded into a single whole-string comparison: an ancestor's own
+        -- hx_href (".../trunk/?p=10") is never a string-prefix of a deeper
+        -- target's own path (".../trunk/arbortext/", nav_target_path is
+        -- already query-free) even with the query included on both sides,
+        -- since they diverge exactly where one has "?p=10" and the other
+        -- continues with "arbortext/". Revision compared via plain
+        -- equality -- nil == nil (both unpinned, i.e. both HEAD) counts as
+        -- a match.
+        local same_revision = hx_href_revision == nav_target_revision
+
+        -- Three mutually-informing views of the same relationship between
+        -- this entry and nav_target_path: "is_target_any" (a strict
+        -- ancestor of the target, or the target itself -- i.e. "should
+        -- this be walked open at all"), "is_target_leaf" (an exact match
+        -- -- i.e. "is this the one nav's current selection points at"),
+        -- and "is_target_ancestor" (on the path but not the target itself
+        -- -- i.e. "should this be opened, but isn't itself the selection").
+        local is_target_any = nav_target_path and same_revision
+            and nav_target_path:sub(1, #hx_href_path) == hx_href_path
+        local is_target_leaf = nav_target_path and same_revision
+            and nav_target_path == hx_href_path
+        local is_target_ancestor = is_target_any and not is_target_leaf
+
+        -- r:regex() returns a *table* (truthy) on match, `false` on no
+        -- match -- normalized to a plain boolean here (rather than handing
+        -- lustache that raw table) since lustache treats a table-valued
+        -- mustache section specially (iterating it as a list, or using it
+        -- as a sub-context) instead of the simple render-once-if-truthy
+        -- behavior every other boolean field here relies on.
+        local navhidden = hide_dir_pattern ~= nil and r:regex(name, hide_dir_pattern) ~= false
 
         return {
             name = escape_html(name),
             href = escape_html(href),
-            hx_href = escape_html(base_href .. href)
+            hx_href = escape_html(hx_href),
+            is_target_any = is_target_any,
+            is_target_leaf = is_target_leaf,
+            is_target_ancestor = is_target_ancestor,
+            navhidden = navhidden
         }
     end
 }
@@ -144,7 +341,7 @@ local ENTRY_CONTEXT_BUILDERS = {
 -- same context shape as "dir".
 ENTRY_CONTEXT_BUILDERS.repo = ENTRY_CONTEXT_BUILDERS.dir
 
-local function render_entry(element, attr, base_href, templates)
+local function render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern)
     local build_context = ENTRY_CONTEXT_BUILDERS[element]
     local entry_template = templates.entries[element]
 
@@ -152,7 +349,7 @@ local function render_entry(element, attr, base_href, templates)
         return nil
     end
 
-    return lustache:render(entry_template, build_context(attr, base_href))
+    return lustache:render(entry_template, build_context(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern))
 end
 
 function output_filter(r)
@@ -188,11 +385,60 @@ function output_filter(r)
     local templates = load_template_set(template_type)
 
     -- Anchors every entry's href to this directory's own URL (see the note
-    -- above render_entry) instead of leaving them relative.
-    local base_href = tostring(r.uri or "")
+    -- above render_entry) instead of leaving them relative. Built from
+    -- "r.unparsed_uri" (the raw request URI as the client actually sent
+    -- it, still percent-encoded), not "r.uri" (Apache's own *decoded*
+    -- parsed path) -- confirmed via a real browser that mod_dav_svn's own
+    -- XML "href" attribute is percent-encoded (e.g. "140%20Securing/"), so
+    -- concatenating a decoded "r.uri" prefix onto one of those silently
+    -- produced a broken, inconsistently-encoded URL (literal spaces mixed
+    -- with "%20" in the very same hx_href) for any directory whose name
+    -- needs encoding.
+    local request_href = url_path(tostring(r.unparsed_uri or r.uri or ""))
 
-    if base_href ~= "" and not base_href:match("/$") then
-        base_href = base_href .. "/"
+    if request_href ~= "" and not request_href:match("/$") then
+        request_href = request_href .. "/"
+    end
+
+    -- mod_dav_svn's own "?p=REV" revision-pin convention. Ordinary entries
+    -- need no help from this at all -- mod_dav_svn's own <dir>/<file>/
+    -- <repo>/<updir> href XML attribute already includes "?p=10" itself
+    -- when pinned, and request_href .. href (see ENTRY_CONTEXT_BUILDERS)
+    -- carries that forward automatically. This is only for URLs built here
+    -- from scratch, with no XML href to inherit the pin from: breadcrumbs,
+    -- nav_root_path (reuses breadcrumbs[1]), and HX-Push-Url.
+    local revision_pinned = parse_query_param(r.args, "p")
+    local revision_suffix = revision_pinned and ("?p=" .. revision_pinned) or ""
+
+    -- SVN_INDEX_QUERY_FILE: despite the name, this is the literal extra
+    -- query-string fragment itself (e.g. "view=details&this=that"), not a
+    -- file path -- applied only to file.mustache's own link (confirmed
+    -- with the user), never to dir/breadcrumb/nav links.
+    local query_file_params = r.subprocess_env and r.subprocess_env.SVN_INDEX_QUERY_FILE
+
+    -- SVN_INDEX_HIDE_DIR: a PCRE regex, tested against each *directory*
+    -- entry's own name (never repo entries -- see
+    -- ENTRY_CONTEXT_BUILDERS.dir) via mod_lua's own built-in r:regex() --
+    -- no extra Lua library needed. Matches are tagged "navhidden" -- hidden
+    -- via CSS in the nav tree only, revealed by the same "Show folders"
+    -- wa-switch that already reveals directories in the main content panel
+    -- (see templates/wa-page/page.mustache). r:regex() itself never raises
+    -- on a malformed pattern -- confirmed against mod_lua's own C source
+    -- (lua_ap_regex in modules/lua/lua_request.c): it returns `false` for
+    -- *both* "no match" and "pattern failed to compile", distinguishable
+    -- only via a second return value (an error string) present solely in
+    -- the latter case. Checked once here, against an empty string, purely
+    -- to log one warning per request instead of silently (and repeatedly,
+    -- once per entry) matching nothing.
+    local hide_dir_pattern = r.subprocess_env and r.subprocess_env.SVN_INDEX_HIDE_DIR
+
+    if hide_dir_pattern and hide_dir_pattern ~= "" then
+        local _, compile_err = r:regex("", hide_dir_pattern)
+
+        if compile_err then
+            r:warn("svn-index: invalid SVN_INDEX_HIDE_DIR pattern, ignoring: " .. tostring(hide_dir_pattern) .. " (" .. tostring(compile_err) .. ")")
+            hide_dir_pattern = nil
+        end
     end
 
     r:info(string.format(
@@ -203,30 +449,112 @@ function output_filter(r)
         template_type
     ))
 
+    -- htmx sends this on every request as the browser's currently-displayed
+    -- URL at request time -- logged only when present (a plain, non-htmx
+    -- request never sends it) to help correlate a listing request with
+    -- where the user was actually browsing from.
+    if r.headers_in and r.headers_in["HX-Current-URL"] then
+        r:info("HX-Current-URL: " .. tostring(r.headers_in["HX-Current-URL"]))
+    end
+
+    -- Powers nav's auto-expand-to-current-folder: since location.href never
+    -- actually changes during nav's own background fetches (only real page
+    -- loads do that), every request in the chain sees the same
+    -- HX-Current-URL -- the one real target the whole cascade is walking
+    -- toward -- so each one can independently decide, from this alone,
+    -- whether any of its own entries sit on the path to it (see
+    -- "is_target_any" in ENTRY_CONTEXT_BUILDERS.dir). Excluded for main's own
+    -- content-swap request (a named swap target, the same distinction
+    -- HX-Push-Url below also uses) -- otherwise, browsing several
+    -- levels deep via main and then clicking a *shallower* ancestor's
+    -- label in nav would see HX-Current-URL still pointing at the deeper
+    -- (pre-navigation) URL and could wrongly mark one of main's own,
+    -- supposedly-always-flat entries as on the path.
+    local nav_target_path = nil
+    local nav_target_revision = nil
+
+    if r.headers_in and r.headers_in["HX-Current-URL"] and not is_named_swap_target(r.headers_in["HX-Target"]) then
+        nav_target_path = url_path(r.headers_in["HX-Current-URL"])
+        nav_target_revision = parse_query_param(r.headers_in["HX-Current-URL"], "p")
+    end
+
     -- Set these before emitting any transformed response content.
     r.content_type = "text/html; charset=utf-8"
 
     -- The transformed body has a different length.
     r.headers_out["Content-Length"] = nil
 
-    -- The original entity validator no longer describes the transformed body.
+    -- The original entity validator no longer describes the transformed
+    -- body -- cleared unconditionally here; a new one for the transformed
+    -- body itself may be re-set below, once the revision is known (see the
+    -- "index" branch of the StartElement handler).
     r.headers_out["ETag"] = nil
 
-    -- mod_dav_svn omits the rev/base attributes entirely (rather than
-    -- emitting them empty) on the special "Collection of Repositories"
-    -- listing served from an SVNParentPath -- that's the only case where
-    -- <index> lacks a base, so its absence is what distinguishes browsing a
-    -- single repository (where svn's own default title/heading is
-    -- "{base} - Revision {rev}: {path}") from listing the parent path
-    -- (where svn's default is just "{path}", unprefixed).
+    -- Only a main-content-swap request (dir.mustache's label, targeting a
+    -- named element such as wa-page's "#svn-index") represents an actual
+    -- "navigate to a new folder" -- the nav tree's own in-place lazy
+    -- expansion (hx-target="this", an element with no id) never changes
+    -- what main is showing, so it must not push a new URL. Returning this
+    -- as a response header, rather than "hx-push-url" on the template,
+    -- keeps the decision here where the true swap target (from the
+    -- incoming request) is actually known. (The breadcrumb itself doesn't
+    -- need this: dir.mustache's label carries its own
+    -- hx-select-oob="#breadcrumb" directly, so only that specific
+    -- element's own requests ever pull the breadcrumb along -- nav's own
+    -- lazy-load fetch is a different element entirely and never has that
+    -- attribute. "#breadcrumb" is the wrapping div, not just
+    -- <wa-breadcrumb> itself, so the revision badge (a sibling inside that
+    -- same div) rides along with it as one conceptual unit. Scoped to that
+    -- div, not the whole "#subheader", so this swap leaves the "Show
+    -- folders" wa-switch's own state alone.)
+    if r.headers_in and is_named_swap_target(r.headers_in["HX-Target"]) then
+        r.headers_out["HX-Push-Url"] = request_href .. revision_suffix
+    end
+
+    -- mod_dav_svn omits the "base" attribute entirely (rather than emitting
+    -- it empty) on the special "Collection of Repositories" listing served
+    -- from an SVNParentPath -- that's the only case where <index> lacks a
+    -- base, so its absence is what distinguishes browsing a single
+    -- repository (where svn's own default title/heading is "{base} -
+    -- Revision {rev}: {path}") from listing the parent path (where svn's
+    -- default is just "{path}", unprefixed). Confirmed against a real
+    -- server that "rev" is NOT necessarily omitted alongside it (mod_dav_svn
+    -- can still emit e.g. rev="0" there) -- "base", not "rev", is the only
+    -- reliable signal, which is why every other "has_base"-gated decision
+    -- in this file (including the ETag guard below) keys off it alone.
     local function template_context()
+        local has_base = index.base ~= ""
+        local breadcrumbs, segment_count = compute_breadcrumbs(index.path, index.base, has_base, request_href, revision_suffix)
+
         return {
             base = index.base,
             path = index.path,
             rev = index.rev,
-            has_base = index.base ~= "",
+            has_base = has_base,
             svn_version = svn.version,
-            svn_href = svn.href
+            svn_href = svn.href,
+            breadcrumbs = breadcrumbs,
+            -- "Start" deliberately resets to HEAD rather than preserving
+            -- the pin (confirmed with the user) -- unlike every other
+            -- generated href in this file, root_href never gets
+            -- revision_suffix appended.
+            root_href = has_base and escape_html(string.rep("../", segment_count + 1)) or "",
+            -- "Up" (page.mustache's hardcoded href="../") preserves the pin
+            -- only when staying inside the same repository -- from the
+            -- repo root itself (zero path segments), "Up" instead exits to
+            -- the Collection-of-Repositories listing, which has no
+            -- revision concept at all, so the pin is dropped there.
+            revision_suffix_up = escape_html(segment_count > 0 and revision_suffix or ""),
+            -- Only truthy when actually pinned -- lets the template show
+            -- the revision badge conditionally, and never show a "?p="
+            -- artifact while at HEAD.
+            revision_pinned = revision_pinned and escape_html(revision_pinned) or nil,
+            -- nav starts at the repo root (breadcrumbs[1] is that crumb --
+            -- lustache can't reach it directly as {{breadcrumbs.1.hx_href}},
+            -- since breadcrumbs is an integer-indexed array, not
+            -- string-keyed), falling back to today's "." on the
+            -- Collection-of-Repositories listing (no repo to root at).
+            nav_root_path = has_base and breadcrumbs[1].hx_href or "."
         }
     end
 
@@ -267,6 +595,33 @@ function output_filter(r)
                 index.base = attr.base or ""
                 index_seen = true
 
+                -- A new entity validator for the *transformed* body
+                -- (mirrors mod_dav_svn's own ETag convention, minus the
+                -- path component -- HTTP already scopes ETag validation to
+                -- the requested URL itself). Weak (W/), since this is a
+                -- semantically-equivalent rendering of the underlying
+                -- revision, not a byte-precise one. Only set when this
+                -- response is provably a pure function of (repo, path,
+                -- revision): omitted for nav's own root/lazy-expansion
+                -- fetches (nav_target_path truthy -- see the comment above
+                -- it), whose expanded/selected markers can differ for the
+                -- identical URL+revision depending on the browser's
+                -- current HX-Current-URL; also omitted on the Collection-
+                -- of-Repositories listing, which has no revision concept
+                -- at all -- gated on "index.base ~= \"\"" (the same
+                -- has_base signal template_context() already relies on),
+                -- NOT "index.rev ~= \"\"": confirmed against a real server
+                -- that mod_dav_svn still emits a "rev" attribute (e.g.
+                -- "0") on the Collection-of-Repositories listing even
+                -- though it omits "base" there, so index.rev alone isn't a
+                -- reliable signal for "is this a real repository". index.rev
+                -- is mod_dav_svn's own trusted XML output (always a plain
+                -- integer), not client-supplied, so no separate escaping is
+                -- needed for the header value.
+                if index.base ~= "" and not nav_target_path then
+                    r.headers_out["ETag"] = 'W/"' .. index.rev .. '-lua"'
+                end
+
                 r:debug(string.format(
                     "SVN index metadata: rev=%s path=%s base=%s",
                     index.rev,
@@ -288,7 +643,7 @@ function output_filter(r)
                 element = "repo"
             end
 
-            local html = render_entry(element, attr, base_href, templates)
+            local html = render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern)
 
             if html then
                 rendered_count = rendered_count + 1
