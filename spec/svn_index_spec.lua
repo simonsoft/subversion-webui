@@ -479,7 +479,9 @@ describe("svn-index output_filter", function()
             '<wa-breadcrumb-item><wa-icon name="folder" variant="regular"></wa-icon> arbortext</wa-breadcrumb-item>',
             1, true
         ))
-        assert.truthy(html:find('<a href="../../../"><wa-icon name="house">', 1, true))
+        -- Absolute, not "../../../" -- see the note above compute_breadcrumbs
+        -- for why repo_parent_path can't be relative like "Up" is.
+        assert.truthy(html:find('<a href="/svn/"><wa-icon name="house">', 1, true))
         assert.truthy(html:find('<a href="../"><wa-icon name="turn-up">', 1, true))
     end)
 
@@ -1135,7 +1137,7 @@ describe("svn-index output_filter", function()
         }, "/svn/myrepo/trunk/arbortext/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find('<a href="../?p=10"><wa-icon name="turn-up">', 1, true))
-        assert.truthy(html:find('<a href="../../../"><wa-icon name="house">', 1, true))
+        assert.truthy(html:find('<a href="/svn/"><wa-icon name="house">', 1, true))
     end)
 
     it("\"Up\" drops the revision pin at the repo root, since it exits to the Collection-of-Repositories listing there, which has no revision concept at all", function()
@@ -1149,6 +1151,35 @@ describe("svn-index output_filter", function()
 
         assert.truthy(html:find('<a href="../"><wa-icon name="turn-up">', 1, true))
         assert.falsy(html:find('<a href="../?p=10">', 1, true))
+    end)
+
+    it("\"Start\" is absolute even at the repo root itself (0 path segments), landing one level up on the Collection-of-Repositories listing", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, "/svn/myrepo/", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<a href="/svn/"><wa-icon name="house">', 1, true))
+    end)
+
+    it("\"Start\" on the Collection-of-Repositories listing itself is this same absolute URL, not a relative self-link", function()
+        -- A relative "" would have resolved (at click time, in a real
+        -- browser) against whatever URL is *currently* in the address bar
+        -- -- which, after any htmx-driven navigation elsewhere on the page
+        -- (this header is never re-rendered by any htmx swap), could be a
+        -- completely different, deeper location than this response's own.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="0" path="Collection of Repositories">
+<dir name="demo1" href="demo1/" />
+</index>
+</svn>]]
+        }, "/svn/", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<a href="/svn/"><wa-icon name="house">', 1, true))
     end)
 
     it("never marks an entry on-path for main's own content-swap request, even with a matching HX-Current-URL", function()

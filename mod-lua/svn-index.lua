@@ -167,11 +167,26 @@ end
 -- is just a label ("Collection of Repositories"), not a real path, so it's
 -- rendered as a single unlinked crumb (neither "is_repo" nor "is_dir", so
 -- the template gives it no icon either). Also returns the total segment
--- count, reused by the caller to compute `root_href` (one level further up
--- than the repo root).
+-- count, and an absolute "repo_parent_path" -- one level further up than
+-- the repo root (the Collection-of-Repositories listing itself), or this
+-- same request's own URL when already there.
+--
+-- repo_parent_path is deliberately absolute, never a relative "../../.."
+-- built from a bare segment count: the page header (where
+-- repo_parent_path is used, see page.mustache's "Start" link) is only
+-- ever rendered on the initial full page load -- it's never part of any
+-- htmx-selected swap fragment, so it's never re-rendered afterward. Once
+-- the user navigates via htmx (which updates the browser's address bar
+-- via history.pushState, see "HX-Push-Url" below), a relative multi-hop
+-- href in that stale header would resolve against the browser's
+-- *current* location at click time, not the depth it was actually
+-- computed for -- landing somewhere wrong (or, for a relative "" on the
+-- Collection listing, just self-linking back to wherever the user
+-- currently is instead of going home). An absolute path has no such
+-- dependency on the browser's current location.
 local function compute_breadcrumbs(path, base, has_base, request_href, revision_suffix)
     if not has_base then
-        return { { name = escape_html(path), last = true } }, 0
+        return { { name = escape_html(path), last = true } }, 0, escape_html(request_href)
     end
 
     local segments = {}
@@ -216,7 +231,19 @@ local function compute_breadcrumbs(path, base, has_base, request_href, revision_
         }
     end
 
-    return breadcrumbs, total
+    -- One level above the repo root itself (repo_root_segment_count - 1
+    -- segments) -- guarded against the Location prefix being the server
+    -- root (repo_root_segment_count == 1, e.g. SVNParentPath mounted
+    -- directly at "/"), where table.concat's own upper bound would
+    -- otherwise fall below its lower bound and produce a bare "/" anyway,
+    -- but spelled out explicitly rather than relying on that fallthrough.
+    -- Deliberately never carries revision_suffix (confirmed with the user
+    -- for the old relative version -- "Start" always resets to HEAD).
+    local repo_parent_path = repo_root_segment_count > 1
+        and "/" .. table.concat(request_segments, "/", 1, repo_root_segment_count - 1) .. "/"
+        or "/"
+
+    return breadcrumbs, total, escape_html(repo_parent_path)
 end
 
 -- attr.href is always relative to the directory currently being listed
@@ -524,7 +551,7 @@ function output_filter(r)
     -- in this file (including the ETag guard below) keys off it alone.
     local function template_context()
         local has_base = index.base ~= ""
-        local breadcrumbs, segment_count = compute_breadcrumbs(index.path, index.base, has_base, request_href, revision_suffix)
+        local breadcrumbs, segment_count, repo_parent_path = compute_breadcrumbs(index.path, index.base, has_base, request_href, revision_suffix)
 
         return {
             base = index.base,
@@ -534,11 +561,7 @@ function output_filter(r)
             svn_version = svn.version,
             svn_href = svn.href,
             breadcrumbs = breadcrumbs,
-            -- "Start" deliberately resets to HEAD rather than preserving
-            -- the pin (confirmed with the user) -- unlike every other
-            -- generated href in this file, root_href never gets
-            -- revision_suffix appended.
-            root_href = has_base and escape_html(string.rep("../", segment_count + 1)) or "",
+            repo_parent_path = repo_parent_path,
             -- "Up" (page.mustache's hardcoded href="../") preserves the pin
             -- only when staying inside the same repository -- from the
             -- repo root itself (zero path segments), "Up" instead exits to
