@@ -70,6 +70,10 @@ LuaOutputFilter SVN_XML_INDEX \
 </Location>
 ```
 
+For serving XML responses (e.g. `SVNIndexXSLT` output) to browsers that
+have dropped native client-side XSLT support, see
+[README-xslt-polyfill.md](README-xslt-polyfill.md) for an independent
+output filter that polyfills it instead.
 ### Apache httpd transfer
 
 The transfer will be chunked unless returned in a single brigade. This is already the case with mod_dav_svn regardless of additional filter. However, if deflate or other compression filter is enabled, the compressed response might fit into the compression filter's buffer and then become a regular transfer with Content-Length header.
