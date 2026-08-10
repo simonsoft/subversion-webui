@@ -1,6 +1,5 @@
 local lxp = require "lxp"
 local lustache = require "lustache"
-local rex = require "rex_pcre2"
 
 -- Resolve the repo root next to this script, regardless of the current
 -- working directory or the absolute path Apache was configured with
@@ -266,12 +265,13 @@ local ENTRY_CONTEXT_BUILDERS = {
     -- is never a prefix match unless the request is literally for the
     -- Collection-of-Repositories page itself, which compares against a
     -- *shorter* path that can't "start with" a longer one.
-    -- hide_dir_regex (SVN_INDEX_HIDE_DIR, see output_filter) is only ever
-    -- meant for ordinary directories -- this same function also runs for
-    -- "repo" entries via the alias below, so "navhidden" ends up computed
-    -- (but unused) there too: repo.mustache deliberately never references
-    -- it, so a repo name matching the pattern has no visible effect.
-    dir = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_regex)
+    -- hide_dir_pattern (SVN_INDEX_HIDE_DIR, see output_filter) is only
+    -- ever meant for ordinary directories -- this same function also runs
+    -- for "repo" entries via the alias below, so "navhidden" ends up
+    -- computed (but unused) there too: repo.mustache deliberately never
+    -- references it, so a repo name matching the pattern has no visible
+    -- effect.
+    dir = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern)
         local name = (attr.name or attr.href or ""):gsub("/$", "")
         local href = attr.href or "#"
 
@@ -314,7 +314,13 @@ local ENTRY_CONTEXT_BUILDERS = {
             and nav_target_path == hx_href_path
         local is_target_ancestor = is_target_any and not is_target_leaf
 
-        local navhidden = hide_dir_regex and hide_dir_regex:find(name) ~= nil
+        -- r:regex() returns a *table* (truthy) on match, `false` on no
+        -- match -- normalized to a plain boolean here (rather than handing
+        -- lustache that raw table) since lustache treats a table-valued
+        -- mustache section specially (iterating it as a list, or using it
+        -- as a sub-context) instead of the simple render-once-if-truthy
+        -- behavior every other boolean field here relies on.
+        local navhidden = hide_dir_pattern ~= nil and r:regex(name, hide_dir_pattern) ~= false
 
         return {
             name = escape_html(name),
@@ -335,7 +341,7 @@ local ENTRY_CONTEXT_BUILDERS = {
 -- same context shape as "dir".
 ENTRY_CONTEXT_BUILDERS.repo = ENTRY_CONTEXT_BUILDERS.dir
 
-local function render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_regex)
+local function render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern)
     local build_context = ENTRY_CONTEXT_BUILDERS[element]
     local entry_template = templates.entries[element]
 
@@ -343,7 +349,7 @@ local function render_entry(element, attr, request_href, templates, query_file_p
         return nil
     end
 
-    return lustache:render(entry_template, build_context(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_regex))
+    return lustache:render(entry_template, build_context(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern))
 end
 
 function output_filter(r)
@@ -410,24 +416,28 @@ function output_filter(r)
     -- with the user), never to dir/breadcrumb/nav links.
     local query_file_params = r.subprocess_env and r.subprocess_env.SVN_INDEX_QUERY_FILE
 
-    -- SVN_INDEX_HIDE_DIR: a PCRE regex (rex_pcre2), tested against each
-    -- *directory* entry's own name (never repo entries -- see
-    -- ENTRY_CONTEXT_BUILDERS.dir). Matches are tagged "navhidden" -- hidden
+    -- SVN_INDEX_HIDE_DIR: a PCRE regex, tested against each *directory*
+    -- entry's own name (never repo entries -- see
+    -- ENTRY_CONTEXT_BUILDERS.dir) via mod_lua's own built-in r:regex() --
+    -- no extra Lua library needed. Matches are tagged "navhidden" -- hidden
     -- via CSS in the nav tree only, revealed by the same "Show folders"
     -- wa-switch that already reveals directories in the main content panel
-    -- (see templates/wa-page/page.mustache). Compiled once here rather than
-    -- per-entry. A malformed regex is logged and treated as "no pattern
-    -- configured" rather than aborting the whole response.
-    local hide_dir_regex = nil
+    -- (see templates/wa-page/page.mustache). r:regex() itself never raises
+    -- on a malformed pattern -- confirmed against mod_lua's own C source
+    -- (lua_ap_regex in modules/lua/lua_request.c): it returns `false` for
+    -- *both* "no match" and "pattern failed to compile", distinguishable
+    -- only via a second return value (an error string) present solely in
+    -- the latter case. Checked once here, against an empty string, purely
+    -- to log one warning per request instead of silently (and repeatedly,
+    -- once per entry) matching nothing.
     local hide_dir_pattern = r.subprocess_env and r.subprocess_env.SVN_INDEX_HIDE_DIR
 
     if hide_dir_pattern and hide_dir_pattern ~= "" then
-        local ok, compiled = pcall(rex.new, hide_dir_pattern)
+        local _, compile_err = r:regex("", hide_dir_pattern)
 
-        if ok then
-            hide_dir_regex = compiled
-        else
-            r:warn("svn-index: invalid SVN_INDEX_HIDE_DIR pattern, ignoring: " .. tostring(hide_dir_pattern))
+        if compile_err then
+            r:warn("svn-index: invalid SVN_INDEX_HIDE_DIR pattern, ignoring: " .. tostring(hide_dir_pattern) .. " (" .. tostring(compile_err) .. ")")
+            hide_dir_pattern = nil
         end
     end
 
@@ -633,7 +643,7 @@ function output_filter(r)
                 element = "repo"
             end
 
-            local html = render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_regex)
+            local html = render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern)
 
             if html then
                 rendered_count = rendered_count + 1

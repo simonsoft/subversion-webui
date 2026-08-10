@@ -8,11 +8,10 @@ Tested on Ubuntu 24.04
 
 ```
 # TODO: Confirm if all are needed.
-sudo apt install     lua5.3     liblua5.3-dev     luarocks     libexpat1-dev     libpcre2-dev
+sudo apt install     lua5.3     liblua5.3-dev     luarocks     libexpat1-dev
 
 sudo luarocks --lua-version=5.3 install luaexpat
 sudo luarocks --lua-version=5.3 install lustache
-sudo luarocks --lua-version=5.3 install lrexlib-pcre2
 ```
 
 Deploy the whole repository (not just `mod-lua/`) to `/opt/subversion-webui`,
@@ -78,10 +77,13 @@ The transfer will be chunked unless returned in a single brigade. This is alread
 
 ## Running tests
 
-Tests use [busted](https://lunarmodules.github.io/busted/) and run against the real `luaexpat`/`lustache` dependencies (only the Apache request object and the bucket-streaming protocol are mocked).
+Tests use [busted](https://lunarmodules.github.io/busted/) and run against the real `luaexpat`/`lustache` dependencies (only the Apache request object and the bucket-streaming protocol are mocked). The mocked request object's `regex()` method (standing in for mod_lua's own built-in `r:regex()`, used by `SVN_INDEX_HIDE_DIR` -- see below) is backed by `lrexlib-pcre2`, a test-only dependency: production never needs it, since `r:regex()` is provided by mod_lua itself.
 
 ```
+sudo apt install libpcre2-dev
+
 luarocks install busted
+luarocks install lrexlib-pcre2
 
 busted spec/
 ```

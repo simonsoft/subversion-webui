@@ -12,6 +12,36 @@ local ROOT = spec_dir() .. "../"
 
 dofile(ROOT .. "mod-lua/svn-index.lua")
 
+-- Mocks mod_lua's own built-in r:regex() (used by SVN_INDEX_HIDE_DIR --
+-- see output_filter), which production code relies on directly with no
+-- extra Lua library of its own. Confirmed against mod_lua's C source
+-- (lua_ap_regex in modules/lua/lua_request.c): returns a truthy captures
+-- table on match, `false` on no match, or `false, err` when the pattern
+-- itself fails to compile -- never raises a Lua error either way. This
+-- mock reproduces that exact three-way contract, backed by lrexlib's
+-- PCRE2 binding purely so the test suite can exercise real PCRE matching
+-- (e.g. alternation) without a real Apache request object -- a test-only
+-- dependency; see the "Running tests" section of the README.
+local rex_ok, rex = pcall(require, "rex_pcre2")
+
+local function mock_regex(_, source, pattern)
+    if not rex_ok then
+        error("spec harness requires lrexlib-pcre2 to mock r:regex() -- see README's \"Running tests\" section")
+    end
+
+    local compile_ok, compiled = pcall(rex.new, pattern)
+
+    if not compile_ok then
+        return false, tostring(compiled)
+    end
+
+    if not compiled:find(source) then
+        return false
+    end
+
+    return { [0] = source }
+end
+
 -- unparsed_uri defaults to mirroring `uri` -- correct for every existing
 -- fixture, which only ever uses plain ASCII paths where the encoded
 -- (r.unparsed_uri) and decoded (r.uri) forms are identical anyway. Pass it
@@ -49,6 +79,7 @@ local function make_request(uri, subprocess_env, headers_in, unparsed_uri)
     r.debug = logger("debug")
     r.warn = logger("warn")
     r.err = logger("err")
+    r.regex = mock_regex
 
     return r
 end
