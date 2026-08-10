@@ -317,7 +317,7 @@ wa-tree-item a {
 <div class="wa-cluster" id="breadcrumb">
 <wa-breadcrumb>
 <span slot="separator">/</span>
-{{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
+{{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
 {{/breadcrumbs}}
 </wa-breadcrumb>
 {{#revision_pinned}}<span class="revision-badge">{{{revision_pinned}}}</span>{{/revision_pinned}}
@@ -332,7 +332,7 @@ wa-tree-item a {
 <wa-tree class="svn-index" id="svn-index">
 {{{svn_index}}}</wa-tree>
 </div>
-<footer slot="footer">
+<footer slot="footer" id="footer">
 <span>{{#has_base}}Repository: {{base}} &middot; Path: {{/has_base}}{{path}} {{#has_base}}&middot; Revision: {{rev}}{{/has_base}}</span>
 <em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
 </footer>
