@@ -1,9 +1,12 @@
-<tr class="log-item">
-<td class="revision">{{{revision}}}</td>
-<td class="author">{{{author}}}</td>
-<td class="date">{{{date}}}</td>
-<td class="message"><pre>{{{message}}}</pre></td>
-<td class="changed-paths"><ul>
-{{#changed_paths}}<li class="action-{{action_class}}"><span class="action">{{action}}</span> {{{path}}}</li>
-{{/changed_paths}}</ul></td>
-</tr>
+<wa-details class="log-item">
+<div slot="summary" class="log-summary">
+<a class="revision-badge" href="{{{revision_href}}}">{{{revision}}}</a>
+<wa-format-date style="text-wrap: nowrap; overflow: clip;" date="{{{date}}}" month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric"{{#date_lang}} lang="{{{date_lang}}}"{{/date_lang}}></wa-format-date>
+<span class="log-author"><wa-icon name="user" variant="solid" style="font-size: 0.8rem;"></wa-icon> <strong>{{{author}}}</strong></span>
+<div class="log-message-preview"><span><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon> <em>{{{message}}}</em></span></div>
+</div>
+<pre class="log-message-full">{{{message}}}</pre>
+<ul class="changed-paths">
+{{#changed_paths}}<li class="action-{{action_class}}"><wa-icon name="{{icon}}" variant="solid"></wa-icon> {{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}}{{#copyfrom}} <span class="copy-from"><wa-icon name="arrow-right" variant="solid"></wa-icon> from {{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}} @{{{rev}}}</span>{{/copyfrom}}</li>
+{{/changed_paths}}</ul>
+</wa-details>

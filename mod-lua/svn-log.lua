@@ -61,6 +61,43 @@ local function parse_query_param(str, key)
     return nil
 end
 
+-- Duplicated from svn-index.lua (no shared module exists in this repo).
+-- Merges an extra literal query-string fragment onto an href that may or
+-- may not already have its own query.
+local function append_query(href, extra_query)
+    if not extra_query or extra_query == "" then
+        return href
+    end
+
+    return href .. (href:find("?", 1, true) and "&" or "?") .. extra_query
+end
+
+-- Duplicated from svn-index.lua: request_href built from r.unparsed_uri
+-- (still percent-encoded), not the decoded r.uri -- needed here for the
+-- revision-badge link (see render_log_item's "revision_href").
+local function url_path(url)
+    local path = url:match("^%a[%w+.-]*://[^/]*(/.*)$") or url
+
+    return path:match("^([^?#]*)")
+end
+
+-- mod_dav_svn's log-report emits changed-path text as raw,
+-- NON-percent-encoded repo-root-relative paths -- unlike svn-index.lua's
+-- directory-listing XML, whose href attributes ARE already
+-- percent-encoded by mod_dav_svn itself. Nothing in this app currently
+-- percent-encodes anything; this is the first such helper.
+--
+-- Byte-by-byte encoding is safe for UTF-8: every byte of a multi-byte
+-- sequence is >0x7F, so each independently falls outside the allowed set
+-- and gets escaped -- the resulting %XX%XX..., read back together, is the
+-- correct encoding of the whole character. "/" is kept unencoded (a path
+-- separator, not data), alongside RFC 3986's unreserved set.
+local function percent_encode_path(path)
+    return (tostring(path or ""):gsub("[^%w%-%._~/]", function(ch)
+        return string.format("%%%02X", ch:byte())
+    end))
+end
+
 -- limit/end-revision both originate from r.args, which is
 -- attacker-controlled, and are concatenated directly into an XML request
 -- body below (see build_log_report_body) -- they MUST be validated as plain
@@ -228,6 +265,11 @@ local CHANGED_PATH_ACTIONS = {
     ["S:replaced-path"] = "R"
 }
 
+-- The 4 confirmed Font Awesome solid icon names for each changed-path
+-- action (verified by fetching each SVG directly from Font Awesome's own
+-- package on unpkg.com).
+local ACTION_ICONS = { A = "plus", M = "pen", D = "trash", R = "arrows-rotate" }
+
 -- Cache of already-loaded template sets, keyed by template type -- mirrors
 -- svn-index.lua's own load_template_set caching rationale.
 local log_template_cache = {}
@@ -263,21 +305,80 @@ local function load_log_template_set(template_type)
     return set
 end
 
-local function render_log_item(templates, item)
+-- Builds the href for one repo-root-relative path string (a changed
+-- path's own destination, or its copyfrom-path). repo_root anchors it to
+-- a real URL (see the "repo_root" query param read in output_filter,
+-- sourced from svn-index.lua's history_href); percent_encode_path makes
+-- the path safe inside an href; "?p=REV" pins it at whatever revision the
+-- path text is meaningful for -- the log entry's OWN revision for the
+-- destination, but copyfrom_rev for a copy source (these differ -- see
+-- render_log_item). SVN_INDEX_QUERY_FILE is layered on top, but only for
+-- file node-kind entries, mirroring svn-index.lua's own
+-- ENTRY_CONTEXT_BUILDERS.file scoping exactly.
+--
+-- Returns nil (template falls back to plain, unlinked text) when
+-- repo_root or revision is unknown -- e.g. a History link fetched before
+-- "repo_root" existed in the URL, or a malformed copyfrom-rev.
+local function build_changed_path_href(repo_root, path, revision, node_kind, query_file_params)
+    if not repo_root or repo_root == "" or not revision or revision == "" then
+        return nil
+    end
+
+    -- repo_root always ends in "/" (see svn-index.lua's href_through());
+    -- log-report's own changed-path text always starts with "/" (it's
+    -- repo-root-relative) -- strip it here to avoid a doubled "//".
+    local relative_path = path:gsub("^/", "")
+    local href = repo_root .. percent_encode_path(relative_path) .. "?p=" .. revision
+
+    if node_kind == "file" then
+        href = append_query(href, query_file_params)
+    end
+
+    return href
+end
+
+local function render_log_item(templates, item, context)
     local changed_paths = {}
 
     for _, cp in ipairs(item.changed_paths) do
-        changed_paths[#changed_paths + 1] = {
+        local href = build_changed_path_href(
+            context.repo_root, cp.path, item.revision, cp.node_kind, context.query_file_params
+        )
+
+        local entry = {
             action = cp.action,
             action_class = cp.action:lower(),
-            path = escape_html(cp.path)
+            icon = ACTION_ICONS[cp.action],
+            path = escape_html(cp.path),
+            href = href and escape_html(href) or nil
         }
+
+        if cp.copyfrom_path then
+            local copyfrom_href = build_changed_path_href(
+                context.repo_root, cp.copyfrom_path, cp.copyfrom_rev, cp.node_kind, context.query_file_params
+            )
+
+            entry.copyfrom = {
+                path = escape_html(cp.copyfrom_path),
+                rev = escape_html(cp.copyfrom_rev),
+                href = copyfrom_href and escape_html(copyfrom_href) or nil
+            }
+        end
+
+        changed_paths[#changed_paths + 1] = entry
     end
 
     return lustache:render(templates.item, {
         revision = escape_html(item.revision),
+        -- Always the SAME directory currently being browsed
+        -- (context.request_href), just pinned at this entry's own
+        -- revision -- unlike a changed-path's own link, which may point
+        -- elsewhere in the repo entirely and therefore needs repo_root.
+        -- No repo_root plumbing needed for this one.
+        revision_href = escape_html(context.request_href .. "?p=" .. item.revision),
         author = escape_html(item.author),
         date = escape_html(item.date),
+        date_lang = context.date_lang and escape_html(context.date_lang) or nil,
         message = escape_html(item.message),
         changed_paths = changed_paths
     })
@@ -301,6 +402,46 @@ function output_filter(r)
     end
 
     local templates = load_log_template_set(template_type)
+
+    local request_href = url_path(tostring(r.unparsed_uri or r.uri or ""))
+
+    if request_href ~= "" and not request_href:match("/$") then
+        request_href = request_href .. "/"
+    end
+
+    -- The repo-root URL svn-index.lua appended onto the History link as
+    -- "&repo_root=..." -- this filter has no other way to know where the
+    -- repo root sits in the URL space (only svn-index.lua sees
+    -- mod_dav_svn's own <index base="..." path="..."> attributes;
+    -- log-report XML carries no such info). Absent for an older cached
+    -- History link -- changed-path links simply render as plain, unlinked
+    -- text in that case.
+    local repo_root = parse_query_param(r.args, "repo_root")
+
+    -- SVN_INDEX_QUERY_FILE: the same env var svn-index.lua already reads
+    -- for its own file-entry links (locked-in decision: reused, not a
+    -- separate knob) -- applied only to file node-kind changed-path
+    -- entries (see build_changed_path_href), mirroring svn-index.lua's
+    -- own ENTRY_CONTEXT_BUILDERS.file scoping.
+    local query_file_params = r.subprocess_env and r.subprocess_env.SVN_INDEX_QUERY_FILE
+
+    -- SVN_LOG_DATE_LANG: an optional BCP-47 language tag (e.g. "sv")
+    -- passed straight through as <wa-format-date>'s own "lang" attribute.
+    -- Omitted entirely when unset/empty, so <wa-format-date> falls back
+    -- to the browser/document's own locale (locked-in decision: not
+    -- hardcoded).
+    local date_lang = r.subprocess_env and r.subprocess_env.SVN_LOG_DATE_LANG
+
+    if date_lang == "" then
+        date_lang = nil
+    end
+
+    local render_context = {
+        request_href = request_href,
+        repo_root = repo_root,
+        query_file_params = query_file_params,
+        date_lang = date_lang
+    }
 
     -- The preamble/postamble are static markup with no data of their own
     -- to render (unlike svn-index.lua's, which needs <index>'s rev/path/
@@ -359,7 +500,19 @@ function output_filter(r)
             end
 
             if item and CHANGED_PATH_ACTIONS[name] then
-                local entry = { action = CHANGED_PATH_ACTIONS[name], path = "" }
+                -- copyfrom-path/copyfrom-rev are only ever present on
+                -- added-path/replaced-path per the confirmed log-report
+                -- schema, but read unconditionally here -- nil/absent on
+                -- modified-path/deleted-path, with no special-casing
+                -- needed here (only in rendering, which decides whether
+                -- to show a "from" indicator).
+                local entry = {
+                    action = CHANGED_PATH_ACTIONS[name],
+                    path = "",
+                    node_kind = attr["node-kind"],
+                    copyfrom_path = attr["copyfrom-path"],
+                    copyfrom_rev = attr["copyfrom-rev"]
+                }
                 item.changed_paths[#item.changed_paths + 1] = entry
                 capture_target, capture_field, capture_buffer = entry, "path", ""
             end
@@ -385,7 +538,7 @@ function output_filter(r)
 
             if name == "S:log-item" and item then
                 rendered_count = rendered_count + 1
-                pending_output[#pending_output + 1] = render_log_item(templates, item)
+                pending_output[#pending_output + 1] = render_log_item(templates, item, render_context)
                 item = nil
             end
         end

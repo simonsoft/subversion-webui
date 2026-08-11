@@ -311,22 +311,23 @@ describe("svn-log output_filter", function()
 </S:log-item>
 </S:log-report>
 ]]
-        }, "/svn/demo1/trunk/")
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
 
-        assert.truthy(html:find('<table class="svn-log-table">', 1, true))
+        assert.truthy(html:find('<div class="svn-log">', 1, true))
 
-        assert.truthy(html:find('<td class="revision">42</td>', 1, true))
-        assert.truthy(html:find('<td class="author">alice</td>', 1, true))
-        assert.truthy(html:find('<td class="date">2024-01-01T12:00:00.000000Z</td>', 1, true))
-        assert.truthy(html:find('<pre>Fix bug</pre>', 1, true))
-        assert.truthy(html:find('<span class="action">M</span> /trunk/foo.txt', 1, true))
+        assert.truthy(html:find('<a class="revision-badge" href="/svn/demo1/trunk/?p=42">42</a>', 1, true))
+        assert.truthy(html:find('<wa-icon name="user" variant="solid" style="font-size: 0.8rem;"></wa-icon> <strong>alice</strong>', 1, true))
+        assert.truthy(html:find('date="2024-01-01T12:00:00.000000Z" month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric"></wa-format-date>', 1, true))
+        assert.truthy(html:find('<em>Fix bug</em>', 1, true))
+        assert.truthy(html:find('<pre class="log-message-full">Fix bug</pre>', 1, true))
+        assert.truthy(html:find('<wa-icon name="pen" variant="solid"></wa-icon> <a href="/svn/demo1/trunk/foo.txt?p=42">/trunk/foo.txt</a>', 1, true))
 
-        assert.truthy(html:find('<td class="revision">41</td>', 1, true))
-        assert.truthy(html:find('<span class="action">A</span> /trunk/bar.txt', 1, true))
-        assert.truthy(html:find('<span class="action">D</span> /trunk/old.txt', 1, true))
+        assert.truthy(html:find('<a class="revision-badge" href="/svn/demo1/trunk/?p=41">41</a>', 1, true))
+        assert.truthy(html:find('<wa-icon name="plus" variant="solid"></wa-icon> <a href="/svn/demo1/trunk/bar.txt?p=41">/trunk/bar.txt</a>', 1, true))
+        assert.truthy(html:find('<wa-icon name="trash" variant="solid"></wa-icon> <a href="/svn/demo1/trunk/old.txt?p=41">/trunk/old.txt</a>', 1, true))
 
-        local _, rev42_pos = html:find('42</td>', 1, true)
-        local _, rev41_pos = html:find('41</td>', 1, true)
+        local _, rev42_pos = html:find('>42<', 1, true)
+        local _, rev41_pos = html:find('>41<', 1, true)
         assert.truthy(rev42_pos < rev41_pos)
     end)
 
@@ -342,9 +343,10 @@ describe("svn-log output_filter", function()
 </S:log-report>]]
         }, "/svn/demo1/trunk/")
 
-        assert.truthy(html:find('<td class="revision">7</td>', 1, true))
-        assert.truthy(html:find('<td class="author">carol</td>', 1, true))
-        assert.truthy(html:find('<pre>Initial import</pre>', 1, true))
+        assert.truthy(html:find('<a class="revision-badge" href="/svn/demo1/trunk/?p=7">7</a>', 1, true))
+        assert.truthy(html:find('<strong>carol</strong>', 1, true))
+        assert.truthy(html:find('<em>Initial import</em>', 1, true))
+        assert.truthy(html:find('<pre class="log-message-full">Initial import</pre>', 1, true))
     end)
 
     it("HTML-escapes the commit message and changed-path text", function()
@@ -366,13 +368,12 @@ describe("svn-log output_filter", function()
         assert.falsy(html:find("<weird>.txt", 1, true))
     end)
 
-    it("still renders a valid, empty table when there are zero log items", function()
+    it("still renders a valid, empty div when there are zero log items", function()
         local html = run_output_filter({
             [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:"></S:log-report>]]
         }, "/svn/demo1/trunk/")
 
-        assert.truthy(html:find('<table class="svn-log-table">', 1, true))
-        assert.truthy(html:find('<tbody>', 1, true))
+        assert.truthy(html:find('<div class="svn-log">', 1, true))
         assert.falsy(html:find('class="log-item"', 1, true))
     end)
 
@@ -390,5 +391,119 @@ describe("svn-log output_filter", function()
             end
         end
         assert.truthy(found_err)
+    end)
+
+    it("renders a copy/move's own source with the arrow-right icon and its own pinned revision, but not for a plain change", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>50</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-03-01T00:00:00.000000Z</S:date>
+<D:comment>Rename file</D:comment>
+<S:added-path node-kind="file" copyfrom-path="/trunk/old-name.txt" copyfrom-rev="30">/trunk/new-name.txt</S:added-path>
+<S:modified-path node-kind="file">/trunk/unrelated.txt</S:modified-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find('<span class="copy-from"><wa-icon name="arrow-right" variant="solid"></wa-icon> from <a href="/svn/demo1/trunk/old-name.txt?p=30">/trunk/old-name.txt</a> @30</span>', 1, true))
+
+        -- The sibling plain modified-path (no copyfrom attrs) must render
+        -- as a complete <li>...</li> with NO copy-from span appended --
+        -- this exact, closed string wouldn't match if one leaked in.
+        assert.truthy(html:find(
+            '<li class="action-m"><wa-icon name="pen" variant="solid"></wa-icon> <a href="/svn/demo1/trunk/unrelated.txt?p=50">/trunk/unrelated.txt</a></li>',
+            1, true
+        ))
+    end)
+
+    it("falls back to plain, unlinked changed-path text when repo_root is absent, while the revision badge still links", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>12</D:version-name>
+<D:creator-displayname>bob</D:creator-displayname>
+<S:date>2024-01-05T00:00:00.000000Z</S:date>
+<D:comment>No repo_root here</D:comment>
+<S:modified-path node-kind="file">/trunk/foo.txt</S:modified-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/")
+
+        assert.truthy(html:find('<a class="revision-badge" href="/svn/demo1/trunk/?p=12">12</a>', 1, true))
+        -- This exact, closed substring (icon straight through to the
+        -- </li>, no <a href> in between) wouldn't match if a link had
+        -- been produced.
+        assert.truthy(html:find('<wa-icon name="pen" variant="solid"></wa-icon> /trunk/foo.txt</li>', 1, true))
+    end)
+
+    it("percent-encodes changed-path segments (space, parens, ampersand, UTF-8), without encoding the '/' separator", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>9</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>Odd filename</D:comment>
+<S:modified-path node-kind="file">/trunk/my file (v2)&amp;more/caf&#233;.txt</S:modified-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find(
+            'href="/svn/demo1/trunk/my%20file%20%28v2%29%26more/caf%C3%A9.txt?p=9"', 1, true
+        ))
+    end)
+
+    it("applies SVN_INDEX_QUERY_FILE only to file node-kind changed-path entries, never directories", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>20</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>Mixed entry</D:comment>
+<S:modified-path node-kind="file">/trunk/foo.txt</S:modified-path>
+<S:added-path node-kind="dir">/trunk/newdir</S:added-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/", {
+            SVN_INDEX_TEMPLATE = "wa-page",
+            SVN_INDEX_QUERY_FILE = "view=details"
+        })
+
+        assert.truthy(html:find('href="/svn/demo1/trunk/foo.txt?p=20&amp;view=details"', 1, true))
+        assert.truthy(html:find('href="/svn/demo1/trunk/newdir?p=20"', 1, true))
+        assert.falsy(html:find('newdir?p=20&amp;view=details', 1, true))
+    end)
+
+    it("includes lang on wa-format-date only when SVN_LOG_DATE_LANG is set", function()
+        local with_lang = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>1</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/", { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_DATE_LANG = "sv" })
+
+        assert.truthy(with_lang:find('lang="sv"></wa-format-date>', 1, true))
+
+        local without_lang = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>1</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/")
+
+        assert.falsy(without_lang:find(' lang="', 1, true))
+        assert.truthy(without_lang:find('minute="numeric"></wa-format-date>', 1, true))
     end)
 end)

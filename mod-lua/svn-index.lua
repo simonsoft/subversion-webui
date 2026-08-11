@@ -553,6 +553,36 @@ function output_filter(r)
         local has_base = index.base ~= ""
         local breadcrumbs, segment_count, repo_parent_path = compute_breadcrumbs(index.path, index.base, has_base, request_href, revision_suffix)
 
+        -- repo_root: the repo root's own absolute, query-string-free URL,
+        -- passed through on history_href so svn-log.lua's output_filter
+        -- (which never sees mod_dav_svn's own <index base="..."
+        -- path="..."> attributes -- only svn-index.lua does) can anchor
+        -- changed-path links to a real URL. breadcrumbs[1].hx_href already
+        -- carries THIS request's own revision_suffix baked in (see
+        -- href_through() above) -- stripped back off here, since repo_root
+        -- itself must be revision-suffix-free: each log entry re-adds its
+        -- own "?p=REV" using its own revision, not necessarily this
+        -- request's.
+        --
+        -- Known, acceptable limitation (matching this codebase's existing
+        -- precision level -- e.g. SVN_INDEX_QUERY_FILE's own values are
+        -- also never percent-encoded): not percent-encoded as a
+        -- query-string value here, so a literal "&"/"#" inside a
+        -- repository name would corrupt it. Extremely unlikely in
+        -- practice, not worth solving now.
+        local repo_root = has_base and breadcrumbs[1].hx_href:match("^([^?]*)") or nil
+
+        -- Built raw (unescaped) first, then escape_html'd exactly once at
+        -- the very end -- matching every other href in this file -- rather
+        -- than escaping the base href and concatenating a raw repo_root
+        -- onto it afterward, which would leave repo_root's own value
+        -- unescaped.
+        local history_href_raw = request_href .. revision_suffix
+
+        if repo_root then
+            history_href_raw = append_query(history_href_raw, "repo_root=" .. repo_root)
+        end
+
         return {
             base = index.base,
             path = index.path,
@@ -591,7 +621,7 @@ function output_filter(r)
             -- navigation links can pull a freshly-rendered one out of their
             -- own full-page response via hx-select-oob, the same way they
             -- already do for "#breadcrumb"/"#footer".
-            history_href = escape_html(request_href .. revision_suffix),
+            history_href = escape_html(history_href_raw),
             -- nav starts at the repo root (breadcrumbs[1] is that crumb --
             -- lustache can't reach it directly as {{breadcrumbs.1.hx_href}},
             -- since breadcrumbs is an integer-indexed array, not

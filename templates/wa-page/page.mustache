@@ -132,6 +132,13 @@ document.addEventListener("htmx:after:swap", (event) => {
 document.addEventListener("htmx:after:swap", (event) => {
     if (event.detail.ctx.target?.id === "history-content") {
         document.getElementById("history-dialog").open = true;
+
+        // Every fresh History fetch re-renders entries collapsed (no
+        // "open" attribute -- see log-item.mustache) regardless of
+        // whatever expand/collapse state was left over from a previous
+        // view of this same dialog, so the toggle's own label is reset
+        // here to match.
+        setHistoryExpandToggleLabel(false);
     }
 });
 
@@ -214,6 +221,41 @@ document.addEventListener("keyup", (event) => {
 
     item?.querySelector(":scope > span[hx-get], :scope > a[href]")?.click();
 });
+
+// "Expand all"/"Collapse all" toggle for the History dialog's own entries
+// (see page.mustache's static "#history-expand-toggle", inside
+// "#history-dialog"'s own header-actions slot -- present in the DOM from
+// initial page load, unlike the entries themselves, which are swapped in
+// fresh on every History fetch). Delegated on document, not bound
+// directly: this script block runs in <head>, before <body> exists, so a
+// direct getElementById(...).addEventListener(...) here would find
+// nothing -- the same reason every other listener in this file is
+// registered on document. Re-queries wa-details.log-item at click time
+// for the same "swapped in fresh" reason -- there's no fixed set of
+// elements to bind to once, up front.
+document.addEventListener("click", (event) => {
+    if (!event.target.closest?.("#history-expand-toggle")) {
+        return;
+    }
+
+    const items = document.querySelectorAll("#history-content wa-details.log-item");
+
+    // "Expand all" while any entry is still collapsed (open them all);
+    // once every entry is already open, the same click collapses them
+    // all back down -- a stateful toggle, not a one-shot action.
+    const opening = [...items].some((item) => !item.open);
+
+    items.forEach((item) => { item.open = opening; });
+    setHistoryExpandToggleLabel(opening);
+});
+
+function setHistoryExpandToggleLabel(allOpen) {
+    const button = document.getElementById("history-expand-toggle");
+
+    if (button) {
+        button.textContent = allOpen ? "Collapse all" : "Expand all";
+    }
+}
 </script>
 <style>
 wa-page {
@@ -326,22 +368,107 @@ div.svn-main {
     padding: var(--wa-space-m);
 }
 
-/* Commit messages can contain long lines with no natural break points --
-   pre-wrap keeps embedded newlines (see the "History" log table's <pre>,
-   rendered by svn-log.lua's output_filter) while still wrapping instead of
-   overflowing the message column. */
-.svn-log-table pre {
-    white-space: pre-wrap;
-    margin: 0;
-    font: inherit;
-}
-
 /* "#history-dialog" itself sizes to fit its content by default -- capped
    here (on the content div, not the dialog) so a long history still
    scrolls internally instead of growing the dialog past the viewport. */
 #history-content {
     max-height: 65vh;
     overflow-y: auto;
+}
+
+/* One <wa-details class="log-item"> per History entry (see
+   log-item.mustache) -- independent expand/collapse (no shared "name"
+   attribute), consistent vertical rhythm across entries via flex+gap
+   rather than per-item margins. */
+.svn-log {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-xs);
+}
+
+/* Reuses the existing dashed-box style shared with the breadcrumb's own
+   "?p=REV" indicator (see ".revision-badge" above), but as a real link
+   now -- reset so it doesn't look like a boring blue hyperlink, matching
+   this file's own "wa-tree-item a" reset below for the same reason. */
+a.revision-badge {
+    color: inherit;
+    text-decoration: none;
+}
+
+.log-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--wa-space-s);
+}
+
+.log-author {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--wa-space-2xs);
+    color: var(--wa-color-text-quiet);
+}
+
+/* Two-line clamp for the always-visible comment preview -- the full
+   message is available below once expanded (".log-message-full"). A
+   -webkit-line-clamp box, not a fade-gradient overlay: this app targets
+   evergreen Chromium/Firefox/Safari, which all implement these (nominally
+   WebKit-prefixed, now universal) properties -- simpler and more robust
+   than a gradient mask over wa-details' own light/dark theme tokens, with
+   no separate overflow-detection needed either. white-space: pre-line
+   (not the default "normal") preserves embedded line breaks in the
+   collapsed preview too, not just the expanded <pre> below. */
+.log-message-preview {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: pre-line;
+    flex: 1 1 100%;
+    color: var(--wa-color-text-quiet);
+}
+
+/* The full commit message, revealed once expanded. pre-wrap keeps
+   embedded newlines while still wrapping long lines. Height-capped at
+   12rem -- roomy enough for most real commit messages to read in full
+   without scrolling, while still bounding a pathological multi-hundred-
+   line message to a fixed, independently scrollable box instead of
+   growing the whole dialog past the viewport. */
+.log-message-full {
+    white-space: pre-wrap;
+    margin: 0 0 var(--wa-space-s);
+    font: inherit;
+    max-height: 12rem;
+    overflow-y: auto;
+}
+
+.changed-paths {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-2xs);
+}
+
+.changed-paths li {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--wa-space-2xs);
+}
+
+.changed-paths a {
+    color: inherit;
+}
+
+/* A copy/move's own source indicator, inline after the destination path. */
+.copy-from {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--wa-space-2xs);
+    color: var(--wa-color-text-quiet);
+    font-size: var(--wa-font-size-s);
 }
 
 /* The navigation tree only ever browses folders -- files (and the ".."
@@ -406,6 +533,7 @@ wa-tree-item a {
 </footer>
 </wa-page>
 <wa-dialog id="history-dialog" label="History" light-dismiss style="--width: 90vw;">
+<wa-button id="history-expand-toggle" slot="header-actions" appearance="plain" size="small">Expand all</wa-button>
 <div id="history-content"></div>
 </wa-dialog>
 </body>

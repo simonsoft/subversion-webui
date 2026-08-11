@@ -1012,6 +1012,41 @@ describe("svn-index output_filter", function()
         ))
     end)
 
+    it("appends repo_root to history_href, layering after an existing \"?p=REV\" pin with \"&amp;\"", function()
+        -- svn-log.lua's own output_filter has no way to know where the
+        -- repo root sits in the URL space (only the directory-listing XML
+        -- this file parses carries <index base="..." path="...">) -- it
+        -- reads this back via r.args to anchor changed-path links. Built
+        -- raw (both request_href+revision_suffix and the repo_root
+        -- addition) and escape_html'd exactly once at the end, like every
+        -- other href in this file -- hence "&amp;", not "&".
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/trunk/" base="myrepo">
+</index>
+</svn>]]
+        }, "/svn/myrepo/trunk/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(
+            'hx-action="/svn/myrepo/trunk/?p=10&amp;repo_root=/svn/myrepo/"',
+            1, true
+        ))
+    end)
+
+    it("appends repo_root to history_href using \"?\" rather than \"&amp;\" when unpinned", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/trunk/" base="myrepo">
+</index>
+</svn>]]
+        }, "/svn/myrepo/trunk/", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(
+            'hx-action="/svn/myrepo/trunk/?repo_root=/svn/myrepo/"',
+            1, true
+        ))
+    end)
+
     it("tags a dir entry matching SVN_INDEX_HIDE_DIR with the \"navhidden\" class, leaving a non-matching sibling plain", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">

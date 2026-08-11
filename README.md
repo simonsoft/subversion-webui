@@ -113,6 +113,10 @@ LuaOutputFilter SVN_LOG_HTML \
     # Defaults to 50 when unset.
     # SetEnv SVN_LOG_LIMIT 50
 
+    # Locale for the date shown on each log entry (BCP-47 language tag,
+    # e.g. "sv"). Omitted/unset falls back to the browser's own locale.
+    # SetEnv SVN_LOG_DATE_LANG sv
+
 </Location>
 ```
 
@@ -140,6 +144,14 @@ must be set to `wa-page` for the History link to appear (see above) -- the
 other three templates have no `log.mustache`/`log-item.mustache` files and
 are unaffected by this filter pair being installed (they simply never send a
 non-XML-content-typed `REPORT` request).
+
+`SVN_INDEX_QUERY_FILE` (see above) is now also consulted by the History
+log's own output filter -- the same literal query-string fragment is
+appended to a changed-path's link when it refers to a file (never a
+directory), exactly mirroring how it's already applied to `svn-index.lua`'s
+own file-entry links. Existing deployments that already set
+`SVN_INDEX_QUERY_FILE` get this behavior automatically, with no config
+change needed.
 
 ### Apache httpd transfer
 
