@@ -120,8 +120,17 @@ document.addEventListener("htmx:after:swap", (event) => {
 // Re-opening (clicking History again while already viewing an older
 // result) is harmless: "open = true" on an already-open wa-dialog is a
 // no-op, confirmed against a real browser.
+//
+// Deliberately NOT event.target: htmx's own source
+// (__trigger(ctx.sourceElement, "htmx:after:swap", {ctx})) dispatches this
+// event ON THE REQUEST'S SOURCE ELEMENT (here, the History link itself),
+// not the swap target -- and since it bubbles, event.target stays that
+// source element throughout, never becoming "#history-content". The
+// resolved swap target is instead reachable at event.detail.ctx.target
+// (confirmed against htmx's own source: ctx.target is reassigned to the
+// actual resolved Element via __resolveTarget() during request setup).
 document.addEventListener("htmx:after:swap", (event) => {
-    if (event.target.id === "history-content") {
+    if (event.detail.ctx.target?.id === "history-content") {
         document.getElementById("history-dialog").open = true;
     }
 });
@@ -331,7 +340,7 @@ div.svn-main {
    here (on the content div, not the dialog) so a long history still
    scrolls internally instead of growing the dialog past the viewport. */
 #history-content {
-    max-height: 60vh;
+    max-height: 65vh;
     overflow-y: auto;
 }
 
@@ -396,7 +405,7 @@ wa-tree-item a {
 <em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
 </footer>
 </wa-page>
-<wa-dialog id="history-dialog" label="History" light-dismiss>
+<wa-dialog id="history-dialog" label="History" light-dismiss style="--width: 90vw;">
 <div id="history-content"></div>
 </wa-dialog>
 </body>
