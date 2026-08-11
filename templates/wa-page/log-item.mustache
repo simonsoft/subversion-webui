@@ -1,14 +1,16 @@
 <wa-details class="log-item">
 <div slot="summary" class="log-summary">
-<a class="revision-badge" href="{{{revision_href}}}">{{{revision}}}</a>
+<div class="log-summary-meta">
+<span class="log-revision-slot"><a class="revision-badge" href="{{{revision_href}}}">{{{revision}}}</a></span>
 <wa-format-date style="text-wrap: nowrap; overflow: clip;" date="{{{date}}}" month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric"{{#date_lang}} lang="{{{date_lang}}}"{{/date_lang}}></wa-format-date>
 <span class="log-author"><wa-icon name="user" variant="solid" style="font-size: 0.8rem;"></wa-icon> <strong>{{{author}}}</strong></span>
+</div>
 <div class="log-message-preview{{^message}} log-message-empty{{/message}}"><span><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon> <em>{{{message}}}</em></span></div>
 </div>
 <div class="log-body">
-<div class="log-message-full{{^message}} log-message-empty{{/message}}"><span><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon> <em>{{{message}}}</em></span></div>
+<div class="log-message-full{{^message}} log-message-empty{{/message}} wa-flank"><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon><em>{{{message}}}</em></div>
 <ul class="changed-paths">
-{{#changed_paths}}<li class="action-{{action_class}}"><wa-icon name="{{icon}}" variant="solid"></wa-icon> {{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}}{{#copyfrom}} <span class="copy-from">from {{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}} <span class="revision-badge revision-badge-small">{{{rev}}}</span></span>{{/copyfrom}}</li>
+{{#changed_paths}}<li class="action-{{action_class}} wa-flank"><wa-icon name="{{icon}}" variant="solid" style="font-size: 0.8rem;"></wa-icon><span>{{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}}{{#copyfrom}} <span class="copy-from">from {{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}} <span class="revision-badge revision-badge-small">{{{rev}}}</span></span>{{/copyfrom}}</span></li>
 {{/changed_paths}}</ul>
 </div>
 </wa-details>

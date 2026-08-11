@@ -380,16 +380,18 @@ div.svn-main {
    log-item.mustache) -- independent expand/collapse (no shared "name"
    attribute), consistent vertical rhythm across entries via flex+gap
    rather than per-item margins. --log-revision-column is the single
-   source of truth for how wide the revision-badge "column" is (see
-   ".log-item .revision-badge" and ".log-body" below, which both key off
-   it) -- sized to comfortably fit a 6-digit revision number. Deliberately
-   "rem", not "em": ".revision-badge" and ".log-body" have different
-   computed font-sizes (the badge uses the smaller
-   "--wa-font-size-s"), so an "em" value would resolve to a different
-   pixel width in each place -- exactly the kind of mismatch a real
-   browser caught (dateLeft/bodyLeft off by 9px) that a "looks right"
-   visual read alone wouldn't have. "rem" is always relative to the root
-   font-size, so both uses resolve to the identical pixel value. */
+   source of truth for a shared left-indent column, sized to comfortably
+   fit a 6-digit revision number -- everything that needs to line up
+   underneath the revision badge (".log-revision-slot",
+   ".log-message-preview", ".log-body", all below) keys off this one
+   value. Deliberately "rem", not "em": different elements using it live
+   in different parts of wa-details' own internals (its summary slot vs.
+   its default content slot), which could plausibly have different
+   computed font-sizes -- confirmed as a real risk, not just caution,
+   when an earlier version of this used "em" and a real browser measured
+   two supposedly-aligned elements 9px apart. "rem" is always relative to
+   the root font-size, so every use resolves to the identical pixel value
+   regardless of local font-size context. */
 .svn-log {
     --log-revision-column: 4rem;
     display: flex;
@@ -406,30 +408,31 @@ a.revision-badge {
     text-decoration: none;
 }
 
-/* Fixed-width "column" so every entry's revision badge lines up
-   regardless of how many digits it has, and so both the summary row's
-   own other fields and the expanded body's content (see ".log-body"
-   below) indent to the exact same point past it. Scoped to ".log-item"
-   rather than added to the base ".revision-badge" rule above, so the
-   header's own (unrelated) pinned-revision indicator next to the
-   breadcrumb is left untouched. */
-.log-item .revision-badge {
+/* Reserves the fixed-width indent column; the badge itself (see
+   ".revision-badge" above) stays tight around its own digits and just
+   sits left-aligned inside this wrapper, so shorter revisions leave
+   visible empty space to their right rather than stretching the badge's
+   own box to match. */
+.log-revision-slot {
     display: inline-block;
-    box-sizing: border-box;
     min-width: var(--log-revision-column);
-    text-align: center;
 }
 
 /* The copy/move source indicator's own revision badge (see
    log-item.mustache's ".copy-from") -- same square dashed-box style, but
-   smaller and without the fixed column width, since it sits inline
-   mid-sentence rather than anchoring a layout column. */
+   smaller, and never wrapped in ".log-revision-slot", since it sits
+   inline mid-sentence rather than anchoring a layout column. */
 .log-item .revision-badge-small {
-    min-width: 0;
     font-size: 0.75em;
 }
 
 .log-summary {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-2xs);
+}
+
+.log-summary-meta {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -447,31 +450,48 @@ a.revision-badge {
    (".log-message-full" below) show the same content, just clamped vs.
    not -- sharing this same font/color treatment is what makes the
    expanded one read as "the same text, just fully shown" rather than a
-   distinct code block. white-space: pre-line preserves embedded line
-   breaks in both without needing a <pre> element (whose default
-   monospace/bordered styling was the "ugly" look here). */
+   distinct code block. white-space is deliberately NOT shared here (see
+   each rule below) -- ".log-message-full" needs "pre-wrap", not
+   "pre-line", to avoid a real fidelity regression. */
 .log-message-preview,
 .log-message-full {
-    white-space: pre-line;
     color: var(--wa-color-text-quiet);
 }
 
-/* Sits on the right of the summary row (margin-left: auto), not stacked
-   on its own full-width line below -- revision/date/author stay grouped
-   on the left. Two-line clamp: a -webkit-box, not a fade-gradient
-   overlay -- this app targets evergreen Chromium/Firefox/Safari, which
-   all implement these (nominally WebKit-prefixed, now universal)
-   properties, simpler and more robust than a gradient mask over
-   wa-details' own light/dark theme tokens, with no separate
-   overflow-detection needed either. Hidden entirely once the entry is
-   expanded (see ".log-item[open]" below) -- the full message takes over
-   instead, so the same text is never shown twice at once. */
+/* On its own row below ".log-summary-meta" (revision/date/author),
+   indented to the exact same fixed column ".log-body" below also uses --
+   deliberately NOT positioned by flowing after (or right-aligning past)
+   the author field: author is a free-text value that can be anything
+   from "bob" to a full email address, so any alignment scheme keyed off
+   its own rendered width is only ever as reliable as that guess. A fixed
+   margin-left tied to --log-revision-column instead doesn't care how
+   long the author value is -- every entry's message starts at the same
+   position unconditionally. This also sidesteps a real flexbox +
+   "-webkit-line-clamp" interaction hit by an earlier version that DID
+   share a flex row with variable-width siblings (a line-clamped flex
+   item's own "flex-basis: auto" sizing from unclamped content width,
+   demanding far more row space than available and tripping the row's
+   own flex-wrap) -- with nothing to compete with for space on its own
+   row, that whole class of bug no longer applies here. Two-line clamp: a
+   -webkit-box, not a fade-gradient overlay -- this app targets evergreen
+   Chromium/Firefox/Safari, which all implement these (nominally
+   WebKit-prefixed, now universal) properties, simpler and more robust
+   than a gradient mask over wa-details' own light/dark theme tokens, with
+   no separate overflow-detection needed either. Hidden entirely once the
+   entry is expanded (see ".log-item[open]" below) -- the full message
+   takes over instead, so the same text is never shown twice at once.
+   white-space: pre-line (not the full-fidelity "pre-wrap"
+   ".log-message-full" uses below) preserves embedded line breaks but
+   collapses runs of multiple spaces/tabs -- an acceptable trade-off for
+   an already-truncated 2-line summary, avoiding the wider, more code-like
+   look "pre-wrap" gives a message with intentional multi-space
+   formatting. */
 .log-message-preview {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    margin-left: auto;
+    white-space: pre-line;
     max-width: 28rem;
 }
 
@@ -480,15 +500,42 @@ a.revision-badge {
 }
 
 /* The full commit message, revealed once expanded, indented to match
-   ".log-body" below. Height-capped at 12rem -- roomy enough for most real
-   commit messages to read in full without scrolling, while still
-   bounding a pathological multi-hundred-line message to a fixed,
-   independently scrollable box instead of growing the whole dialog past
-   the viewport. */
+   ".log-body" below. Uses Web Awesome's own "wa-flank" utility (see
+   log-item.mustache: this div's two direct children are the comment icon,
+   then the message text) so a wrapped message stays in its own column to
+   the right of the icon instead of its continuation lines sliding back
+   underneath it -- ordinary inline content (icon + text in one flow)
+   can't do this; wrapped lines of plain inline content always return to
+   the container's own left edge, not the position just past the icon.
+   white-space: pre-wrap (not ".log-message-preview"'s own "pre-line")
+   preserves runs of multiple spaces/tabs as well as newlines -- this is
+   the "show me everything, exactly as written" view, so it keeps full
+   fidelity for a message using intentional multi-space formatting (an
+   indented list, an ASCII-aligned snippet, etc.), which "pre-line" alone
+   would otherwise silently collapse. Height-capped at 12rem -- roomy
+   enough for most real commit messages to read in full without
+   scrolling, while still bounding a pathological multi-hundred-line
+   message to a fixed, independently scrollable box instead of growing
+   the whole dialog past the viewport. */
 .log-message-full {
+    white-space: pre-wrap;
     margin: 0 0 var(--wa-space-s);
     max-height: 12rem;
     overflow-y: auto;
+    /* wa-flank centers its two children by default, which centers the
+       icon against the full height of a wrapped multi-line message
+       instead of sitting next to its first line. baseline lines the icon
+       up with the text's own first-line baseline regardless of how many
+       lines the message wraps to -- flex-start looked wrong too: it pins
+       the icon to the very top of the line box, above the glyphs'
+       cap-height, so it read as floating above the text rather than
+       beside it. */
+    align-items: baseline;
+    /* wa-flank's own default gap is wider than ".changed-paths li" below
+       sets explicitly, which left the message text starting further from
+       its icon than each changed-path's text does. Matching it here keeps
+       the icon-to-text gap identical in both places. */
+    gap: var(--wa-space-2xs);
 }
 
 /* Dims the comment icon (rather than showing an empty italic span next to
@@ -498,12 +545,25 @@ a.revision-badge {
     opacity: 0.4;
 }
 
-/* The expanded body (full message + changed-paths list) indents to the
-   same point the summary row's own second field (the date) starts at --
-   past the revision-badge column plus the row's own gap -- so the
-   collapsed and expanded states share one consistent left edge. */
+/* ".log-message-preview" (above) and this both indent to the exact same
+   fixed column -- past the revision column plus the row's own gap -- so
+   the collapsed and expanded states share one consistent left edge, kept
+   in one shared rule rather than repeating the same calc() twice.
+   --flank-size is Web Awesome's own "wa-flank" utility custom property
+   (https://webawesome.com/docs/utilities/flank/), controlling how wide
+   the fixed/natural-size first child of a ".wa-flank" is -- set once
+   here, it inherits down to both ".log-message-full" and every
+   ".changed-paths li" below (both use ".wa-flank" with an icon as their
+   first child), so the message icon and every changed-path icon reserve
+   the exact same column width and land in the same vertical line,
+   regardless of each icon's own glyph metrics. */
+.log-message-preview,
 .log-body {
     margin-left: calc(var(--log-revision-column) + var(--wa-space-s));
+}
+
+.log-body {
+    --flank-size: 1.5rem;
 }
 
 .changed-paths {
@@ -515,11 +575,27 @@ a.revision-badge {
     gap: var(--wa-space-2xs);
 }
 
+/* Each <li> is itself a "wa-flank" (see log-item.mustache: its own two
+   direct children are the action icon, then a <span> wrapping the path
+   link and any copy-from indicator) -- own "display" deliberately left
+   unset here so wa-flank's own utility CSS (loaded earlier, in <head>)
+   supplies it uncontested; redeclaring "display: flex" on this same
+   selector would win the cascade (this stylesheet loads after Web
+   Awesome's own) and silently break the flank layout. --flank-size (see
+   ".log-body" above) is what actually aligns this icon with the log
+   message's own icon above it -- but only once margin is reset here too:
+   Web Awesome's own base stylesheet gives every <li> a default
+   margin-inline-start (measured at 18px), a general typography reset
+   with no awareness this specific <li> is a custom flex layout, not a
+   bulleted list item -- left unreset, it pushed this icon 18px further
+   right than ".log-message-full"'s own icon, confirmed via real
+   getBoundingClientRect() measurements (messageIconLeft=167 vs.
+   pathIconLeft=185) rather than assumed from the two rules merely
+   sharing the same --flank-size. */
 .changed-paths li {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
+    margin: 0;
     gap: var(--wa-space-2xs);
+    align-items: baseline;
 }
 
 .changed-paths a {

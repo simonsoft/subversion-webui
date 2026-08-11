@@ -194,6 +194,57 @@ try {
 
     await page.screenshot({ path: path.join(OUTPUT_DIR, "01-collapsed.png"), fullPage: true });
 
+    // Regression check: all 3 entries' collapsed message previews must
+    // start at exactly the same horizontal position, regardless of
+    // author-name length (a real username can be a full email address,
+    // not just a short handle -- not safe to size a column around a
+    // guessed length) or message length. ".log-message-preview" gets
+    // there via a fixed margin-left tied to --log-revision-column (see
+    // page.mustache), the same column ".log-body" indents to when
+    // expanded -- not by flowing after a fixed-width author field, which
+    // an earlier version tried and is exactly the kind of guess that
+    // breaks the moment a real author value is longer than assumed.
+    // (That earlier, flex-row-based approach also had its own once-real
+    // bug, now moot: a flex item using "display: -webkit-box" for its
+    // line-clamp defaulted to a "flex-basis: auto" that sized from its
+    // own unclamped content's preferred width, tripping the row's own
+    // flex-wrap for the one entry with a long message and dropping the
+    // ENTIRE preview to a new line. With nothing to share a row with
+    // anymore, that whole class of bug no longer applies.)
+    const previewLefts = await page.evaluate(() =>
+        [...document.querySelectorAll(".log-message-preview")].map((el) => el.getBoundingClientRect().left)
+    );
+    const maxPreviewLeftSpread = Math.max(...previewLefts) - Math.min(...previewLefts);
+    record(
+        "all 3 collapsed message previews start at exactly the same horizontal position",
+        maxPreviewLeftSpread <= 2, // px rounding only -- a fixed margin-left, not a guessed width
+        JSON.stringify(previewLefts)
+    );
+
+    // Regression check: the revision badge itself must stay tight around
+    // its own digits (this was briefly widened to the full fixed-indent
+    // column while solving the ".log-body" alignment problem, then
+    // deliberately reverted) -- the fixed column width instead lives on
+    // the wrapping ".log-revision-slot", not the badge. A 3-digit
+    // revision's own badge should render much narrower than the
+    // 4rem/64px column it sits inside.
+    const revisionSizes = await page.evaluate(() => {
+        const item = document.querySelectorAll("wa-details.log-item")[0];
+        const slot = item.querySelector(".log-revision-slot");
+        const badge = item.querySelector(".revision-badge");
+        return { slotWidth: slot.getBoundingClientRect().width, badgeWidth: badge.getBoundingClientRect().width };
+    });
+    record(
+        "revision badge itself is tight around the digits, narrower than its fixed-width slot",
+        revisionSizes.badgeWidth < revisionSizes.slotWidth - 10,
+        JSON.stringify(revisionSizes)
+    );
+    record(
+        "revision slot reserves the full fixed indent column (~64px for 4rem)",
+        Math.abs(revisionSizes.slotWidth - 64) <= 4,
+        JSON.stringify(revisionSizes)
+    );
+
     // Regression check for the actual bug this smoke test was built to
     // catch: white-space: pre-line was preserving an incidental
     // template-source newline as a visible blank line, wasting half the
@@ -337,6 +388,82 @@ try {
         JSON.stringify(shownOnceWhenExpanded)
     );
     record("full message is visible once expanded", shownOnceWhenExpanded.fullsVisible);
+
+    // Icon alignment: the comment icon on the expanded full message and
+    // the action icon on each changed-path <li> both use Web Awesome's
+    // "wa-flank" utility (see log-item.mustache) with a shared
+    // "--flank-size" (see ".log-body" in page.mustache) specifically so
+    // they land in the same vertical line regardless of each icon's own
+    // glyph metrics -- verified here via actual rendered x-positions, not
+    // just "both use wa-flank so it should be fine".
+    const iconAlignment = await page.evaluate(() => {
+        const item = [...document.querySelectorAll("wa-details.log-item")].find(
+            (el) => el.querySelector(".changed-paths li")
+        );
+        const messageIcon = item.querySelector(".log-message-full wa-icon");
+        const pathIcon = item.querySelector(".changed-paths li wa-icon");
+        return {
+            messageIconLeft: messageIcon.getBoundingClientRect().left,
+            pathIconLeft: pathIcon.getBoundingClientRect().left,
+        };
+    });
+    record(
+        "changed-path icon aligns horizontally with the log message icon",
+        Math.abs(iconAlignment.messageIconLeft - iconAlignment.pathIconLeft) <= TOLERANCE,
+        JSON.stringify(iconAlignment)
+    );
+
+    // Sanity check that "wa-flank" is actually controlling the layout
+    // (not silently overridden by this app's own later-loaded stylesheet
+    // redeclaring a conflicting "display" on the same selector -- exactly
+    // the mistake avoided by deliberately NOT redeclaring "display" on
+    // ".changed-paths li" once it became a "wa-flank", see that rule's
+    // own comment in page.mustache). A flex/grid display and the message
+    // icon sitting to the LEFT of (not above/overlapping) the message
+    // text are what "flanking" actually means structurally.
+    const flankSanity = await page.evaluate(() => {
+        const full = document.querySelector(".log-message-full");
+        const icon = full.querySelector("wa-icon");
+        const em = full.querySelector("em");
+        return {
+            display: getComputedStyle(full).display,
+            iconRight: icon.getBoundingClientRect().right,
+            emLeft: em.getBoundingClientRect().left,
+        };
+    });
+    record(
+        ".log-message-full's display is flex/grid (wa-flank active, not overridden)",
+        flankSanity.display === "flex" || flankSanity.display === "grid",
+        JSON.stringify(flankSanity)
+    );
+    record(
+        "message icon sits to the left of the message text (flanking, not stacked/overlapping)",
+        flankSanity.iconRight <= flankSanity.emLeft + TOLERANCE,
+        JSON.stringify(flankSanity)
+    );
+
+    // Regression check: .log-message-full must use "pre-wrap" (preserves
+    // runs of multiple spaces/tabs, e.g. an indented bullet list pasted
+    // into a commit message -- see the "carol" fixture entry's own
+    // "  - added main.c" lines), not "pre-line" (which would collapse
+    // that indentation). .log-message-preview is fine with "pre-line" --
+    // it's an already-truncated summary, not the "exactly as written"
+    // view. A direct computed-style check, not a pixel-position
+    // inference, since font rendering could make the latter flaky.
+    const whiteSpaceModes = await page.evaluate(() => ({
+        preview: getComputedStyle(document.querySelector(".log-message-preview")).whiteSpace,
+        full: getComputedStyle(document.querySelector(".log-message-full")).whiteSpace,
+    }));
+    record(
+        ".log-message-full uses white-space: pre-wrap (full fidelity for multi-space formatting)",
+        whiteSpaceModes.full === "pre-wrap",
+        JSON.stringify(whiteSpaceModes)
+    );
+    record(
+        ".log-message-preview uses white-space: pre-line (acceptable for an already-truncated summary)",
+        whiteSpaceModes.preview === "pre-line",
+        JSON.stringify(whiteSpaceModes)
+    );
 
     // 6. Clicking again collapses everything and relabels back.
     await page.click("#history-expand-toggle");

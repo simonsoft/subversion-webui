@@ -8,7 +8,7 @@
 </S:log-item>
 <S:log-item>
 <D:version-name>102</D:version-name>
-<D:creator-displayname>bob</D:creator-displayname>
+<D:creator-displayname>bob.johansson@example.com</D:creator-displayname>
 <S:date>2026-08-09T09:15:00.000000Z</S:date>
 <D:comment>This is a much longer commit message that should wrap across
 several lines and definitely exceed a two-line clamp when the entry is
@@ -22,7 +22,10 @@ matching in the Lua spec suite.</D:comment>
 <D:version-name>101</D:version-name>
 <D:creator-displayname>carol</D:creator-displayname>
 <S:date>2026-08-08T16:40:12.000000Z</S:date>
-<D:comment>Initial import.</D:comment>
+<D:comment>Initial import.
+
+  - added main.c
+  - added README.txt</D:comment>
 <S:modified-path node-kind="file">/trunk/main.c</S:modified-path>
 </S:log-item>
 </S:log-report>
