@@ -112,6 +112,20 @@ document.addEventListener("htmx:after:swap", (event) => {
     }
 });
 
+// The History link's REPORT response (see svn-log.lua's output_filter)
+// swaps into "#history-content", a permanently-present, initially-empty
+// div inside the static "#history-dialog" -- opening the dialog here,
+// once the swap actually lands, rather than synchronously on click, means
+// it stays closed if the request errors out instead of popping up empty.
+// Re-opening (clicking History again while already viewing an older
+// result) is harmless: "open = true" on an already-open wa-dialog is a
+// no-op, confirmed against a real browser.
+document.addEventListener("htmx:after:swap", (event) => {
+    if (event.target.id === "history-content") {
+        document.getElementById("history-dialog").open = true;
+    }
+});
+
 // Nav's own [selected] wa-tree-item is only a one-time snapshot, taken
 // when nav rendered that item itself (root population or lazy-expansion,
 // both hx-target="this" -- see the ".svn-nav" branch above). Clicking a
@@ -313,6 +327,14 @@ div.svn-main {
     font: inherit;
 }
 
+/* "#history-dialog" itself sizes to fit its content by default -- capped
+   here (on the content div, not the dialog) so a long history still
+   scrolls internally instead of growing the dialog past the viewport. */
+#history-content {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
 /* The navigation tree only ever browses folders -- files (and the ".."
    entry, which is superseded by the header's "Up" button) fetched into it
    via htmx are hidden here regardless of how deeply they end up nested. */
@@ -347,7 +369,7 @@ wa-tree-item a {
 <wa-icon data-toggle-nav name="bars" label="Menu" style="padding: var(--wa-space-s);"></wa-icon>
 <a href="{{{repo_parent_path}}}"><wa-icon name="house"></wa-icon>Start</a>
 {{#has_base}}<a href="../{{{revision_suffix_up}}}"><wa-icon name="turn-up"></wa-icon>Up</a>{{/has_base}}
-{{#has_base}}<a href="{{{history_href}}}" hx-action="{{{history_href}}}" hx-method="REPORT" hx-target="#svn-main" hx-swap="innerHTML" hx-trigger="click"><wa-icon name="clock-rotate-left"></wa-icon>History</a>{{/has_base}}
+{{#has_base}}<a href="{{{history_href}}}" hx-action="{{{history_href}}}" hx-method="REPORT" hx-target="#history-content" hx-swap="innerHTML" hx-trigger="click"><wa-icon name="clock-rotate-left"></wa-icon>History</a>{{/has_base}}
 </div>
 </header>
 <nav slot="subheader" id="subheader">
@@ -365,7 +387,7 @@ wa-tree-item a {
 <wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">
 </wa-tree>
 </nav>
-<div class="svn-main" id="svn-main">
+<div class="svn-main">
 <wa-tree class="svn-index" id="svn-index">
 {{{svn_index}}}</wa-tree>
 </div>
@@ -374,5 +396,8 @@ wa-tree-item a {
 <em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
 </footer>
 </wa-page>
+<wa-dialog id="history-dialog" label="History" light-dismiss>
+<div id="history-content"></div>
+</wa-dialog>
 </body>
 </html>

@@ -311,10 +311,9 @@ describe("svn-log output_filter", function()
 </S:log-item>
 </S:log-report>
 ]]
-        }, "/svn/demo1/trunk/?p=42")
+        }, "/svn/demo1/trunk/")
 
         assert.truthy(html:find('<table class="svn-log-table">', 1, true))
-        assert.truthy(html:find('href="/svn/demo1/trunk/?p=42"', 1, true))
 
         assert.truthy(html:find('<td class="revision">42</td>', 1, true))
         assert.truthy(html:find('<td class="author">alice</td>', 1, true))

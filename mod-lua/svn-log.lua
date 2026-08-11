@@ -42,15 +42,6 @@ local function escape_html(value)
                  :gsub("'", "&#39;"))
 end
 
--- Duplicated from svn-index.lua (see its own comment on why a decoded r.uri
--- isn't used here either -- request_href below is built from r.unparsed_uri
--- the same way).
-local function url_path(url)
-    local path = url:match("^%a[%w+.-]*://[^/]*(/.*)$") or url
-
-    return path:match("^([^?#]*)")
-end
-
 -- Duplicated from svn-index.lua (see its own comment on why this hand-rolled
 -- scan is used uniformly instead of r:parseargs()).
 local function parse_query_param(str, key)
@@ -311,19 +302,13 @@ function output_filter(r)
 
     local templates = load_log_template_set(template_type)
 
-    -- Same request_href convention as svn-index.lua: built from
-    -- r.unparsed_uri (still percent-encoded), not the decoded r.uri.
-    local request_href = url_path(tostring(r.unparsed_uri or r.uri or ""))
-
-    if request_href ~= "" and not request_href:match("/$") then
-        request_href = request_href .. "/"
-    end
-
-    local revision_pinned = parse_query_param(r.args, "p")
-    local revision_suffix = revision_pinned and ("?p=" .. revision_pinned) or ""
-    local listing_href = escape_html(request_href .. revision_suffix)
-
-    local preamble_html = lustache:render(templates.preamble, { listing_href = listing_href })
+    -- The preamble/postamble are static markup with no data of their own
+    -- to render (unlike svn-index.lua's, which needs <index>'s rev/path/
+    -- base attributes) -- the log fragment now swaps into a permanent
+    -- dialog shell (see page.mustache's "#history-dialog"), which supplies
+    -- its own label/close affordance, so there's no "back to listing" link
+    -- here needing a computed href either.
+    local preamble_html = templates.preamble
     local postamble_html = templates.postamble
     local preamble_sent = false
 
