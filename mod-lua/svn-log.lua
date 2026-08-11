@@ -17,10 +17,6 @@ local DEFAULT_TEMPLATE_TYPE = "simple"
 local SVNLOG_TAG = "{{{svn_log}}}"
 local DEFAULT_LOG_LIMIT = 50
 
--- Only a request carrying both REPORT as the method *and* this query-string
--- marker is treated as this app's own History request -- see input_filter.
-local HISTORY_MARKER = "history"
-
 local function read_file(path)
     local file, err = io.open(path, "r")
 
@@ -93,6 +89,33 @@ local function validate_nonneg_integer(str)
     return string.format("%d", n)
 end
 
+-- Deliberately an allow-list, not a deny-list ("is this definitely NOT
+-- svn-client traffic"): only a REPORT whose Content-Type is *exactly*
+-- form-encoded is ever treated as this app's own -- everything else
+-- (including a real svn client that, for whatever reason, fails to declare
+-- "text/xml" the way libsvn_ra_serf/log.c's handler->body_type = "text/xml"
+-- normally guarantees, or any other unexpected/absent Content-Type) passes
+-- through untouched by default. This is strictly safer than gating on "not
+-- XML": that would have silently intercepted (and replaced the body of)
+-- any REPORT whose Content-Type was merely absent or unrecognized, not
+-- just this app's own known, explicit declaration (see page.mustache's
+-- hx-headers, the only place that ever sets this).
+--
+-- A bare prefix match, not a full media-type parser, since real requests
+-- carry a trailing charset parameter: htmx v4 itself defaults to
+-- "application/x-www-form-urlencoded;charset=UTF-8" for a request like the
+-- History link's own (no hx-vals/form ancestor to serialize) -- the
+-- explicit hx-headers override in page.mustache is redundant with that
+-- default today, but kept anyway so this doesn't depend on remembering
+-- htmx's own default across versions.
+local function is_form_encoded_content_type(content_type)
+    if not content_type then
+        return false
+    end
+
+    return content_type:lower():match("^application/x%-www%-form%-urlencoded") ~= nil
+end
+
 -- Builds the svn:log-report request body mod_dav_svn's REPORT handler
 -- expects. Always exactly one empty <S:path></S:path> -- meaning "the
 -- resource identified by the request URI itself" -- since this app never
@@ -133,14 +156,16 @@ end
 -- per-request condition mechanism -- it runs on every request under the
 -- Location this is wired into, including real svn-client REPORT traffic
 -- (update-report, file-revs-report, etc.) against the exact same URL space.
--- The "history=1" marker (added only by this app's own History link, see
--- page.mustache) is what distinguishes this app's own synthetic REPORT
--- requests from everything else; r.method alone is not sufficient. A bare
--- early return, before ever touching bucket/coroutine.yield, is mod_lua's
--- own documented idiom for an input filter that should pass the original
--- content through unmodified.
+-- A REPORT request whose declared Content-Type is *exactly* form-encoded
+-- (see is_form_encoded_content_type above) is what distinguishes this
+-- app's own synthetic REPORT requests from everything else; r.method alone
+-- is not sufficient. A bare early return, before ever touching
+-- bucket/coroutine.yield, is mod_lua's own documented idiom for an input
+-- filter that should pass the original content through unmodified.
 function input_filter(r)
-    if r.method ~= "REPORT" or parse_query_param(r.args, HISTORY_MARKER) ~= "1" then
+    local content_type = r.headers_in and r.headers_in["Content-Type"]
+
+    if r.method ~= "REPORT" or not is_form_encoded_content_type(content_type) then
         return
     end
 

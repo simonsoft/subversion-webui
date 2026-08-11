@@ -19,9 +19,15 @@ local ROOT = spec_dir() .. "../"
 dofile(ROOT .. "mod-lua/svn-log.lua")
 
 -- unparsed_uri carries both path and query string (e.g.
--- "/svn/demo1/trunk/?history=1&p=42"); r.args is derived from it the same
--- way real Apache/mod_lua would populate it.
-local function make_request(method, unparsed_uri, subprocess_env)
+-- "/svn/demo1/trunk/?p=42"); r.args is derived from it the same way real
+-- Apache/mod_lua would populate it. headers_in defaults to this app's own
+-- History-link Content-Type (see page.mustache's hx-headers) -- the allow
+-- list in is_form_encoded_content_type means that's the ONLY value
+-- input_filter ever treats as its own, so this default represents "this
+-- app's own synthetic REPORT request" for the majority of input_filter
+-- tests, which are about body construction, not gating. Pass an explicit
+-- headers_in (including a bare {} for "absent") to test the gate itself.
+local function make_request(method, unparsed_uri, subprocess_env, headers_in)
     local raw_target = unparsed_uri or "/svn/demo1/"
 
     local r = {
@@ -30,7 +36,7 @@ local function make_request(method, unparsed_uri, subprocess_env)
         unparsed_uri = raw_target,
         args = raw_target:match("%?(.*)$"),
         subprocess_env = subprocess_env or {},
-        headers_in = {},
+        headers_in = headers_in or { ["Content-Type"] = "application/x-www-form-urlencoded" },
         headers_out = {
             ["Content-Length"] = "1234",
             ["ETag"] = '"abc"'
@@ -59,8 +65,8 @@ end
 -- none, matching production -- htmx's hx-action issues the REPORT with no
 -- body) are fed into the global `bucket` between resumes exactly like
 -- svn_index_spec.lua's own run_filter does for the output side.
-local function run_input_filter(chunks, unparsed_uri, subprocess_env, method)
-    local r = make_request(method, unparsed_uri, subprocess_env)
+local function run_input_filter(chunks, unparsed_uri, subprocess_env, method, headers_in)
+    local r = make_request(method, unparsed_uri, subprocess_env, headers_in)
     local co = coroutine.create(function()
         return input_filter(r)
     end)
@@ -138,36 +144,79 @@ end
 describe("svn-log input_filter", function()
     it("never touches bucket and yields nothing for a non-REPORT request", function()
         local body, _, yield_count = run_input_filter(
-            { "ignored" }, "/svn/demo1/trunk/?history=1", nil, "GET"
+            { "ignored" }, "/svn/demo1/trunk/", nil, "GET"
         )
 
         assert.are.equal("", body)
         assert.are.equal(0, yield_count)
     end)
 
-    it("passes through untouched for a real REPORT request lacking the history=1 marker", function()
+    it("passes through untouched for a real REPORT request declaring Content-Type: text/xml", function()
         -- Proves real svn-client REPORT traffic (update-report,
         -- file-revs-report, etc.) against the same Location is never
-        -- intercepted -- r.method alone is not a sufficient gate.
+        -- intercepted -- r.method alone is not a sufficient gate. Real svn
+        -- clients always declare "text/xml" on a REPORT body (confirmed
+        -- against libsvn_ra_serf/log.c: handler->body_type = "text/xml").
         local body, _, yield_count = run_input_filter(
-            { "<S:update-report/>" }, "/svn/demo1/trunk/", nil, "REPORT"
+            { "<S:update-report/>" }, "/svn/demo1/trunk/", nil, "REPORT",
+            { ["Content-Type"] = "text/xml; charset=\"utf-8\"" }
         )
 
         assert.are.equal("", body)
         assert.are.equal(0, yield_count)
     end)
 
-    it("also passes through when history is present but not exactly \"1\"", function()
+    it("also passes through for a bare \"application/xml\" Content-Type", function()
         local body, _, yield_count = run_input_filter(
-            {}, "/svn/demo1/trunk/?history=0", nil, "REPORT"
+            {}, "/svn/demo1/trunk/", nil, "REPORT",
+            { ["Content-Type"] = "application/xml" }
         )
 
         assert.are.equal("", body)
         assert.are.equal(0, yield_count)
+    end)
+
+    it("passes through untouched for a REPORT with an absent Content-Type, rather than assuming it's ours", function()
+        -- The allow-list design point: a broken/non-standard svn client
+        -- that fails to declare "text/xml" the way real ones always do
+        -- must still be left alone, not silently treated as this app's own
+        -- just because its Content-Type isn't XML either.
+        local body, _, yield_count = run_input_filter({}, "/svn/demo1/trunk/", nil, "REPORT", {})
+
+        assert.are.equal("", body)
+        assert.are.equal(0, yield_count)
+    end)
+
+    it("also passes through for an unrelated, non-XML, non-form-encoded Content-Type", function()
+        local body, _, yield_count = run_input_filter(
+            {}, "/svn/demo1/trunk/", nil, "REPORT",
+            { ["Content-Type"] = "text/plain" }
+        )
+
+        assert.are.equal("", body)
+        assert.are.equal(0, yield_count)
+    end)
+
+    it("treats the History link's own explicit Content-Type (see page.mustache's hx-headers) as this app's own", function()
+        local body = run_input_filter(
+            {}, "/svn/demo1/trunk/", nil, "REPORT",
+            { ["Content-Type"] = "application/x-www-form-urlencoded" }
+        )
+
+        assert.truthy(body:find('<S:log-report', 1, true))
+    end)
+
+    it("also treats htmx v4's own actual default Content-Type (with its charset suffix) as this app's own", function()
+        local body = run_input_filter(
+            {}, "/svn/demo1/trunk/", nil, "REPORT",
+            { ["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8" }
+        )
+
+        assert.truthy(body:find('<S:log-report', 1, true))
     end)
 
     it("synthesizes a log-report body with the default limit, start-revision=0, and no end-revision", function()
-        local body = run_input_filter({}, "/svn/demo1/trunk/?history=1")
+        local body = run_input_filter({}, "/svn/demo1/trunk/")
 
         assert.truthy(body:find('<S:log-report xmlns:S="svn:" xmlns:D="DAV:">', 1, true))
         -- start-revision must always be explicit: per the log-report
@@ -184,7 +233,7 @@ describe("svn-log input_filter", function()
     end)
 
     it("honors an active ?p=REV pin as the end-revision, while still setting start-revision=0", function()
-        local body = run_input_filter({}, "/svn/demo1/trunk/?history=1&p=42")
+        local body = run_input_filter({}, "/svn/demo1/trunk/?p=42")
 
         assert.truthy(body:find('<S:start-revision>0</S:start-revision>', 1, true))
         assert.truthy(body:find('<S:end-revision>42</S:end-revision>', 1, true))
@@ -192,7 +241,7 @@ describe("svn-log input_filter", function()
 
     it("honors SVN_LOG_LIMIT when set", function()
         local body = run_input_filter(
-            {}, "/svn/demo1/trunk/?history=1", { SVN_LOG_LIMIT = "10" }
+            {}, "/svn/demo1/trunk/", { SVN_LOG_LIMIT = "10" }
         )
 
         assert.truthy(body:find('<S:limit>10</S:limit>', 1, true))
@@ -200,7 +249,7 @@ describe("svn-log input_filter", function()
 
     it("discards whatever body chunks the client actually sent", function()
         local body = run_input_filter(
-            { "<garbage", "-not-xml->" }, "/svn/demo1/trunk/?history=1"
+            { "<garbage", "-not-xml->" }, "/svn/demo1/trunk/"
         )
 
         assert.falsy(body:find("garbage", 1, true))
@@ -209,7 +258,7 @@ describe("svn-log input_filter", function()
 
     it("falls back to defaults for an invalid revision pin or SVN_LOG_LIMIT, never emitting the raw attacker string", function()
         local body = run_input_filter(
-            {}, "/svn/demo1/trunk/?history=1&p=abc", { SVN_LOG_LIMIT = "not-a-number" }
+            {}, "/svn/demo1/trunk/?p=abc", { SVN_LOG_LIMIT = "not-a-number" }
         )
 
         assert.truthy(body:find('<S:limit>50</S:limit>', 1, true))
@@ -220,7 +269,7 @@ describe("svn-log input_filter", function()
 
     it("falls back to defaults for a negative revision pin or SVN_LOG_LIMIT", function()
         local body = run_input_filter(
-            {}, "/svn/demo1/trunk/?history=1&p=-1", { SVN_LOG_LIMIT = "-5" }
+            {}, "/svn/demo1/trunk/?p=-1", { SVN_LOG_LIMIT = "-5" }
         )
 
         assert.truthy(body:find('<S:limit>50</S:limit>', 1, true))
@@ -229,7 +278,7 @@ describe("svn-log input_filter", function()
 
     it("never lets non-numeric revision-pin content reach the synthesized XML body", function()
         local body = run_input_filter(
-            {}, [[/svn/demo1/trunk/?history=1&p=1</S:log-report><evil>]]
+            {}, [[/svn/demo1/trunk/?p=1</S:log-report><evil>]]
         )
 
         assert.truthy(body:find('<S:limit>50</S:limit>', 1, true))
@@ -259,7 +308,7 @@ describe("svn-log output_filter", function()
 </S:log-item>
 </S:log-report>
 ]]
-        }, "/svn/demo1/trunk/?history=1&p=42")
+        }, "/svn/demo1/trunk/?p=42")
 
         assert.truthy(html:find('<table class="svn-log-table">', 1, true))
         assert.truthy(html:find('href="/svn/demo1/trunk/?p=42"', 1, true))

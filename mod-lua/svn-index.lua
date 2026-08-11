@@ -573,15 +573,13 @@ function output_filter(r)
             -- artifact while at HEAD.
             revision_pinned = revision_pinned and escape_html(revision_pinned) or nil,
             -- The "History" link's target (see page.mustache): a REPORT
-            -- request against this same directory, distinguished from
+            -- request against this same directory. Distinguished from
             -- ordinary svn-client REPORT traffic against the same URL space
-            -- by the "history=1" marker (see svn-log.lua's input_filter,
-            -- which is the only thing that ever inspects it). request_href
-            -- never itself contains a "?" (url_path() strips query strings
-            -- above), so appending "?history=1" unconditionally is safe.
-            -- Carries the active revision pin forward as the log's
-            -- end-revision, exactly like every other link in this file.
-            history_href = escape_html(request_href .. "?history=1" .. (revision_pinned and ("&p=" .. revision_pinned) or "")),
+            -- by Content-Type, not by anything in the URL (see svn-log.lua's
+            -- input_filter and the History link's own hx-headers) -- so
+            -- this is just request_href plus the same revision-pin suffix
+            -- every other link here carries forward.
+            history_href = escape_html(request_href .. revision_suffix),
             -- nav starts at the repo root (breadcrumbs[1] is that crumb --
             -- lustache can't reach it directly as {{breadcrumbs.1.hx_href}},
             -- since breadcrumbs is an integer-indexed array, not

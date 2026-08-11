@@ -121,16 +121,24 @@ condition syntax, so it activates on every request under this `Location` --
 including real `svn` client traffic, which also uses `REPORT` for its own
 protocol purposes (update-report, etc.) against the exact same URL space.
 `SVN_LOG_REPORT_BODY`'s `input_filter` guards against this itself: it only
-ever acts on requests carrying both `REPORT` as the method *and* a
-`history=1` query-string marker (added only by the History link itself) --
-every other request, real svn-client REPORT traffic included, passes
-through unmodified.
+ever acts on a `REPORT` request whose `Content-Type` is *exactly*
+`application/x-www-form-urlencoded` -- the History link explicitly sends
+that via `hx-headers` (see `page.mustache`), and nothing else in this app
+or in real `svn` client traffic ever does. This is deliberately an
+allow-list, not a deny-list on XML: real `svn` clients always declare
+`Content-Type: text/xml` on a REPORT body (a DeltaV/WebDAV convention,
+confirmed against Subversion's own `libsvn_ra_serf` source), but a
+misbehaving or non-standard client that fails to set that -- or sets
+something else entirely -- must still pass through untouched rather than
+being silently treated as this app's own. Every request that isn't
+*exactly* the History link's own declared Content-Type, real svn-client
+REPORT traffic included, passes through unmodified.
 
 This feature is wired into the `wa-page` template only; `SVN_INDEX_TEMPLATE`
 must be set to `wa-page` for the History link to appear (see above) -- the
 other three templates have no `log.mustache`/`log-item.mustache` files and
 are unaffected by this filter pair being installed (they simply never send a
-request carrying `history=1`).
+non-XML-content-typed `REPORT` request).
 
 ### Apache httpd transfer
 
