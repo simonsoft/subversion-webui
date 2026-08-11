@@ -652,6 +652,50 @@ try {
         desktopWide.previewWidths[0] > desktopCollapsed.previewWidths[0] + 10,
         JSON.stringify({ at1200: desktopCollapsed.previewWidths[0], at1800: desktopWide.previewWidths[0] })
     );
+
+    // Regression check: ".log-message-preview" was originally
+    // flex-shrink:0 (rigid), which forced 100% of any space deficit onto
+    // ".log-summary-meta" alone -- on a tight row that crushed even a
+    // short author value like "alice" down to "a..". A hard "min-width"
+    // on meta was tried as a fix and rejected too (it blocked clamp()'s
+    // own smooth scaling, hard-pinning meta the moment its floor was hit
+    // while message kept absorbing the rest of the deficit alone -- the
+    // same concentration problem, just shifted to the other column).
+    // The actual fix: both columns are shrinkable now, sharing any
+    // deficit via normal flex distribution, so neither one should ever
+    // need to collapse past its own declared clamp() floor. A narrow
+    // desktop viewport (near where the row genuinely doesn't have room to
+    // spare) is where that would show up; not caught by the wider
+    // viewport checks above, which had enough room that neither column
+    // needed to shrink past its own preferred size.
+    await page.setViewport({ width: 1000, height: 900 });
+    await page.evaluate(() =>
+        Promise.all([customElements.whenDefined("wa-details"), customElements.whenDefined("wa-icon")])
+    );
+    const desktopNarrow = await page.evaluate(() => {
+        const items = [...document.querySelectorAll(".log-item")];
+        return {
+            metaWidths: items.map((el) => el.querySelector(".log-summary-meta").getBoundingClientRect().width),
+            previewWidths: items.map((el) => el.querySelector(".log-message-preview").getBoundingClientRect().width),
+            authorTexts: items.map((el) => el.querySelector(".log-author strong").textContent),
+            authorWidths: items.map((el) => el.querySelector(".log-author strong").getBoundingClientRect().width),
+        };
+    });
+    record(
+        "desktop: meta column never shrinks below its own clamp() floor (20rem/320px), even on a tight row",
+        desktopNarrow.metaWidths.every((w) => w >= 320 - TOLERANCE),
+        JSON.stringify(desktopNarrow.metaWidths)
+    );
+    record(
+        "desktop: message column never shrinks below its own clamp() floor (16rem/256px), even on a tight row",
+        desktopNarrow.previewWidths.every((w) => w >= 256 - TOLERANCE),
+        JSON.stringify(desktopNarrow.previewWidths)
+    );
+    record(
+        "desktop: a short author value is never crushed to near-nothing on a tight row (the original 'a..' bug)",
+        desktopNarrow.authorWidths.every((w, i) => desktopNarrow.authorTexts[i].includes("@") || w > 20),
+        JSON.stringify({ texts: desktopNarrow.authorTexts, widths: desktopNarrow.authorWidths })
+    );
     await page.setViewport({ width: 1200, height: 900 });
 
     await page.click("#history-expand-toggle");
