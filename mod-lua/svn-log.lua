@@ -98,16 +98,15 @@ end
 -- through untouched by default. This is strictly safer than gating on "not
 -- XML": that would have silently intercepted (and replaced the body of)
 -- any REPORT whose Content-Type was merely absent or unrecognized, not
--- just this app's own known, explicit declaration (see page.mustache's
--- hx-headers, the only place that ever sets this).
+-- just this app's own actual traffic.
 --
--- A bare prefix match, not a full media-type parser, since real requests
--- carry a trailing charset parameter: htmx v4 itself defaults to
--- "application/x-www-form-urlencoded;charset=UTF-8" for a request like the
--- History link's own (no hx-vals/form ancestor to serialize) -- the
--- explicit hx-headers override in page.mustache is redundant with that
--- default today, but kept anyway so this doesn't depend on remembering
--- htmx's own default across versions.
+-- "Form-encoded" here means htmx v4's own default Content-Type for a
+-- request like the History link's own (hx-action/hx-method="REPORT", no
+-- hx-vals/form ancestor to serialize): confirmed to be
+-- "application/x-www-form-urlencoded;charset=UTF-8" -- the History link
+-- itself sets nothing explicit (see page.mustache), it just relies on that
+-- default. A bare prefix match here, not a full media-type parser, since
+-- that trailing charset parameter is expected, not incidental.
 local function is_form_encoded_content_type(content_type)
     if not content_type then
         return false
@@ -123,28 +122,38 @@ end
 -- browsed. discover-changed-paths is always requested (locked-in scope
 -- decision: each log entry lists its added/modified/deleted paths).
 --
--- start-revision is ALWAYS set, to "0" (the repository's own oldest
--- possible revision) -- confirmed against a real server that omitting it
--- does NOT mean "as far back as it goes": it defaults to HEAD, exactly
--- like end-revision's own default. Omitting both therefore asks for the
--- log between HEAD and HEAD -- a one-revision window -- which is why an
--- unpinned History click was only ever showing a row when the browsed
--- path happened to be touched by the single most recent commit, and
--- nothing otherwise. end_revision is nil unless the request was pinned via
--- "?p=REV" -- honored as the upper/peg bound; omitted entirely means HEAD,
--- which (now that start-revision is always explicit) is the intended
--- "walk from HEAD back to revision 0" range.
-local function build_log_report_body(limit, end_revision)
+-- Order/direction: log-report walks from start-revision to end-revision,
+-- returning results in THAT order -- start > end walks backward (newest
+-- first), start < end walks forward (oldest first); same convention
+-- "svn log -r HEAD:0" vs "-r 0:HEAD" uses. We want newest first (what
+-- every log viewer, including svn's own, defaults to), so the peg
+-- (peg_revision -- HEAD, or the "?p=REV" pin) goes into start-revision,
+-- and end-revision is ALWAYS explicit "0" (confirmed against a real
+-- server that omitting it defaults to HEAD, exactly like start-revision's
+-- own default -- omitting both would ask for the log between HEAD and
+-- HEAD, a one-revision window, which is why an earlier version of this
+-- only ever showed a row when the browsed path happened to be touched by
+-- the single most recent commit).
+--
+-- This also matters for repos with more history than `limit`: walking
+-- backward from HEAD lets mod_dav_svn stop as soon as `limit` entries are
+-- emitted (bounded work regardless of total revision count, the same
+-- traversal direction "svn log" itself defaults to) -- getting this
+-- backward would instead return the OLDEST `limit` revisions, not the
+-- most recent ones, for any repo with more history than that.
+-- peg_revision is nil unless the request was pinned via "?p=REV" --
+-- omitted entirely means HEAD.
+local function build_log_report_body(limit, peg_revision)
     local parts = {
         '<S:log-report xmlns:S="svn:" xmlns:D="DAV:">',
-        '<S:start-revision>0</S:start-revision>',
-        '<S:limit>' .. limit .. '</S:limit>',
     }
 
-    if end_revision then
-        parts[#parts + 1] = '<S:end-revision>' .. end_revision .. '</S:end-revision>'
+    if peg_revision then
+        parts[#parts + 1] = '<S:start-revision>' .. peg_revision .. '</S:start-revision>'
     end
 
+    parts[#parts + 1] = '<S:end-revision>0</S:end-revision>'
+    parts[#parts + 1] = '<S:limit>' .. limit .. '</S:limit>'
     parts[#parts + 1] = '<S:discover-changed-paths/>'
     parts[#parts + 1] = '<S:path></S:path>'
     parts[#parts + 1] = '</S:log-report>'
@@ -186,9 +195,9 @@ function input_filter(r)
         r.subprocess_env and r.subprocess_env.SVN_LOG_LIMIT
     ) or tostring(DEFAULT_LOG_LIMIT)
 
-    local end_revision = validate_nonneg_integer(parse_query_param(r.args, "p"))
+    local peg_revision = validate_nonneg_integer(parse_query_param(r.args, "p"))
 
-    local body = build_log_report_body(limit, end_revision)
+    local body = build_log_report_body(limit, peg_revision)
 
     -- Belt-and-braces only, not load-bearing: confirmed against httpd's own
     -- source that the REPORT body is actually read by the same core

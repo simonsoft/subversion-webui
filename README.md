@@ -121,10 +121,11 @@ condition syntax, so it activates on every request under this `Location` --
 including real `svn` client traffic, which also uses `REPORT` for its own
 protocol purposes (update-report, etc.) against the exact same URL space.
 `SVN_LOG_REPORT_BODY`'s `input_filter` guards against this itself: it only
-ever acts on a `REPORT` request whose `Content-Type` is *exactly*
-`application/x-www-form-urlencoded` -- the History link explicitly sends
-that via `hx-headers` (see `page.mustache`), and nothing else in this app
-or in real `svn` client traffic ever does. This is deliberately an
+ever acts on a `REPORT` request whose `Content-Type` is form-encoded --
+htmx v4's own default for the History link's request (no `hx-vals`/form
+ancestor to serialize; confirmed to be
+`application/x-www-form-urlencoded;charset=UTF-8`), and nothing else in
+this app or in real `svn` client traffic ever sends. This is deliberately an
 allow-list, not a deny-list on XML: real `svn` clients always declare
 `Content-Type: text/xml` on a REPORT body (a DeltaV/WebDAV convention,
 confirmed against Subversion's own `libsvn_ra_serf` source), but a

@@ -20,13 +20,14 @@ dofile(ROOT .. "mod-lua/svn-log.lua")
 
 -- unparsed_uri carries both path and query string (e.g.
 -- "/svn/demo1/trunk/?p=42"); r.args is derived from it the same way real
--- Apache/mod_lua would populate it. headers_in defaults to this app's own
--- History-link Content-Type (see page.mustache's hx-headers) -- the allow
--- list in is_form_encoded_content_type means that's the ONLY value
--- input_filter ever treats as its own, so this default represents "this
--- app's own synthetic REPORT request" for the majority of input_filter
--- tests, which are about body construction, not gating. Pass an explicit
--- headers_in (including a bare {} for "absent") to test the gate itself.
+-- Apache/mod_lua would populate it. headers_in defaults to the Content-Type
+-- htmx v4 itself sends by default for the History link's request (see
+-- is_form_encoded_content_type's own comment in svn-log.lua) -- the allow
+-- list there means that's the ONLY value input_filter ever treats as its
+-- own, so this default represents "this app's own synthetic REPORT
+-- request" for the majority of input_filter tests, which are about body
+-- construction, not gating. Pass an explicit headers_in (including a bare
+-- {} for "absent") to test the gate itself.
 local function make_request(method, unparsed_uri, subprocess_env, headers_in)
     local raw_target = unparsed_uri or "/svn/demo1/"
 
@@ -197,7 +198,7 @@ describe("svn-log input_filter", function()
         assert.are.equal(0, yield_count)
     end)
 
-    it("treats the History link's own explicit Content-Type (see page.mustache's hx-headers) as this app's own", function()
+    it("treats a bare form-encoded Content-Type (no charset parameter) as this app's own", function()
         local body = run_input_filter(
             {}, "/svn/demo1/trunk/", nil, "REPORT",
             { ["Content-Type"] = "application/x-www-form-urlencoded" }
@@ -215,28 +216,30 @@ describe("svn-log input_filter", function()
         assert.truthy(body:find('<S:log-report', 1, true))
     end)
 
-    it("synthesizes a log-report body with the default limit, start-revision=0, and no end-revision", function()
+    it("synthesizes a log-report body with the default limit, end-revision=0, and no start-revision (HEAD)", function()
         local body = run_input_filter({}, "/svn/demo1/trunk/")
 
         assert.truthy(body:find('<S:log-report xmlns:S="svn:" xmlns:D="DAV:">', 1, true))
-        -- start-revision must always be explicit: per the log-report
-        -- schema, omitting it defaults to HEAD (exactly like end-revision's
-        -- own default), which would otherwise collapse an unpinned request
-        -- into a one-revision HEAD-to-HEAD window instead of "as far back
-        -- as it goes".
-        assert.truthy(body:find('<S:start-revision>0</S:start-revision>', 1, true))
+        -- end-revision must always be explicit "0": per the log-report
+        -- schema, omitting it defaults to HEAD (exactly like
+        -- start-revision's own default), which would otherwise collapse an
+        -- unpinned request into a one-revision HEAD-to-HEAD window instead
+        -- of "as far back as it goes". start-revision is left omitted here
+        -- (defaults to HEAD) -- start > end (HEAD > 0) is what makes the
+        -- server stream newest-first.
+        assert.truthy(body:find('<S:end-revision>0</S:end-revision>', 1, true))
         assert.truthy(body:find('<S:limit>50</S:limit>', 1, true))
         assert.truthy(body:find('<S:discover-changed-paths/>', 1, true))
         assert.truthy(body:find('<S:path></S:path>', 1, true))
         assert.truthy(body:find('</S:log-report>', 1, true))
-        assert.falsy(body:find('<S:end-revision>', 1, true))
+        assert.falsy(body:find('<S:start-revision>', 1, true))
     end)
 
-    it("honors an active ?p=REV pin as the end-revision, while still setting start-revision=0", function()
+    it("honors an active ?p=REV pin as the start-revision (peg), while still setting end-revision=0", function()
         local body = run_input_filter({}, "/svn/demo1/trunk/?p=42")
 
-        assert.truthy(body:find('<S:start-revision>0</S:start-revision>', 1, true))
-        assert.truthy(body:find('<S:end-revision>42</S:end-revision>', 1, true))
+        assert.truthy(body:find('<S:start-revision>42</S:start-revision>', 1, true))
+        assert.truthy(body:find('<S:end-revision>0</S:end-revision>', 1, true))
     end)
 
     it("honors SVN_LOG_LIMIT when set", function()
@@ -262,7 +265,7 @@ describe("svn-log input_filter", function()
         )
 
         assert.truthy(body:find('<S:limit>50</S:limit>', 1, true))
-        assert.falsy(body:find('<S:end-revision>', 1, true))
+        assert.falsy(body:find('<S:start-revision>', 1, true))
         assert.falsy(body:find("abc", 1, true))
         assert.falsy(body:find("not-a-number", 1, true))
     end)
@@ -273,7 +276,7 @@ describe("svn-log input_filter", function()
         )
 
         assert.truthy(body:find('<S:limit>50</S:limit>', 1, true))
-        assert.falsy(body:find('<S:end-revision>', 1, true))
+        assert.falsy(body:find('<S:start-revision>', 1, true))
     end)
 
     it("never lets non-numeric revision-pin content reach the synthesized XML body", function()
@@ -282,7 +285,7 @@ describe("svn-log input_filter", function()
         )
 
         assert.truthy(body:find('<S:limit>50</S:limit>', 1, true))
-        assert.falsy(body:find('<S:end-revision>', 1, true))
+        assert.falsy(body:find('<S:start-revision>', 1, true))
         assert.falsy(body:find('evil', 1, true))
     end)
 end)
