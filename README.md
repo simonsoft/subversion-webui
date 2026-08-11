@@ -170,3 +170,48 @@ luarocks install lrexlib-pcre2
 
 busted spec/
 ```
+
+### Browser smoke test (History dialog, optional)
+
+The tests above run `output_filter` against the real `luaexpat`/`lustache`
+dependencies, but everything downstream of its own HTML string -- whether
+the real Web Awesome custom elements (`<wa-details>`, `<wa-dialog>`,
+`<wa-format-date>`) actually behave as documented once loaded in a real
+browser, and whether the CSS two-line clamp on each entry's collapsed
+preview actually clamps to the correct pixel height -- is outside what a
+pure-Lua `busted` test can verify at all. `smoketest/` is a separate,
+optional, Puppeteer-driven check that renders the real `svn-log.lua`
+output through a real browser to cover exactly that gap.
+
+It is entirely independent of `busted spec/`: not run as part of it, adds
+no Node.js dependency to the rest of the repo, and isn't required for
+ordinary development -- `busted spec/` remains the primary, fast test loop.
+
+Prerequisites:
+
+- Node.js >=20.
+- A `lua5.3` interpreter on `PATH` (already required for `busted spec/`
+  above); override with `LUA_BIN=lua` (or similar) if it's named
+  differently on your system.
+- Outbound network access to `ka-f.webawesome.com` and `cdn.jsdelivr.net`
+  -- the same CDN hosts `templates/wa-page/page.mustache` itself loads Web
+  Awesome/htmx from. This cannot run fully offline.
+- `npm install` downloads Puppeteer's own bundled Chromium (roughly
+  200MB) on first run, cached under `smoketest/.cache/puppeteer` (see
+  `.puppeteerrc.cjs`) rather than the shared `~/.cache/puppeteer`.
+
+```
+cd smoketest
+npm install
+npm test
+```
+
+Screenshots and the generated harness page are written to
+`smoketest/output/` (gitignored) for manual inspection.
+
+If `npm install`/Puppeteer's launch fails citing a permissions problem in
+its cache directory, this is almost always a stale/root-owned
+`~/.cache/puppeteer` left over from some unrelated earlier install on that
+machine -- `.puppeteerrc.cjs` avoids this by pointing `cacheDirectory` at
+a project-local path instead, so a fresh clone shouldn't hit it. If it
+does anyway, delete `smoketest/.cache/` and re-run `npm install`.
