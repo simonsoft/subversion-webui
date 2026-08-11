@@ -379,8 +379,19 @@ div.svn-main {
 /* One <wa-details class="log-item"> per History entry (see
    log-item.mustache) -- independent expand/collapse (no shared "name"
    attribute), consistent vertical rhythm across entries via flex+gap
-   rather than per-item margins. */
+   rather than per-item margins. --log-revision-column is the single
+   source of truth for how wide the revision-badge "column" is (see
+   ".log-item .revision-badge" and ".log-body" below, which both key off
+   it) -- sized to comfortably fit a 6-digit revision number. Deliberately
+   "rem", not "em": ".revision-badge" and ".log-body" have different
+   computed font-sizes (the badge uses the smaller
+   "--wa-font-size-s"), so an "em" value would resolve to a different
+   pixel width in each place -- exactly the kind of mismatch a real
+   browser caught (dateLeft/bodyLeft off by 9px) that a "looks right"
+   visual read alone wouldn't have. "rem" is always relative to the root
+   font-size, so both uses resolve to the identical pixel value. */
 .svn-log {
+    --log-revision-column: 4rem;
     display: flex;
     flex-direction: column;
     gap: var(--wa-space-xs);
@@ -393,6 +404,29 @@ div.svn-main {
 a.revision-badge {
     color: inherit;
     text-decoration: none;
+}
+
+/* Fixed-width "column" so every entry's revision badge lines up
+   regardless of how many digits it has, and so both the summary row's
+   own other fields and the expanded body's content (see ".log-body"
+   below) indent to the exact same point past it. Scoped to ".log-item"
+   rather than added to the base ".revision-badge" rule above, so the
+   header's own (unrelated) pinned-revision indicator next to the
+   breadcrumb is left untouched. */
+.log-item .revision-badge {
+    display: inline-block;
+    box-sizing: border-box;
+    min-width: var(--log-revision-column);
+    text-align: center;
+}
+
+/* The copy/move source indicator's own revision badge (see
+   log-item.mustache's ".copy-from") -- same square dashed-box style, but
+   smaller and without the fixed column width, since it sits inline
+   mid-sentence rather than anchoring a layout column. */
+.log-item .revision-badge-small {
+    min-width: 0;
+    font-size: 0.75em;
 }
 
 .log-summary {
@@ -409,37 +443,67 @@ a.revision-badge {
     color: var(--wa-color-text-quiet);
 }
 
-/* Two-line clamp for the always-visible comment preview -- the full
-   message is available below once expanded (".log-message-full"). A
-   -webkit-line-clamp box, not a fade-gradient overlay: this app targets
-   evergreen Chromium/Firefox/Safari, which all implement these (nominally
-   WebKit-prefixed, now universal) properties -- simpler and more robust
-   than a gradient mask over wa-details' own light/dark theme tokens, with
-   no separate overflow-detection needed either. white-space: pre-line
-   (not the default "normal") preserves embedded line breaks in the
-   collapsed preview too, not just the expanded <pre> below. */
+/* Both the always-visible collapsed preview and the expanded full message
+   (".log-message-full" below) show the same content, just clamped vs.
+   not -- sharing this same font/color treatment is what makes the
+   expanded one read as "the same text, just fully shown" rather than a
+   distinct code block. white-space: pre-line preserves embedded line
+   breaks in both without needing a <pre> element (whose default
+   monospace/bordered styling was the "ugly" look here). */
+.log-message-preview,
+.log-message-full {
+    white-space: pre-line;
+    color: var(--wa-color-text-quiet);
+}
+
+/* Sits on the right of the summary row (margin-left: auto), not stacked
+   on its own full-width line below -- revision/date/author stay grouped
+   on the left. Two-line clamp: a -webkit-box, not a fade-gradient
+   overlay -- this app targets evergreen Chromium/Firefox/Safari, which
+   all implement these (nominally WebKit-prefixed, now universal)
+   properties, simpler and more robust than a gradient mask over
+   wa-details' own light/dark theme tokens, with no separate
+   overflow-detection needed either. Hidden entirely once the entry is
+   expanded (see ".log-item[open]" below) -- the full message takes over
+   instead, so the same text is never shown twice at once. */
 .log-message-preview {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    white-space: pre-line;
-    flex: 1 1 100%;
-    color: var(--wa-color-text-quiet);
+    margin-left: auto;
+    max-width: 28rem;
 }
 
-/* The full commit message, revealed once expanded. pre-wrap keeps
-   embedded newlines while still wrapping long lines. Height-capped at
-   12rem -- roomy enough for most real commit messages to read in full
-   without scrolling, while still bounding a pathological multi-hundred-
-   line message to a fixed, independently scrollable box instead of
-   growing the whole dialog past the viewport. */
+.log-item[open] .log-message-preview {
+    display: none;
+}
+
+/* The full commit message, revealed once expanded, indented to match
+   ".log-body" below. Height-capped at 12rem -- roomy enough for most real
+   commit messages to read in full without scrolling, while still
+   bounding a pathological multi-hundred-line message to a fixed,
+   independently scrollable box instead of growing the whole dialog past
+   the viewport. */
 .log-message-full {
-    white-space: pre-wrap;
     margin: 0 0 var(--wa-space-s);
-    font: inherit;
     max-height: 12rem;
     overflow-y: auto;
+}
+
+/* Dims the comment icon (rather than showing an empty italic span next to
+   a full-strength icon, which reads as "this entry is broken") when a
+   revision genuinely has no log message. */
+.log-message-empty wa-icon {
+    opacity: 0.4;
+}
+
+/* The expanded body (full message + changed-paths list) indents to the
+   same point the summary row's own second field (the date) starts at --
+   past the revision-badge column plus the row's own gap -- so the
+   collapsed and expanded states share one consistent left edge. */
+.log-body {
+    margin-left: calc(var(--log-revision-column) + var(--wa-space-s));
 }
 
 .changed-paths {
@@ -462,7 +526,9 @@ a.revision-badge {
     color: inherit;
 }
 
-/* A copy/move's own source indicator, inline after the destination path. */
+/* A copy/move's own source indicator, inline after the destination path
+   -- no arrow icon (read as confusing), just "from <path> <small revision
+   badge>". */
 .copy-from {
     display: inline-flex;
     align-items: center;

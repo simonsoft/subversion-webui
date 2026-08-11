@@ -379,7 +379,16 @@ local function render_log_item(templates, item, context)
         author = escape_html(item.author),
         date = escape_html(item.date),
         date_lang = context.date_lang and escape_html(context.date_lang) or nil,
-        message = escape_html(item.message),
+        -- nil (not "") when blank -- whitespace-only counts as blank too
+        -- (%s* matches newlines/tabs/spaces), not just a literal empty
+        -- string. A plain Lua nil is unambiguously falsy to every mustache
+        -- implementation (unlike an empty string, which some
+        -- implementations treat as truthy, being neither false/nil/an
+        -- empty list), so log-item.mustache can key {{^message}} directly
+        -- off this same field for the "no message" styling -- no separate
+        -- boolean flag needed. {{{message}}}'s own interpolation already
+        -- renders nothing for a nil value, same as it would for "".
+        message = (item.message:match("^%s*$") == nil) and escape_html(item.message) or nil,
         changed_paths = changed_paths
     })
 end

@@ -319,7 +319,7 @@ describe("svn-log output_filter", function()
         assert.truthy(html:find('<wa-icon name="user" variant="solid" style="font-size: 0.8rem;"></wa-icon> <strong>alice</strong>', 1, true))
         assert.truthy(html:find('date="2024-01-01T12:00:00.000000Z" month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric"></wa-format-date>', 1, true))
         assert.truthy(html:find('<em>Fix bug</em>', 1, true))
-        assert.truthy(html:find('<pre class="log-message-full">Fix bug</pre>', 1, true))
+        assert.truthy(html:find('<div class="log-message-full"><span><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon> <em>Fix bug</em></span></div>', 1, true))
         assert.truthy(html:find('<wa-icon name="pen" variant="solid"></wa-icon> <a href="/svn/demo1/trunk/foo.txt?p=42">/trunk/foo.txt</a>', 1, true))
 
         assert.truthy(html:find('<a class="revision-badge" href="/svn/demo1/trunk/?p=41">41</a>', 1, true))
@@ -346,7 +346,7 @@ describe("svn-log output_filter", function()
         assert.truthy(html:find('<a class="revision-badge" href="/svn/demo1/trunk/?p=7">7</a>', 1, true))
         assert.truthy(html:find('<strong>carol</strong>', 1, true))
         assert.truthy(html:find('<em>Initial import</em>', 1, true))
-        assert.truthy(html:find('<pre class="log-message-full">Initial import</pre>', 1, true))
+        assert.truthy(html:find('<div class="log-message-full"><span><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon> <em>Initial import</em></span></div>', 1, true))
     end)
 
     it("HTML-escapes the commit message and changed-path text", function()
@@ -366,6 +366,48 @@ describe("svn-log output_filter", function()
         assert.falsy(html:find("a & b <c>", 1, true))
         assert.truthy(html:find("&lt;weird&gt;.txt", 1, true))
         assert.falsy(html:find("<weird>.txt", 1, true))
+    end)
+
+    it("marks both message wrappers with log-message-empty (dimming the comment icon) when a revision has no log message, but not otherwise", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>1</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment></D:comment>
+</S:log-item>
+<S:log-item>
+<D:version-name>2</D:version-name>
+<D:creator-displayname>bob</D:creator-displayname>
+<S:date>2024-01-02T00:00:00.000000Z</S:date>
+<D:comment>Has a message</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/")
+
+        assert.truthy(html:find('<div class="log-message-preview log-message-empty">', 1, true))
+        assert.truthy(html:find('<div class="log-message-full log-message-empty">', 1, true))
+        assert.truthy(html:find('<div class="log-message-preview"><span>', 1, true))
+        assert.truthy(html:find('<div class="log-message-full"><span>', 1, true))
+    end)
+
+    it("treats a whitespace-only log message as blank too, not just a literal empty string", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>1</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>
+
+</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/")
+
+        assert.truthy(html:find('<div class="log-message-preview log-message-empty">', 1, true))
+        assert.truthy(html:find('<div class="log-message-full log-message-empty">', 1, true))
     end)
 
     it("still renders a valid, empty div when there are zero log items", function()
@@ -393,7 +435,7 @@ describe("svn-log output_filter", function()
         assert.truthy(found_err)
     end)
 
-    it("renders a copy/move's own source with the arrow-right icon and its own pinned revision, but not for a plain change", function()
+    it("renders a copy/move's own source with a small revision badge (no icon, no @ sign), but not for a plain change", function()
         local html = run_output_filter({
             [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
 <S:log-item>
@@ -407,7 +449,9 @@ describe("svn-log output_filter", function()
 </S:log-report>]]
         }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
 
-        assert.truthy(html:find('<span class="copy-from"><wa-icon name="arrow-right" variant="solid"></wa-icon> from <a href="/svn/demo1/trunk/old-name.txt?p=30">/trunk/old-name.txt</a> @30</span>', 1, true))
+        assert.truthy(html:find('<span class="copy-from">from <a href="/svn/demo1/trunk/old-name.txt?p=30">/trunk/old-name.txt</a> <span class="revision-badge revision-badge-small">30</span></span>', 1, true))
+        assert.falsy(html:find('arrow-right', 1, true))
+        assert.falsy(html:find('@30', 1, true))
 
         -- The sibling plain modified-path (no copyfrom attrs) must render
         -- as a complete <li>...</li> with NO copy-from span appended --

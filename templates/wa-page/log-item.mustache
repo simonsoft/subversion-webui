@@ -3,10 +3,12 @@
 <a class="revision-badge" href="{{{revision_href}}}">{{{revision}}}</a>
 <wa-format-date style="text-wrap: nowrap; overflow: clip;" date="{{{date}}}" month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric"{{#date_lang}} lang="{{{date_lang}}}"{{/date_lang}}></wa-format-date>
 <span class="log-author"><wa-icon name="user" variant="solid" style="font-size: 0.8rem;"></wa-icon> <strong>{{{author}}}</strong></span>
-<div class="log-message-preview"><span><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon> <em>{{{message}}}</em></span></div>
+<div class="log-message-preview{{^message}} log-message-empty{{/message}}"><span><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon> <em>{{{message}}}</em></span></div>
 </div>
-<pre class="log-message-full">{{{message}}}</pre>
+<div class="log-body">
+<div class="log-message-full{{^message}} log-message-empty{{/message}}"><span><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon> <em>{{{message}}}</em></span></div>
 <ul class="changed-paths">
-{{#changed_paths}}<li class="action-{{action_class}}"><wa-icon name="{{icon}}" variant="solid"></wa-icon> {{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}}{{#copyfrom}} <span class="copy-from"><wa-icon name="arrow-right" variant="solid"></wa-icon> from {{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}} @{{{rev}}}</span>{{/copyfrom}}</li>
+{{#changed_paths}}<li class="action-{{action_class}}"><wa-icon name="{{icon}}" variant="solid"></wa-icon> {{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}}{{#copyfrom}} <span class="copy-from">from {{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}} <span class="revision-badge revision-badge-small">{{{rev}}}</span></span>{{/copyfrom}}</li>
 {{/changed_paths}}</ul>
+</div>
 </wa-details>

@@ -194,6 +194,80 @@ try {
 
     await page.screenshot({ path: path.join(OUTPUT_DIR, "01-collapsed.png"), fullPage: true });
 
+    // Regression check for the actual bug this smoke test was built to
+    // catch: white-space: pre-line was preserving an incidental
+    // template-source newline as a visible blank line, wasting half the
+    // intended 2-line clamp. A short (1-line) message must produce a
+    // clientHeight of ~1 line-height (not 2, which would mean a phantom
+    // blank line is still being reserved); a long message must produce
+    // ~2 line-heights AND scrollHeight > clientHeight (confirms real
+    // overflow is being clamped, not coincidentally short content).
+    // Measured here, before anything is expanded: ".log-message-preview"
+    // is deliberately display:none once its own entry is open (see the
+    // "shown once" checks below), so this only makes sense against the
+    // pristine, all-collapsed state.
+    const clampInfo = await page.evaluate(() => {
+        const previews = [...document.querySelectorAll(".log-message-preview")];
+        return previews.map((el) => {
+            const cs = getComputedStyle(el);
+            return {
+                clientHeight: el.clientHeight,
+                scrollHeight: el.scrollHeight,
+                lineHeightPx: parseFloat(cs.lineHeight),
+            };
+        });
+    });
+    // Fixture document order: rev 103 (short), rev 102 (long), rev 101 (short).
+    const [shortEntry, longEntry] = clampInfo;
+    const TOLERANCE = 2; // px rounding
+    record(
+        "short message's preview height is ~1 line-height (no phantom blank line)",
+        Math.abs(shortEntry.clientHeight - shortEntry.lineHeightPx) <= TOLERANCE,
+        JSON.stringify(shortEntry)
+    );
+    record(
+        "long message's preview height is ~2 line-heights (correctly clamped)",
+        Math.abs(longEntry.clientHeight - longEntry.lineHeightPx * 2) <= TOLERANCE,
+        JSON.stringify(longEntry)
+    );
+    record(
+        "long message actually overflows the clamp box (scrollHeight > clientHeight)",
+        longEntry.scrollHeight > longEntry.clientHeight,
+        JSON.stringify(longEntry)
+    );
+
+    // High-DPI zoomed crop of the clamped preview element for visual review.
+    await page.setViewport({ width: 1000, height: 900, deviceScaleFactor: 3 });
+    const previewHandlesCollapsed = await page.$$(".log-message-preview");
+    await previewHandlesCollapsed[1].screenshot({ path: path.join(OUTPUT_DIR, "04-clamp-zoom.png") });
+    await page.setViewport({ width: 1000, height: 900 });
+
+    // Indentation check: the summary row's own second field (the date,
+    // right after the fixed-width revision-badge column) and the body's
+    // own content (only reachable by opening an entry) should share
+    // exactly the same left edge. Opens just the first entry to measure
+    // this, then leaves it open (the next assertion block re-derives
+    // state fresh rather than assuming collapsed).
+    await page.evaluate(() => {
+        document.querySelectorAll("wa-details.log-item")[0].open = true;
+    });
+    await new Promise((r) => setTimeout(r, 150));
+    const indentCheck = await page.evaluate(() => {
+        const item = document.querySelectorAll("wa-details.log-item")[0];
+        const dateLeft = item.querySelector("wa-format-date").getBoundingClientRect().left;
+        const bodyLeft = item.querySelector(".log-body").getBoundingClientRect().left;
+        return { dateLeft, bodyLeft };
+    });
+    record(
+        "summary's second field and the expanded body share the same left indentation",
+        Math.abs(indentCheck.dateLeft - indentCheck.bodyLeft) <= TOLERANCE,
+        JSON.stringify(indentCheck)
+    );
+    await page.evaluate(() => {
+        document.querySelectorAll("wa-details.log-item")[0].open = false;
+    });
+    await new Promise((r) => setTimeout(r, 150));
+
     // 2. wa-format-date renders a real formatted date, not raw ISO text.
     const dateText = await page.evaluate(
         () => document.querySelector("wa-format-date")?.shadowRoot?.textContent?.trim() || ""
@@ -232,12 +306,37 @@ try {
         return {
             hasFullMessage: html.includes("smoke test can measure the clamp/overflow behavior"),
             hasCopyFrom: html.includes("copy-from") && html.includes("old-name.txt"),
-            hasIcons: ["plus", "pen", "trash", "arrow-right"].every((n) => html.includes(`name="${n}"`)),
+            hasIcons: ["plus", "pen", "trash"].every((n) => html.includes(`name="${n}"`)),
+            hasNoArrowIcon: !html.includes("arrow-right"),
+            hasSmallRevisionBadge: html.includes('<span class="revision-badge revision-badge-small">90</span>'),
+            hasNoAtSign: !html.includes("@90"),
         };
     });
     record("full (uncapped) commit message visible when expanded", expandedChecks.hasFullMessage);
     record("copy-from source indicator rendered", expandedChecks.hasCopyFrom);
-    record("all 4 changed-path/copy-from icons present", expandedChecks.hasIcons);
+    record("changed-path icons present", expandedChecks.hasIcons);
+    record("no arrow icon before the copy-from source (removed, was confusing)", expandedChecks.hasNoArrowIcon);
+    record("copy-from source revision rendered as a small revision badge", expandedChecks.hasSmallRevisionBadge);
+    record("copy-from source revision has no '@' sign", expandedChecks.hasNoAtSign);
+
+    // "Shown once" check: with every entry expanded, every collapsed
+    // preview must be hidden (not just visually clamped) and every full
+    // message must be the one actually visible -- the same text should
+    // never be presented twice at once.
+    const shownOnceWhenExpanded = await page.evaluate(() => {
+        const previews = [...document.querySelectorAll(".log-message-preview")];
+        const fulls = [...document.querySelectorAll(".log-message-full")];
+        return {
+            previewsHidden: previews.every((el) => getComputedStyle(el).display === "none"),
+            fullsVisible: fulls.every((el) => getComputedStyle(el).display !== "none"),
+        };
+    });
+    record(
+        "clamped preview is hidden (not shown alongside the full message) once expanded",
+        shownOnceWhenExpanded.previewsHidden,
+        JSON.stringify(shownOnceWhenExpanded)
+    );
+    record("full message is visible once expanded", shownOnceWhenExpanded.fullsVisible);
 
     // 6. Clicking again collapses everything and relabels back.
     await page.click("#history-expand-toggle");
@@ -275,50 +374,7 @@ try {
 
     await page.screenshot({ path: path.join(OUTPUT_DIR, "03-final.png"), fullPage: true });
 
-    // 8. Regression check for the actual bug this smoke test was built to
-    // catch: white-space: pre-line was preserving an incidental
-    // template-source newline as a visible blank line, wasting half the
-    // intended 2-line clamp. A short (1-line) message must produce a
-    // clientHeight of ~1 line-height (not 2, which would mean a phantom
-    // blank line is still being reserved); a long message must produce
-    // ~2 line-heights AND scrollHeight > clientHeight (confirms real
-    // overflow is being clamped, not coincidentally short content).
-    const clampInfo = await page.evaluate(() => {
-        const previews = [...document.querySelectorAll(".log-message-preview")];
-        return previews.map((el) => {
-            const cs = getComputedStyle(el);
-            return {
-                clientHeight: el.clientHeight,
-                scrollHeight: el.scrollHeight,
-                lineHeightPx: parseFloat(cs.lineHeight),
-            };
-        });
-    });
-    // Fixture document order: rev 103 (short), rev 102 (long), rev 101 (short).
-    const [shortEntry, longEntry] = clampInfo;
-    const TOLERANCE = 2; // px rounding
-    record(
-        "short message's preview height is ~1 line-height (no phantom blank line)",
-        Math.abs(shortEntry.clientHeight - shortEntry.lineHeightPx) <= TOLERANCE,
-        JSON.stringify(shortEntry)
-    );
-    record(
-        "long message's preview height is ~2 line-heights (correctly clamped)",
-        Math.abs(longEntry.clientHeight - longEntry.lineHeightPx * 2) <= TOLERANCE,
-        JSON.stringify(longEntry)
-    );
-    record(
-        "long message actually overflows the clamp box (scrollHeight > clientHeight)",
-        longEntry.scrollHeight > longEntry.clientHeight,
-        JSON.stringify(longEntry)
-    );
-
-    // High-DPI zoomed crop of the clamped preview element for visual review.
-    await page.setViewport({ width: 1000, height: 900, deviceScaleFactor: 3 });
-    const previewHandles = await page.$$(".log-message-preview");
-    await previewHandles[1].screenshot({ path: path.join(OUTPUT_DIR, "04-clamp-zoom.png") });
-
-    // 9. No console/page errors during the whole run.
+    // 8. No console/page errors during the whole run.
     record("no console/page errors during the whole run", consoleErrors.length === 0, consoleErrors.join(" | "));
 } finally {
     await browser?.close();
