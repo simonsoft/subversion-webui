@@ -426,10 +426,34 @@ a.revision-badge {
     font-size: 0.75em;
 }
 
+/* Two summary layouts depending on wa-page's own "view" attribute
+   (https://webawesome.com/docs/components/page -- the same desktop/mobile
+   split already used above for the header/navigation, reflecting actual
+   available layout width rather than a raw viewport media query). This
+   unqualified rule is the mobile/fallback layout: meta row, then the
+   message on its own row underneath -- there isn't reliably enough width
+   for a two-column layout at that size. "wa-page[view='desktop']" below
+   switches to a single row instead, with the message to the right of a
+   fixed-width meta column. */
 .log-summary {
     display: flex;
     flex-direction: column;
     gap: var(--wa-space-2xs);
+    /* wa-details' own shadow-DOM header doesn't stretch this slotted div to
+       the header's full available width -- left implicit, it's shrink-to-
+       fit around its own content instead, and that shrink-to-fit width
+       varies slightly per entry. Harmless in the column layout above, but
+       breaks the desktop row below: ".log-message-preview"'s own
+       "margin-left: auto" pushes it to *this* element's right edge, so a
+       per-entry-varying width here means a per-entry-varying push target,
+       not the identical x position a real column needs. */
+    width: 100%;
+}
+
+wa-page[view='desktop'] .log-summary {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--wa-space-m);
 }
 
 .log-summary-meta {
@@ -439,11 +463,55 @@ a.revision-badge {
     gap: var(--wa-space-s);
 }
 
+/* Not sized off the author text, for the same reason --log-revision-column
+   above is fixed: author is free text that can be anything from "bob" to
+   a full email address, so leaving this column's width to its content
+   would make every entry's message start position only as reliable as
+   that guess. The "%" term in the clamp() below ties this column's size
+   to the dialog's own real width (a percentage flex-basis resolves
+   against ".log-summary"'s own rendered content-box width, which already
+   reflects the dialog's "--width: 90vw" plus any padding along the way)
+   rather than the author's content -- min/max rem bounds around it keep
+   the column legible on a dialog only just past the mobile breakpoint and
+   from growing pointlessly wide on a very large one. This column holds
+   all three fields (revision, date, author), not just author, so the
+   lower bound needs enough room for revision + date's own combined
+   natural width first -- measured at ~215px (64px revision slot + two
+   12px gaps + a ~127px formatted date) -- plus a real remaining minimum
+   for author, not just whatever happens to be left over; 20rem leaves
+   roughly 6rem for author before it ellipsis-truncates, instead of the
+   near-zero space a too-small lower bound (14rem, tried and rejected --
+   left even short author values like "alice" truncated to "a..") would.
+   min-width:0 lets this column shrink below its children's natural width
+   -- required for ".log-author strong" below to actually truncate instead
+   of just overflowing the box. */
+wa-page[view='desktop'] .log-summary-meta {
+    flex: 0 1 clamp(20rem, 32%, 24rem);
+    min-width: 0;
+    flex-wrap: nowrap;
+}
+
 .log-author {
     display: inline-flex;
     align-items: center;
     gap: var(--wa-space-2xs);
     color: var(--wa-color-text-quiet);
+}
+
+wa-page[view='desktop'] .log-author {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* The actual truncation target -- ellipsis goes on the text itself, not
+   the flex row that also contains the icon, since a flex container with
+   overflow:hidden doesn't truncate its children's rendered text on its
+   own. */
+wa-page[view='desktop'] .log-author strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
 /* Both the always-visible collapsed preview and the expanded full message
@@ -458,22 +526,18 @@ a.revision-badge {
     color: var(--wa-color-text-quiet);
 }
 
-/* On its own row below ".log-summary-meta" (revision/date/author),
-   indented to the exact same fixed column ".log-body" below also uses --
-   deliberately NOT positioned by flowing after (or right-aligning past)
-   the author field: author is a free-text value that can be anything
-   from "bob" to a full email address, so any alignment scheme keyed off
-   its own rendered width is only ever as reliable as that guess. A fixed
-   margin-left tied to --log-revision-column instead doesn't care how
-   long the author value is -- every entry's message starts at the same
-   position unconditionally. This also sidesteps a real flexbox +
-   "-webkit-line-clamp" interaction hit by an earlier version that DID
-   share a flex row with variable-width siblings (a line-clamped flex
-   item's own "flex-basis: auto" sizing from unclamped content width,
-   demanding far more row space than available and tripping the row's
-   own flex-wrap) -- with nothing to compete with for space on its own
-   row, that whole class of bug no longer applies here. Two-line clamp: a
-   -webkit-box, not a fade-gradient overlay -- this app targets evergreen
+/* Mobile: on its own row below ".log-summary-meta" (revision/date/
+   author), indented to the exact same fixed column ".log-body" below
+   also uses -- not positioned by flowing after (or right-aligning past)
+   the author field, for the same reason ".log-summary-meta" above isn't
+   sized off the author text on desktop. Desktop (see
+   "wa-page[view='desktop']" below) instead shares a row with that meta
+   column, and is itself a proper column too -- sized the same
+   percentage-of-the-row-plus-clamp() way, so it scales with the dialog,
+   rather than a flexible one that merely fills whatever space happens to
+   be left; "margin-left: auto" then shoves that column to the row's far
+   right edge. Two-line clamp: a -webkit-box, not a fade-gradient overlay
+   -- this app targets evergreen
    Chromium/Firefox/Safari, which all implement these (nominally
    WebKit-prefixed, now universal) properties, simpler and more robust
    than a gradient mask over wa-details' own light/dark theme tokens, with
@@ -497,6 +561,11 @@ a.revision-badge {
 
 .log-item[open] .log-message-preview {
     display: none;
+}
+
+wa-page[view='desktop'] .log-message-preview {
+    flex: 0 0 clamp(16rem, 40%, 36rem);
+    margin-left: auto;
 }
 
 /* The full commit message, revealed once expanded, indented to match
@@ -546,9 +615,14 @@ a.revision-badge {
 }
 
 /* ".log-message-preview" (above) and this both indent to the exact same
-   fixed column -- past the revision column plus the row's own gap -- so
-   the collapsed and expanded states share one consistent left edge, kept
-   in one shared rule rather than repeating the same calc() twice.
+   fixed column by default -- past the revision column plus the row's own
+   gap -- so the collapsed and expanded states share one consistent left
+   edge, kept in one shared rule rather than repeating the same calc()
+   twice. Both view-specific overrides below drop this indent back to 0
+   again on their own terms: desktop, because ".log-message-preview" is a
+   sibling of the meta row rather than indented underneath it there;
+   mobile, to reclaim the column's width on a screen where it's scarce,
+   for both the collapsed preview and the expanded body alike.
    --flank-size is Web Awesome's own "wa-flank" utility custom property
    (https://webawesome.com/docs/utilities/flank/), controlling how wide
    the fixed/natural-size first child of a ".wa-flank" is -- set once
@@ -564,6 +638,11 @@ a.revision-badge {
 
 .log-body {
     --flank-size: 1.5rem;
+}
+
+wa-page[view='mobile'] .log-message-preview,
+wa-page[view='mobile'] .log-body {
+    margin-left: 0;
 }
 
 .changed-paths {
@@ -673,10 +752,17 @@ wa-tree-item a {
 <span>{{#has_base}}Repository: {{base}} &middot; Path: {{/has_base}}{{path}} {{#has_base}}&middot; Revision: {{rev}}{{/has_base}}</span>
 <em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
 </footer>
-</wa-page>
+<!-- Unslotted, so it lands in wa-page's default slot alongside ".svn-main"
+     -- deliberately a real descendant of <wa-page>, not a sibling after it,
+     so the "wa-page[view='desktop']"/"wa-page[view='mobile']" rules above
+     (see ".log-summary" etc.) actually match its contents. wa-dialog
+     renders its own internal native <dialog>, which paints in the
+     browser's top layer regardless of DOM ancestry, so nesting it here
+     doesn't affect its overlay/positioning behavior at all. -->
 <wa-dialog id="history-dialog" label="History" light-dismiss style="--width: 90vw;">
 <wa-button id="history-expand-toggle" slot="header-actions" appearance="plain" size="small">Expand all</wa-button>
 <div id="history-content"></div>
 </wa-dialog>
+</wa-page>
 </body>
 </html>

@@ -94,25 +94,60 @@ async function buildHarness(renderedLogHtml) {
     }
     const dialogTagName = dialogTagNameMatch[1];
 
+    // Nested inside a real <wa-page> element, mirroring page.mustache's own
+    // structure (the dialog is an unslotted -- default-slot -- child of
+    // <wa-page>, not a sibling after it): page.mustache's
+    // "wa-page[view='desktop']" / "wa-page[view='mobile']" rules depend on
+    // ".log-summary" etc. actually being descendants of <wa-page>. Left
+    // with no "view" attribute by default -- wrapWithView() below sets one
+    // for the desktop/mobile-specific checks.
     return `<!DOCTYPE html>
 <html lang="en" class="wa-cloak">
 <head>
 <meta charset="utf-8">
 <title>History dialog smoke test</title>
+<script>
+// Stubs out "wa-page" as a trivial, do-nothing custom element BEFORE the
+// CDN autoloader below (a deferred module script, so this synchronous one
+// always runs first) gets a chance to load and register the real
+// component. Only the CSS attribute selector ("wa-page[view='...']")
+// needs this tag to exist -- the real component's own JS is a
+// ResizeObserver-driven "view" resolution expecting full header/nav/menu
+// context this minimal dialog-only harness doesn't provide, and would
+// fight the "view" attribute wrapWithView() sets for the desktop/mobile
+// checks below.
+customElements.define("wa-page", class extends HTMLElement {});
+</script>
 ${cdnTagLines}
 ${scriptBlock}
 ${styleBlock}
 </head>
 <body>
+<wa-page>
 ${dialogOpenTag}
 ${expandToggleLine}
 ${contentDivOpenTag}
 ${renderedLogHtml}
 </div>
 </${dialogTagName}>
+</wa-page>
 </body>
 </html>
 `;
+}
+
+// Sets the "view" attribute on the harness's own <wa-page> element (see
+// buildHarness() above), purely as a CSS selector target for
+// page.mustache's "wa-page[view='desktop']" / "wa-page[view='mobile']"
+// rules -- attribute selectors match on any element in the DOM regardless
+// of whether the custom element's own JS has upgraded it, so this doesn't
+// need to load wa-page's real definition or simulate its resize/breakpoint
+// behavior, both out of scope for this smoke test. Anchored to the
+// literal, whole-line "<wa-page>" tag (not a plain substring replace)
+// because the inline <script> block's own comments happen to contain the
+// substring "<wa-page>" in prose earlier in the file.
+function wrapWithView(html, view) {
+    return html.replace(/^<wa-page>$/m, `<wa-page view="${view}">`);
 }
 
 // --- Run the real Lua driver (renders real HTML via the actual
@@ -152,8 +187,11 @@ const harness = await buildHarness(renderedLogHtml);
 await writeFile(path.join(OUTPUT_DIR, "harness.html"), harness, "utf8");
 
 const server = http.createServer((req, res) => {
+    let body = harness;
+    if (req.url === "/desktop") body = wrapWithView(harness, "desktop");
+    else if (req.url === "/mobile") body = wrapWithView(harness, "mobile");
     res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(harness);
+    res.end(body);
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const port = server.address().port;
@@ -503,6 +541,153 @@ try {
 
     // 8. No console/page errors during the whole run.
     record("no console/page errors during the whole run", consoleErrors.length === 0, consoleErrors.join(" | "));
+
+    // 9. Responsive layout, driven by wa-page's own "view" attribute (see
+    // wrapWithView() above): desktop puts the collapsed message in a
+    // fixed-width column (not one that merely flexes to fill whatever
+    // space is left) shoved to the row's right edge via margin-left:auto,
+    // to the right of a meta column that ellipsis-truncates a long author
+    // value rather than letting it push the message an unpredictable
+    // distance -- the fixture's "bob.johansson@example.com" entry exists
+    // specifically to exercise this. Both columns are sized with
+    // clamp(min, %, max) rather than a flat rem value, so they scale with
+    // the dialog's own (viewport-relative) width instead of staying fixed
+    // while the dialog around them doesn't -- checked at two different
+    // viewport widths below to confirm they actually do. Mobile keeps the
+    // existing stacked layout and drops the left indent entirely, for
+    // both the collapsed preview and the expanded body, to reclaim width
+    // on a narrow screen.
+    await page.setViewport({ width: 1200, height: 900 });
+    await page.goto(`http://127.0.0.1:${port}/desktop`, { waitUntil: "networkidle0" });
+    await page.evaluate(() =>
+        Promise.all([customElements.whenDefined("wa-details"), customElements.whenDefined("wa-icon")])
+    );
+
+    const desktopCollapsed = await page.evaluate(() => {
+        const items = [...document.querySelectorAll(".log-item")];
+        const emailItem = items.find((el) => el.querySelector(".log-author strong").textContent.includes("@"));
+        const summary = emailItem.querySelector(".log-summary");
+        const meta = emailItem.querySelector(".log-summary-meta");
+        const authorStrong = emailItem.querySelector(".log-author strong");
+        const preview = emailItem.querySelector(".log-message-preview");
+        // Every entry's preview width AND left edge, to confirm the column
+        // is a fixed size AND a fixed position regardless of message length
+        // (not content-dependent, the way a flex-grow column filling
+        // leftover space would be, or a fixed-but-right-aligned column
+        // whose *visible text* still starts at a different x per entry
+        // depending on how much of the column its own text fills).
+        const previewWidths = items.map((el) => el.querySelector(".log-message-preview").getBoundingClientRect().width);
+        const previewLefts = items.map((el) => el.querySelector(".log-message-preview").getBoundingClientRect().left);
+        return {
+            row: getComputedStyle(summary).flexDirection === "row",
+            authorTruncated: authorStrong.scrollWidth > authorStrong.clientWidth + 1,
+            previewNotRightAligned: getComputedStyle(preview).textAlign !== "right",
+            previewRightOfMeta: preview.getBoundingClientRect().left >= meta.getBoundingClientRect().right - 1,
+            previewFlushRight: Math.abs(preview.getBoundingClientRect().right - summary.getBoundingClientRect().right) <= 1,
+            previewWidths,
+            previewLefts,
+        };
+    });
+    record(
+        "desktop: summary is a single row (meta + message side by side)",
+        desktopCollapsed.row,
+        JSON.stringify(desktopCollapsed)
+    );
+    record(
+        "desktop: a long (email-address) author truncates with an ellipsis instead of pushing the message",
+        desktopCollapsed.authorTruncated,
+        JSON.stringify(desktopCollapsed)
+    );
+    record(
+        "desktop: collapsed message sits to the right of the meta column, not right-aligned within its own column",
+        desktopCollapsed.previewNotRightAligned && desktopCollapsed.previewRightOfMeta,
+        JSON.stringify(desktopCollapsed)
+    );
+    record(
+        "desktop: message column is a fixed width, identical across entries regardless of message length",
+        new Set(desktopCollapsed.previewWidths.map((w) => Math.round(w))).size === 1,
+        JSON.stringify(desktopCollapsed.previewWidths)
+    );
+    record(
+        "desktop: every entry's message text starts at exactly the same x position (a real column, not ragged right-aligned text)",
+        new Set(desktopCollapsed.previewLefts.map((l) => Math.round(l))).size === 1,
+        JSON.stringify(desktopCollapsed.previewLefts)
+    );
+    record(
+        "desktop: message column is shoved flush to the row's right edge",
+        desktopCollapsed.previewFlushRight,
+        JSON.stringify(desktopCollapsed)
+    );
+
+    // Both columns are sized with clamp(min, %, max) specifically so they
+    // scale with the dialog's own (viewport-relative) width -- re-measured
+    // here at a much wider viewport to confirm that's actually happening,
+    // not just that the clamp() min/max bounds are being hit both times
+    // (which would look identical to a flat rem value from the checks
+    // above alone). Widened enough that the "%" term, not either clamp()
+    // bound, should be what's controlling both widths at both sizes.
+    await page.setViewport({ width: 1800, height: 900 });
+    await page.evaluate(() =>
+        Promise.all([customElements.whenDefined("wa-details"), customElements.whenDefined("wa-icon")])
+    );
+    const desktopWide = await page.evaluate(() => {
+        const items = [...document.querySelectorAll(".log-item")];
+        return {
+            metaWidths: items.map((el) => el.querySelector(".log-summary-meta").getBoundingClientRect().width),
+            previewWidths: items.map((el) => el.querySelector(".log-message-preview").getBoundingClientRect().width),
+        };
+    });
+    record(
+        "desktop: meta column is still identical across entries at a much wider viewport",
+        new Set(desktopWide.metaWidths.map((w) => Math.round(w))).size === 1,
+        JSON.stringify(desktopWide.metaWidths)
+    );
+    record(
+        "desktop: message column is still identical across entries at a much wider viewport",
+        new Set(desktopWide.previewWidths.map((w) => Math.round(w))).size === 1,
+        JSON.stringify(desktopWide.previewWidths)
+    );
+    record(
+        "desktop: message column actually grows at a wider viewport (scales with the dialog, not a flat rem value)",
+        desktopWide.previewWidths[0] > desktopCollapsed.previewWidths[0] + 10,
+        JSON.stringify({ at1200: desktopCollapsed.previewWidths[0], at1800: desktopWide.previewWidths[0] })
+    );
+    await page.setViewport({ width: 1200, height: 900 });
+
+    await page.click("#history-expand-toggle");
+    await new Promise((r) => setTimeout(r, 200));
+    const desktopBodyIndent = await page.evaluate(() => getComputedStyle(document.querySelector(".log-body")).marginLeft);
+    record("desktop: expanded content keeps its left indent", desktopBodyIndent !== "0px", desktopBodyIndent);
+
+    await page.setViewport({ width: 400, height: 900 });
+    await page.goto(`http://127.0.0.1:${port}/mobile`, { waitUntil: "networkidle0" });
+    await page.evaluate(() =>
+        Promise.all([customElements.whenDefined("wa-details"), customElements.whenDefined("wa-icon")])
+    );
+
+    const mobileCollapsed = await page.evaluate(() => {
+        const summary = document.querySelector(".log-summary");
+        const preview = document.querySelector(".log-message-preview");
+        return {
+            stacked: getComputedStyle(summary).flexDirection === "column",
+            previewMarginLeft: getComputedStyle(preview).marginLeft,
+        };
+    });
+    record(
+        "mobile: summary stays stacked (meta row, then message on its own row)",
+        mobileCollapsed.stacked,
+        JSON.stringify(mobileCollapsed)
+    );
+    record(
+        "mobile: collapsed message also drops its left indent (reclaims width)",
+        mobileCollapsed.previewMarginLeft === "0px",
+        JSON.stringify(mobileCollapsed)
+    );
+
+    await page.click("#history-expand-toggle");
+    await new Promise((r) => setTimeout(r, 200));
+    const mobileBodyIndent = await page.evaluate(() => getComputedStyle(document.querySelector(".log-body")).marginLeft);
+    record("mobile: expanded content drops its left indent (reclaims width)", mobileBodyIndent === "0px", mobileBodyIndent);
 } finally {
     await browser?.close();
     server.close();
