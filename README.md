@@ -74,6 +74,64 @@ For serving XML responses (e.g. `SVNIndexXSLT` output) to browsers that
 have dropped native client-side XSLT support, see
 [README-xslt-polyfill.md](README-xslt-polyfill.md) for an independent
 output filter that polyfills it instead.
+
+### History (wa-page skin only)
+
+`wa-page` adds a "History" link to the page header that issues a real HTTP
+`REPORT` request (svn's log-report) against the directory currently being
+browsed, rendered as a basic log table in place of the directory listing.
+This needs two additional filters on the same `<Location /svn>` block used
+above -- an input filter that synthesizes the log-report request body, and
+an output filter that renders its XML response as HTML:
+
+```
+LuaInputFilter SVN_LOG_REPORT_BODY \
+        "/opt/subversion-webui/mod-lua/svn-log.lua" \
+        input_filter
+
+LuaOutputFilter SVN_LOG_HTML \
+        "/opt/subversion-webui/mod-lua/svn-log.lua" \
+        output_filter
+
+<Location /svn>
+
+    # ... existing SVNIndexXSLT / SVN_XML_INDEX filter config from above ...
+
+    SetInputFilter SVN_LOG_REPORT_BODY
+
+    FilterDeclare SVN_LOG_HTML
+
+    FilterProvider SVN_LOG_HTML SVN_LOG_HTML \
+        "%{REQUEST_METHOD} == 'REPORT' \
+            && %{CONTENT_TYPE} =~ m#^(?:text|application)/xml(?:;|$)# \
+            && %{REQUEST_URI} =~ m#/$#"
+
+    FilterProtocol SVN_LOG_HTML "change=yes;byteranges=no"
+    FilterChain SVN_LOG_HTML
+
+    # Maximum number of log entries returned by the History link.
+    # Defaults to 50 when unset.
+    # SetEnv SVN_LOG_LIMIT 50
+
+</Location>
+```
+
+`SetInputFilter` (unlike `FilterDeclare`/`FilterProvider`) has no per-request
+condition syntax, so it activates on every request under this `Location` --
+including real `svn` client traffic, which also uses `REPORT` for its own
+protocol purposes (update-report, etc.) against the exact same URL space.
+`SVN_LOG_REPORT_BODY`'s `input_filter` guards against this itself: it only
+ever acts on requests carrying both `REPORT` as the method *and* a
+`history=1` query-string marker (added only by the History link itself) --
+every other request, real svn-client REPORT traffic included, passes
+through unmodified.
+
+This feature is wired into the `wa-page` template only; `SVN_INDEX_TEMPLATE`
+must be set to `wa-page` for the History link to appear (see above) -- the
+other three templates have no `log.mustache`/`log-item.mustache` files and
+are unaffected by this filter pair being installed (they simply never send a
+request carrying `history=1`).
+
 ### Apache httpd transfer
 
 The transfer will be chunked unless returned in a single brigade. This is already the case with mod_dav_svn regardless of additional filter. However, if deflate or other compression filter is enabled, the compressed response might fit into the compression filter's buffer and then become a regular transfer with Content-Length header.

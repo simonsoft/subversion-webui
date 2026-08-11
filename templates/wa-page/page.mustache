@@ -303,6 +303,16 @@ div.svn-main {
     padding: var(--wa-space-m);
 }
 
+/* Commit messages can contain long lines with no natural break points --
+   pre-wrap keeps embedded newlines (see the "History" log table's <pre>,
+   rendered by svn-log.lua's output_filter) while still wrapping instead of
+   overflowing the message column. */
+.svn-log-table pre {
+    white-space: pre-wrap;
+    margin: 0;
+    font: inherit;
+}
+
 /* The navigation tree only ever browses folders -- files (and the ".."
    entry, which is superseded by the header's "Up" button) fetched into it
    via htmx are hidden here regardless of how deeply they end up nested. */
@@ -337,6 +347,7 @@ wa-tree-item a {
 <wa-icon data-toggle-nav name="bars" label="Menu" style="padding: var(--wa-space-s);"></wa-icon>
 <a href="{{{repo_parent_path}}}"><wa-icon name="house"></wa-icon>Start</a>
 {{#has_base}}<a href="../{{{revision_suffix_up}}}"><wa-icon name="turn-up"></wa-icon>Up</a>{{/has_base}}
+{{#has_base}}<a href="{{{history_href}}}" hx-action="{{{history_href}}}" hx-method="REPORT" hx-target="#svn-main" hx-swap="innerHTML" hx-trigger="click"><wa-icon name="clock-rotate-left"></wa-icon>History</a>{{/has_base}}
 </div>
 </header>
 <nav slot="subheader" id="subheader">
@@ -354,7 +365,7 @@ wa-tree-item a {
 <wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">
 </wa-tree>
 </nav>
-<div class="svn-main">
+<div class="svn-main" id="svn-main">
 <wa-tree class="svn-index" id="svn-index">
 {{{svn_index}}}</wa-tree>
 </div>
