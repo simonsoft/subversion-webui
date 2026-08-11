@@ -99,11 +99,22 @@ end
 -- asks for the log of any path other than the directory currently being
 -- browsed. discover-changed-paths is always requested (locked-in scope
 -- decision: each log entry lists its added/modified/deleted paths).
--- end_revision is nil unless the request was pinned via "?p=REV" -- honored
--- as the upper bound; omitted entirely means HEAD.
+--
+-- start-revision is ALWAYS set, to "0" (the repository's own oldest
+-- possible revision) -- confirmed against a real server that omitting it
+-- does NOT mean "as far back as it goes": it defaults to HEAD, exactly
+-- like end-revision's own default. Omitting both therefore asks for the
+-- log between HEAD and HEAD -- a one-revision window -- which is why an
+-- unpinned History click was only ever showing a row when the browsed
+-- path happened to be touched by the single most recent commit, and
+-- nothing otherwise. end_revision is nil unless the request was pinned via
+-- "?p=REV" -- honored as the upper/peg bound; omitted entirely means HEAD,
+-- which (now that start-revision is always explicit) is the intended
+-- "walk from HEAD back to revision 0" range.
 local function build_log_report_body(limit, end_revision)
     local parts = {
         '<S:log-report xmlns:S="svn:" xmlns:D="DAV:">',
+        '<S:start-revision>0</S:start-revision>',
         '<S:limit>' .. limit .. '</S:limit>',
     }
 
@@ -154,8 +165,15 @@ function input_filter(r)
 
     local body = build_log_report_body(limit, end_revision)
 
-    -- Best-effort: keep the declared body size/type consistent with what's
-    -- actually being sent downstream to mod_dav_svn's REPORT handler.
+    -- Belt-and-braces only, not load-bearing: confirmed against httpd's own
+    -- source that the REPORT body is actually read by the same core
+    -- ap_xml_parse_input() PROPFIND/PROPPATCH/OPTIONS use (server/util_xml.c)
+    -- -- it reads via ap_get_brigade(r->input_filters, ...) until it sees an
+    -- EOS bucket, checking neither Content-Type nor Content-Length (the only
+    -- cap is LimitXMLRequestBody). So mod_dav_svn's REPORT handler already
+    -- sees exactly the synthesized body this filter yields, regardless of
+    -- what's set here. Kept anyway in case dav_method_report itself ever
+    -- deviates from that shared path on some server version.
     r.headers_in["Content-Length"] = tostring(#body)
     r.headers_in["Content-Type"] = "text/xml; charset=utf-8"
 
@@ -242,6 +260,7 @@ end
 
 function output_filter(r)
     local bucket_count = 0
+    local element_count = 0
     local rendered_count = 0
     local pending_output = {}
 
@@ -302,6 +321,14 @@ function output_filter(r)
     -- sufficient.
     local parser = lxp.new({
         StartElement = function(_, name, attr)
+            element_count = element_count + 1
+
+            r:debug(string.format(
+                "SVN log XML element #%d: name=%s",
+                element_count,
+                tostring(name)
+            ))
+
             if name == "S:log-item" then
                 item = { revision = "", author = "", date = "", message = "", changed_paths = {} }
                 return
@@ -374,6 +401,12 @@ function output_filter(r)
         bucket_count = bucket_count + 1
         pending_output = {}
 
+        r:debug(string.format(
+            "SVN log XML bucket #%d: %d bytes",
+            bucket_count,
+            #bucket
+        ))
+
         local ok, err, line, column = parser:parse(bucket)
 
         if not ok then
@@ -428,13 +461,23 @@ function output_filter(r)
         preamble_sent = true
     end
 
+    -- If the very last <S:log-item>'s </S:log-item> is only recognized by
+    -- this final, no-argument parser:parse() call (rather than during the
+    -- while-loop's own last parser:parse(bucket) call) -- which real-world
+    -- bucket boundaries can trigger even though every hand-crafted split in
+    -- this file's own test fixtures happens not to -- its rendered row was
+    -- appended to pending_output here and must still be flushed; omitting
+    -- it silently drops that row.
+    final_parts[#final_parts + 1] = table.concat(pending_output)
+
     final_parts[#final_parts + 1] = postamble_html
 
     coroutine.yield(table.concat(final_parts))
 
     r:info(string.format(
-        "SVN log listing transformed: buckets=%d entries=%d",
+        "SVN log listing transformed: buckets=%d elements=%d entries=%d",
         bucket_count,
+        element_count,
         rendered_count
     ))
 end

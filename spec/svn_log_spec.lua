@@ -166,10 +166,16 @@ describe("svn-log input_filter", function()
         assert.are.equal(0, yield_count)
     end)
 
-    it("synthesizes a log-report body with the default limit and no end-revision", function()
+    it("synthesizes a log-report body with the default limit, start-revision=0, and no end-revision", function()
         local body = run_input_filter({}, "/svn/demo1/trunk/?history=1")
 
         assert.truthy(body:find('<S:log-report xmlns:S="svn:" xmlns:D="DAV:">', 1, true))
+        -- start-revision must always be explicit: per the log-report
+        -- schema, omitting it defaults to HEAD (exactly like end-revision's
+        -- own default), which would otherwise collapse an unpinned request
+        -- into a one-revision HEAD-to-HEAD window instead of "as far back
+        -- as it goes".
+        assert.truthy(body:find('<S:start-revision>0</S:start-revision>', 1, true))
         assert.truthy(body:find('<S:limit>50</S:limit>', 1, true))
         assert.truthy(body:find('<S:discover-changed-paths/>', 1, true))
         assert.truthy(body:find('<S:path></S:path>', 1, true))
@@ -177,9 +183,10 @@ describe("svn-log input_filter", function()
         assert.falsy(body:find('<S:end-revision>', 1, true))
     end)
 
-    it("honors an active ?p=REV pin as the end-revision", function()
+    it("honors an active ?p=REV pin as the end-revision, while still setting start-revision=0", function()
         local body = run_input_filter({}, "/svn/demo1/trunk/?history=1&p=42")
 
+        assert.truthy(body:find('<S:start-revision>0</S:start-revision>', 1, true))
         assert.truthy(body:find('<S:end-revision>42</S:end-revision>', 1, true))
     end)
 
