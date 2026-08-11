@@ -576,9 +576,21 @@ function output_filter(r)
             -- request against this same directory. Distinguished from
             -- ordinary svn-client REPORT traffic against the same URL space
             -- by Content-Type, not by anything in the URL (see svn-log.lua's
-            -- input_filter and the History link's own hx-headers) -- so
+            -- input_filter's own is_form_encoded_content_type check) -- so
             -- this is just request_href plus the same revision-pin suffix
             -- every other link here carries forward.
+            --
+            -- Unlike "Start" (a fixed, request-independent destination) or
+            -- "Up" (a relative href that re-resolves against wherever the
+            -- browser currently is, per the comment above
+            -- compute_breadcrumbs), this is both absolute AND
+            -- request-specific -- so, also unlike either of those, it goes
+            -- stale after an htmx-driven navigation that doesn't reload the
+            -- page. page.mustache's header cluster carries an id
+            -- ("#header-left") specifically so the breadcrumb/dir.mustache
+            -- navigation links can pull a freshly-rendered one out of their
+            -- own full-page response via hx-select-oob, the same way they
+            -- already do for "#breadcrumb"/"#footer".
             history_href = escape_html(request_href .. revision_suffix),
             -- nav starts at the repo root (breadcrumbs[1] is that crumb --
             -- lustache can't reach it directly as {{breadcrumbs.1.hx_href}},
