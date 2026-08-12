@@ -64,6 +64,11 @@ local function strip_wire_comments(html)
         return open .. body:gsub("//[^\n]*", "") .. close
     end)
 
+    -- Collapses the runs of now-empty lines a removed comment block leaves
+    -- behind (a single gsub, since "%s*" here is greedy and backtracks to
+    -- swallow an entire run of blank lines at once, however long).
+    html = html:gsub("\n%s*\n", "\n")
+
     return html
 end
 
