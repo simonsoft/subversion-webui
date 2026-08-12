@@ -572,10 +572,17 @@ describe("svn-index output_filter", function()
         -- outside of that, hx-trigger="wa-lazy-load" just sits dormant
         -- until nav sets lazy=true, at which point wa-tree-item's own
         -- chevron interaction can fire it. Separately, the label's own
-        -- "wa-selection-change from:closest wa-tree-item" trigger fires for
-        -- a selecting click anywhere in the item's row (not just the
-        -- label) or keyboard activation, and its "click[...]" trigger
-        -- covers re-clicking an already-selected label too (since
+        -- "wa-selection-change" trigger fires for a selecting click
+        -- anywhere in the item's row (not just the label) or keyboard
+        -- activation -- listening "from:closest wa-tree", not "wa-tree-item"
+        -- itself, since Web Awesome's own wa-tree dispatches this event on
+        -- itself (confirmed via wa-tree's own source, tree.ts's
+        -- selectItem()), never on the individual wa-tree-item; the
+        -- "[event.detail.selection.includes(this.parentElement)]" filter
+        -- then re-scopes that tree-wide event back down to just this one
+        -- item, since every dir label in the same tree shares this same
+        -- trigger and would otherwise all fire together. Its "click[...]"
+        -- trigger covers re-clicking an already-selected label too (since
         -- wa-selection-change only fires on an actual selection change) --
         -- so main updates no matter how many times the same or a different
         -- entry is activated.
@@ -592,7 +599,7 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find(
-            [[<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="wa-selection-change from:closest wa-tree-item delay:150ms, click[this.parentElement.selected]">]],
+            [[<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="wa-selection-change[event.detail.selection.includes(this.parentElement)] from:closest wa-tree delay:150ms, click[this.parentElement.selected]">]],
             1, true
         ))
     end)
@@ -1440,7 +1447,7 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<footer slot="footer" id="svn-footer">', 1, true))
         assert.truthy(html:find('<div class="wa-cluster" id="svn-header-left">', 1, true))
         assert.truthy(html:find(
-            [[<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="wa-selection-change from:closest wa-tree-item delay:150ms, click[this.parentElement.selected]">]],
+            [[<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="wa-selection-change[event.detail.selection.includes(this.parentElement)] from:closest wa-tree delay:150ms, click[this.parentElement.selected]">]],
             1, true
         ))
     end)
