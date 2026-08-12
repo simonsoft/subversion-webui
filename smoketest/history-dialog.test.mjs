@@ -239,16 +239,8 @@ try {
     // guessed length) or message length. ".log-message-preview" gets
     // there via a fixed margin-left tied to --log-revision-column (see
     // page.mustache), the same column ".log-body" indents to when
-    // expanded -- not by flowing after a fixed-width author field, which
-    // an earlier version tried and is exactly the kind of guess that
-    // breaks the moment a real author value is longer than assumed.
-    // (That earlier, flex-row-based approach also had its own once-real
-    // bug, now moot: a flex item using "display: -webkit-box" for its
-    // line-clamp defaulted to a "flex-basis: auto" that sized from its
-    // own unclamped content's preferred width, tripping the row's own
-    // flex-wrap for the one entry with a long message and dropping the
-    // ENTIRE preview to a new line. With nothing to share a row with
-    // anymore, that whole class of bug no longer applies.)
+    // expanded -- not by flowing after the author field, whose own
+    // rendered width depends on that same unpredictable author length.
     const previewLefts = await page.evaluate(() =>
         [...document.querySelectorAll(".log-message-preview")].map((el) => el.getBoundingClientRect().left)
     );
@@ -260,12 +252,10 @@ try {
     );
 
     // Regression check: the revision badge itself must stay tight around
-    // its own digits (this was briefly widened to the full fixed-indent
-    // column while solving the ".log-body" alignment problem, then
-    // deliberately reverted) -- the fixed column width instead lives on
-    // the wrapping ".log-revision-slot", not the badge. A 3-digit
-    // revision's own badge should render much narrower than the
-    // 4rem/64px column it sits inside.
+    // its own digits -- the fixed column width lives on the wrapping
+    // ".log-revision-slot", not the badge. A 3-digit revision's own badge
+    // should render much narrower than the 4rem/64px column it sits
+    // inside.
     const revisionSizes = await page.evaluate(() => {
         const item = document.querySelectorAll("wa-details.log-item")[0];
         const slot = item.querySelector(".log-revision-slot");
@@ -544,17 +534,18 @@ try {
 
     // 9. Responsive layout, driven by wa-page's own "view" attribute (see
     // wrapWithView() above): desktop puts the collapsed message in a
-    // fixed-width column (not one that merely flexes to fill whatever
-    // space is left) shoved to the row's right edge via margin-left:auto,
-    // to the right of a meta column that ellipsis-truncates a long author
-    // value rather than letting it push the message an unpredictable
-    // distance -- the fixture's "bob.johansson@example.com" entry exists
-    // specifically to exercise this. Both columns are sized with
-    // clamp(min, %, max) rather than a flat rem value, so they scale with
-    // the dialog's own (viewport-relative) width instead of staying fixed
-    // while the dialog around them doesn't -- checked at two different
-    // viewport widths below to confirm they actually do. Mobile keeps the
-    // existing stacked layout and drops the left indent entirely, for
+    // column to the right of a meta column that ellipsis-truncates a long
+    // author value rather than letting it push the message an
+    // unpredictable distance -- the fixture's "bob.johansson@example.com"
+    // entry exists specifically to exercise this. Both columns are sized
+    // with clamp(min, %, max) rather than a flat rem value, so they scale
+    // with the dialog's own (viewport-relative) width instead of staying
+    // fixed while the dialog around them doesn't -- checked at two
+    // different viewport widths below to confirm they actually do; meta
+    // also grows (flex-grow:1) to absorb any space left over once both
+    // columns are past their preferred size, so the row's own right edge
+    // never has that leftover space stranded as a stray gap. Mobile keeps
+    // the existing stacked layout and drops the left indent entirely, for
     // both the collapsed preview and the expanded body, to reclaim width
     // on a narrow screen.
     await page.setViewport({ width: 1200, height: 900 });
@@ -701,17 +692,11 @@ try {
     );
     await page.setViewport({ width: 1200, height: 900 });
 
-    // Regression check: ".log-message-preview" was originally
-    // flex-shrink:0 (rigid), which forced 100% of any space deficit onto
-    // ".log-summary-meta" alone -- on a tight row that crushed even a
-    // short author value like "alice" down to "a..". A hard "min-width"
-    // on meta was tried as a fix and rejected too (it blocked clamp()'s
-    // own smooth scaling, hard-pinning meta the moment its floor was hit
-    // while message kept absorbing the rest of the deficit alone -- the
-    // same concentration problem, just shifted to the other column).
-    // The actual fix: both columns are shrinkable now, sharing any
-    // deficit via normal flex distribution, so neither one should ever
-    // need to collapse past its own declared clamp() floor. A narrow
+    // Regression check: a rigid message column used to force 100% of any
+    // space deficit onto meta alone, crushing even a short author value
+    // like "alice" down to "a..". Both columns are shrinkable now,
+    // sharing any deficit via normal flex distribution, so neither should
+    // ever need to collapse past its own declared clamp() floor. A narrow
     // desktop viewport (near where the row genuinely doesn't have room to
     // spare) is where that would show up; not caught by the wider
     // viewport checks above, which had enough room that neither column

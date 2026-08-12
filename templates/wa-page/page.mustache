@@ -398,12 +398,12 @@ div.svn-main {
    ".log-message-preview", ".log-body", all below) keys off this one
    value. Deliberately "rem", not "em": different elements using it live
    in different parts of wa-details' own internals (its summary slot vs.
-   its default content slot), which could plausibly have different
-   computed font-sizes -- confirmed as a real risk, not just caution,
-   when an earlier version of this used "em" and a real browser measured
-   two supposedly-aligned elements 9px apart. "rem" is always relative to
-   the root font-size, so every use resolves to the identical pixel value
-   regardless of local font-size context. */
+   its default content slot), which can have different computed
+   font-sizes -- a real risk, not just caution, confirmed via a real
+   browser measurably misaligning two elements that used "em" here
+   instead. "rem" is always relative to the root font-size, so every use
+   resolves to the identical pixel value regardless of local font-size
+   context. */
 .svn-log {
     --log-revision-column: 4rem;
     display: flex;
@@ -445,8 +445,7 @@ a.revision-badge {
    unqualified rule is the mobile/fallback layout: meta row, then the
    message on its own row underneath -- there isn't reliably enough width
    for a two-column layout at that size. "wa-page[view='desktop']" below
-   switches to a single row instead, with the message to the right of a
-   fixed-width meta column. */
+   switches to a single row instead, meta and message side by side. */
 .log-summary {
     display: flex;
     flex-direction: column;
@@ -455,10 +454,10 @@ a.revision-badge {
        the header's full available width -- left implicit, it's shrink-to-
        fit around its own content instead, and that shrink-to-fit width
        varies slightly per entry. Harmless in the column layout above, but
-       breaks the desktop row below: ".log-message-preview"'s own
-       "margin-left: auto" pushes it to *this* element's right edge, so a
-       per-entry-varying width here means a per-entry-varying push target,
-       not the identical x position a real column needs. */
+       breaks the desktop row below: ".log-summary-meta"'s own flex-grow
+       needs real leftover row space to absorb, which a shrink-to-fit
+       container -- sized to exactly fit its children, with nothing left
+       over -- never has any of. */
     width: 100%;
 }
 
@@ -480,43 +479,30 @@ wa-page[view='desktop'] .log-summary {
    a full email address, so leaving this column's width to its content
    would make every entry's message start position only as reliable as
    that guess. The "%" term in the clamp() below ties this column's size
-   to the dialog's own real width (a percentage flex-basis resolves
-   against ".log-summary"'s own rendered content-box width, which already
-   reflects the dialog's "--width: 90vw" plus any padding along the way)
-   rather than the author's content -- min/max rem bounds around it keep
-   the column legible on a dialog only just past the mobile breakpoint,
-   while still capping how wide it can grow on a very large one -- 32rem,
-   not the 24rem first tried: a real author value can be a full email
-   address (confirmed against a real one, ~28 characters, needing ~218px
-   of text alone), and 24rem left this column's own ellipsis truncating
-   it even at the widest realistic window, regardless of how much actual
-   free space the dialog had to spare -- the cap itself was the
-   bottleneck, not available space. flex-shrink:1, with
-   ".log-message-preview" below now shrinkable too (not the flex-shrink:0
-   it was tried with first), means space pressure is shared between both
-   columns via the normal flex distribution instead of concentrated
-   entirely on this one -- a hard "min-width" floor here was tried
-   as a fix for that concentration and rejected: pinning this column at a
-   fixed width the moment its own clamp() floor is reached fights the
-   whole point of clamp()'s smooth, continuous scaling, and left the
-   *other* column absorbing 100% of any further squeeze alone once this
-   one hit its wall. min-width:0 lets it shrink past its own automatic
-   minimum when genuinely needed -- ".log-author strong" below is the
-   actual ellipsis-truncation target and has its own separate min-width:0
-   for the same reason. flex-grow:1 (".log-message-preview" below stays
-   grow:0) means this column -- not a dead gap -- absorbs any leftover
-   row space once both columns are past their preferred sizes: the
-   dialog's own width is viewport-relative and uncapped, so on a wide
-   enough window there's more row space than both columns' clamp()-
-   preferred sizes need, and without something claiming it, that surplus
-   was landing entirely in ".log-message-preview"'s own "margin-left:
-   auto" as a growing, purposeless gap between the two columns instead of
-   giving author more room -- confirmed for real: over 1800px of dead
-   space by 3200px wide. max-width repeats the clamp()'s own 32rem cap as
-   a separate property because flex-grow can push a flex item past its
-   flex-basis (which is all clamp() actually constrains) with nothing
-   else stopping it -- clamp()'s max argument bounds the *starting* size,
-   not continued growth. */
+   to the dialog's own real width instead (a percentage flex-basis
+   resolves against ".log-summary"'s own rendered content-box width,
+   which already reflects the dialog's "--width: 90vw" plus any padding
+   along the way); the min/max rem bounds keep it legible on a dialog
+   only just past the mobile breakpoint, and cap how wide it grows on a
+   very large one -- 32rem, sized against a real email address (~28
+   characters, ~218px of text alone), so a realistic author value can
+   actually fit rather than always ellipsis-truncating regardless of how
+   much space the dialog has to spare. flex-shrink:1 and min-width:0
+   share any space deficit with ".log-message-preview" below (also
+   shrinkable) via normal flex distribution, rather than concentrating it
+   entirely on one column -- ".log-author strong" below is the actual
+   ellipsis-truncation target and carries its own min-width:0 for the
+   same shrink-below-automatic-minimum reason. flex-grow:1
+   (".log-message-preview" stays grow:0) means this column, not a dead
+   gap, absorbs any leftover row space: the dialog's own width is
+   viewport-relative and uncapped, so a wide window can leave more row
+   space than either column's preferred size needs, and without
+   something claiming it that surplus just becomes empty space between
+   the two columns. max-width repeats the clamp()'s own 32rem cap as a
+   separate property because flex-grow can push a flex item past its
+   flex-basis (all clamp() actually constrains) with nothing else
+   stopping it -- clamp()'s max argument bounds the *starting* size, not
+   continued growth. */
 wa-page[view='desktop'] .log-summary-meta {
     flex-grow: 1;
     flex-shrink: 1;
@@ -567,22 +553,19 @@ wa-page[view='desktop'] .log-author strong {
    the author field, for the same reason ".log-summary-meta" above isn't
    sized off the author text on desktop. Desktop (see
    "wa-page[view='desktop']" below) instead shares a row with that meta
-   column, and is itself a proper column too -- sized the same
-   percentage-of-the-row-plus-clamp() way, so it scales with the dialog,
-   rather than a flexible one that merely fills whatever space happens to
-   be left. Deliberately flex-grow:0, unlike meta -- this is prose, and a
-   two-line clamp gets harder to read past a certain line length, so once
-   it reaches its own clamp() max it should stop growing rather than keep
-   claiming space; meta absorbs any further leftover instead (see its own
-   flex-grow:1 below), which also means this column naturally ends up at
-   the row's right edge without needing its own "margin-left: auto" to
-   push it there anymore. Shrinkable (flex-shrink:1, not the 0 it was
-   tried with first) for the same reason ".log-summary-meta" above has no
-   hard min-width: a rigid column forces the *other* one to absorb 100%
-   of any space deficit alone once its own clamp() floor is reached,
-   defeating the smooth, shared scaling clamp() is supposed to provide
-   across the whole row. Two-line clamp: a -webkit-box, not a
-   fade-gradient overlay -- this app targets evergreen
+   column, sized the same percentage-of-the-row-plus-clamp() way so it
+   scales with the dialog. Deliberately flex-grow:0, unlike meta -- this
+   is prose, and a two-line clamp gets harder to read past a certain line
+   length, so once it reaches its own clamp() max it should stop growing
+   rather than keep claiming space; meta absorbs any further leftover
+   instead (see its own flex-grow:1 below), which also naturally leaves
+   this column at the row's right edge with no push needed to put it
+   there. Shrinkable (flex-shrink:1) for the same reason ".log-summary-
+   meta" above has no hard min-width: a rigid column forces the *other*
+   one to absorb 100% of any space deficit alone once its own clamp()
+   floor is reached, defeating the smooth, shared scaling clamp() is
+   supposed to provide across the whole row. Two-line clamp: a
+   -webkit-box, not a fade-gradient overlay -- this app targets evergreen
    Chromium/Firefox/Safari, which all implement these (nominally
    WebKit-prefixed, now universal) properties, simpler and more robust
    than a gradient mask over wa-details' own light/dark theme tokens, with
@@ -602,11 +585,9 @@ wa-page[view='desktop'] .log-author strong {
     overflow: hidden;
     white-space: pre-line;
     /* Mobile's own reading-width cap -- overridden below on desktop to
-       36rem (matching that layout's own clamp() max) instead of just
-       inheriting this value: left as 28rem there too, this quietly
-       capped the desktop column below what its own clamp() intended,
-       confirmed for real -- it never rendered past 448px regardless of
-       how much wider clamp()'s math said it should be able to go. */
+       36rem, matching that layout's own clamp() max, rather than just
+       inheriting this smaller value and silently capping the desktop
+       column below what its own clamp() intends. */
     max-width: 28rem;
 }
 
@@ -718,13 +699,11 @@ wa-page[view='mobile'] .log-body {
    ".log-body" above) is what actually aligns this icon with the log
    message's own icon above it -- but only once margin is reset here too:
    Web Awesome's own base stylesheet gives every <li> a default
-   margin-inline-start (measured at 18px), a general typography reset
-   with no awareness this specific <li> is a custom flex layout, not a
-   bulleted list item -- left unreset, it pushed this icon 18px further
-   right than ".log-message-full"'s own icon, confirmed via real
-   getBoundingClientRect() measurements (messageIconLeft=167 vs.
-   pathIconLeft=185) rather than assumed from the two rules merely
-   sharing the same --flank-size. */
+   margin-inline-start (18px), a general typography reset with no
+   awareness this specific <li> is a custom flex layout, not a bulleted
+   list item -- left unreset, it pushed this icon further right than
+   ".log-message-full"'s own icon, out of alignment despite both sharing
+   the same --flank-size. */
 .changed-paths li {
     margin: 0;
     gap: var(--wa-space-2xs);
