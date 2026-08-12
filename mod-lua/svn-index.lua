@@ -45,6 +45,43 @@ local function read_template(dir, name)
     return read_file(dir .. name .. ".mustache")
 end
 
+-- Strips developer-facing "why" comments from the page template's rendered
+-- output, so that documentation meant for someone editing this file doesn't
+-- also go out over the wire on every page load (see SVN_INDEX_STRIP_COMMENTS
+-- below). Applied in render_preamble/render_postamble, not baked into
+-- load_template_set's cached copy -- the source file on disk stays
+-- untouched either way.
+--
+-- Block comments (JS and CSS both use /* */ here) are stripped globally;
+-- "//" line comments are scoped to the literal bare "<script>...</script>"
+-- block only, since the two earlier "<script src=\"https://...\">" tags in
+-- <head> contain "//" as part of their URL and must survive untouched.
+local function strip_wire_comments(html)
+    html = html:gsub("/%*.-%*/", "")
+    html = html:gsub("<!%-%-.-%-%->", "")
+
+    html = html:gsub("(<script>)(.-)(</script>)", function(open, body, close)
+        return open .. body:gsub("//[^\n]*", "") .. close
+    end)
+
+    return html
+end
+
+-- SVN_INDEX_STRIP_COMMENTS: on (the default) unless explicitly set to one
+-- of "0"/"false"/"off"/"no" (case-insensitive). Lets an admin turn
+-- strip_wire_comments off to get readable page source while debugging.
+local function strip_comments_enabled(r)
+    local value = r.subprocess_env and r.subprocess_env.SVN_INDEX_STRIP_COMMENTS
+
+    if value == nil or value == "" then
+        return true
+    end
+
+    value = value:lower()
+
+    return not (value == "0" or value == "false" or value == "off" or value == "no")
+end
+
 -- The page template must contain the literal "{{{svn_index}}}" tag exactly
 -- once. It is used as a split point, not rendered by lustache as a whole:
 -- the preamble (through the opening <ul>) is rendered as soon as the
@@ -427,6 +464,7 @@ function output_filter(r)
     end
 
     local templates = load_template_set(template_type)
+    local strip_comments = strip_comments_enabled(r)
 
     -- Anchors every entry's href to this directory's own URL (see the note
     -- above render_entry) instead of leaving them relative. Built from
@@ -656,11 +694,13 @@ function output_filter(r)
     end
 
     local function render_preamble()
-        return lustache:render(templates.preamble, template_context())
+        local preamble = strip_comments and strip_wire_comments(templates.preamble) or templates.preamble
+        return lustache:render(preamble, template_context())
     end
 
     local function render_postamble()
-        return lustache:render(templates.postamble, template_context())
+        local postamble = strip_comments and strip_wire_comments(templates.postamble) or templates.postamble
+        return lustache:render(postamble, template_context())
     end
 
     local parser = lxp.new({

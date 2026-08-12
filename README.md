@@ -67,6 +67,14 @@ LuaOutputFilter SVN_XML_INDEX \
     # <wa-page> shell instead.
     # SetEnv SVN_INDEX_TEMPLATE simple
 
+    # The wa-page shell's page.mustache carries extensive developer-facing
+    # comments explaining its own htmx/CSS behavior. These are stripped
+    # from the served page by default so they aren't shipped to every
+    # browser -- set to "0"/"false"/"off"/"no" to serve the page template
+    # uncommented (e.g. to read its source via "View Page Source" while
+    # debugging).
+    # SetEnv SVN_INDEX_STRIP_COMMENTS 0
+
 </Location>
 ```
 

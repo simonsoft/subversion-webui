@@ -450,6 +450,37 @@ describe("svn-index output_filter", function()
         ))
     end)
 
+    it("strips developer-facing comments from the wa-page shell by default", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.falsy(html:find('"wa-lazy-load" bubbles', 1, true))
+        assert.falsy(html:find("/*", 1, true))
+        assert.falsy(html:find("<!--", 1, true))
+
+        -- Functional code on either side of stripped comments survives.
+        assert.truthy(html:find('document.addEventListener("wa-lazy-load"', 1, true))
+        assert.truthy(html:find("wa-page::part(header) {", 1, true))
+    end)
+
+    it("serves the wa-page shell with comments intact when SVN_INDEX_STRIP_COMMENTS is disabled", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_STRIP_COMMENTS = "0" })
+
+        assert.truthy(html:find('"wa-lazy-load" bubbles', 1, true))
+        assert.truthy(html:find('document.addEventListener("wa-lazy-load"', 1, true))
+    end)
+
     it("exposes the wa-page header's background color as an overridable --svn-header-bg custom property", function()
         -- No value is set for --svn-header-bg anywhere in the shipped
         -- template -- only used as a var() fallback -- so a site overrides
