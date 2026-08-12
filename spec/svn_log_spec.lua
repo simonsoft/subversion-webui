@@ -550,4 +550,24 @@ describe("svn-log output_filter", function()
         assert.falsy(without_lang:find(' lang="', 1, true))
         assert.truthy(without_lang:find('minute="numeric"></wa-format-date>', 1, true))
     end)
+
+    it("prefers \"log-item.custom.mustache\" over \"log-item.mustache\" when both exist (mirrors svn-index.lua's own override convention)", function()
+        -- templates/test-custom-override/ ships both log-item.mustache
+        -- (renders "DEFAULT:...") and log-item.custom.mustache (renders
+        -- "CUSTOM:...") -- proving load_log_template_set's read_template()
+        -- picks the override the same way svn-index.lua's does.
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>7</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/", { SVN_INDEX_TEMPLATE = "test-custom-override" })
+
+        assert.truthy(html:find('<div class="log-item-custom">CUSTOM:7</div>', 1, true))
+        assert.falsy(html:find("DEFAULT:", 1, true))
+    end)
 end)

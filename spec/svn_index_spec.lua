@@ -450,6 +450,25 @@ describe("svn-index output_filter", function()
         ))
     end)
 
+    it("exposes the wa-page header's background color as an overridable --svn-header-bg custom property", function()
+        -- No value is set for --svn-header-bg anywhere in the shipped
+        -- template -- only used as a var() fallback -- so a site overrides
+        -- it by setting the property itself from later CSS (e.g. a
+        -- page-head-end.mustache <style> block), without editing this file.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(
+            "background: var(--svn-header-bg, var(--wa-color-brand-fill-loud));",
+            1, true
+        ))
+    end)
+
     it("builds a breadcrumb trail (with htmx expansion and repo/dir icons) and the \"Start\"/\"Up\" toolbar hrefs from path depth", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
@@ -1428,5 +1447,65 @@ describe("svn-index output_filter", function()
         })
 
         assert.falsy(r.headers_out["ETag"])
+    end)
+
+    it("renders an empty {{{page-head-end}}} placeholder by default (all four shipped templates ship an empty page-head-end.mustache)", function()
+        local fixture = {
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }
+
+        for _, template_type in ipairs({ "simple", "htmx", "htmx-remix", "wa-page" }) do
+            local html = run_filter(fixture, nil, { SVN_INDEX_TEMPLATE = template_type })
+
+            assert.truthy(html:find("</style>\n\n</head>", 1, true))
+        end
+    end)
+
+    it("renders page-head-end.mustache's content, with the same context as page.mustache, just before </head>", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "test-custom-override" })
+
+        -- page-head-end.custom.mustache (see below) sits alongside
+        -- page-head-end.mustache in templates/test-custom-override/ -- this
+        -- confirms the *default* file's own content renders when no
+        -- override is requested, elsewhere in this same describe block.
+        local head_start, head_end = html:find("<head>.-</head>")
+        assert.truthy(head_start)
+
+        -- "/" is escaped to "&#x2F;" by lustache's own default table, same
+        -- as every other {{...}}-interpolated field in this file (see the
+        -- very first test above) -- page-head-end.custom.mustache uses
+        -- plain {{path}}, so it's escaped like any other template variable.
+        local head_html = html:sub(head_start, head_end)
+        assert.truthy(head_html:find('<meta name="custom-page-head-end" content="&#x2F;trunk&#x2F;">', 1, true))
+        assert.falsy(head_html:find("default-page-head-end", 1, true))
+    end)
+
+    it("prefers a \"name.custom.mustache\" file over \"name.mustache\" for any template, not just page-head-end", function()
+        -- templates/test-custom-override/ ships both dir.mustache (would
+        -- render "DEFAULT-DIR:...") and dir.custom.mustache (renders
+        -- "CUSTOM-DIR:..." with an extra CSS class) -- proving the override
+        -- convention implemented in read_template() applies uniformly to
+        -- every template file svn-index.lua loads, not just the new
+        -- page-head-end one.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext/" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "test-custom-override" })
+
+        assert.truthy(html:find('<li class="dir-custom">CUSTOM-DIR:', 1, true))
+        assert.falsy(html:find("DEFAULT-DIR:", 1, true))
     end)
 end)
