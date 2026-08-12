@@ -574,14 +574,21 @@ describe("svn-index output_filter", function()
         -- chevron interaction can fire it. Separately, the label's own
         -- "wa-selection-change" trigger fires for a selecting click
         -- anywhere in the item's row (not just the label) or keyboard
-        -- activation -- listening "from:closest wa-tree", not "wa-tree-item"
-        -- itself, since Web Awesome's own wa-tree dispatches this event on
-        -- itself (confirmed via wa-tree's own source, tree.ts's
-        -- selectItem()), never on the individual wa-tree-item; the
+        -- activation, since Web Awesome's own wa-tree dispatches this event
+        -- on itself (confirmed via wa-tree's own source, tree.ts's
+        -- selectItem()), never on the individual wa-tree-item -- so it's
+        -- caught with a plain "from:wa-tree", not "from:closest wa-tree":
+        -- confirmed live, against this exact pinned htmx build
+        -- (4.0.0-beta6), that "from:closest <selector>" silently never
+        -- fires at all in this beta, while a plain "from:<selector>" does.
+        -- A plain selector attaches to *every* <wa-tree> on the page (both
+        -- nav's and main's), and every dir label anywhere shares this same
+        -- trigger -- but the
         -- "[event.detail.selection.includes(this.parentElement)]" filter
-        -- then re-scopes that tree-wide event back down to just this one
-        -- item, since every dir label in the same tree shares this same
-        -- trigger and would otherwise all fire together. Its "click[...]"
+        -- re-scopes each one back down to just its own item regardless,
+        -- since a tree's own selection state can never include another
+        -- tree's item (confirmed live: selecting in one tree fires no
+        -- request from labels belonging to the other). Its "click[...]"
         -- trigger covers re-clicking an already-selected label too (since
         -- wa-selection-change only fires on an actual selection change) --
         -- so main updates no matter how many times the same or a different
@@ -599,7 +606,7 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find(
-            [[<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="wa-selection-change[event.detail.selection.includes(this.parentElement)] from:closest wa-tree throttle:150ms, click[this.parentElement.selected]">]],
+            [[<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="wa-selection-change[event.detail.selection.includes(this.parentElement)] from:wa-tree throttle:150ms, click[this.parentElement.selected]">]],
             1, true
         ))
     end)
@@ -1447,7 +1454,7 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<footer slot="footer" id="svn-footer">', 1, true))
         assert.truthy(html:find('<div class="wa-cluster" id="svn-header-left">', 1, true))
         assert.truthy(html:find(
-            [[<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="wa-selection-change[event.detail.selection.includes(this.parentElement)] from:closest wa-tree throttle:150ms, click[this.parentElement.selected]">]],
+            [[<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="wa-selection-change[event.detail.selection.includes(this.parentElement)] from:wa-tree throttle:150ms, click[this.parentElement.selected]">]],
             1, true
         ))
     end)
