@@ -443,7 +443,7 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("<wa-page>", 1, true))
         assert.truthy(html:find("webawesome.css", 1, true))
         assert.truthy(html:find('<header slot="header">', 1, true))
-        assert.truthy(html:find('<footer slot="footer" id="footer">', 1, true))
+        assert.truthy(html:find('<footer slot="footer" id="svn-footer">', 1, true))
         assert.truthy(html:find(
             '<wa-tree-item class="file"><a href="/svn/demo1/README.md"><wa-icon name="file" variant="regular"></wa-icon> README.md</a></wa-tree-item>',
             1, true
@@ -532,11 +532,11 @@ describe("svn-index output_filter", function()
         -- BOTH htmx's own fetch AND the anchor's native default navigation,
         -- racing each other into a real full-page reload).
         assert.truthy(html:find(
-            '<wa-breadcrumb-item hx-get="/svn/myrepo/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer,#header-left" hx-trigger="click"><wa-icon name="database"></wa-icon> myrepo</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item hx-get="/svn/myrepo/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click"><wa-icon name="database"></wa-icon> myrepo</wa-breadcrumb-item>',
             1, true
         ))
         assert.truthy(html:find(
-            '<wa-breadcrumb-item hx-get="/svn/myrepo/trunk/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer,#header-left" hx-trigger="click"><wa-icon name="folder" variant="regular"></wa-icon> trunk</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item hx-get="/svn/myrepo/trunk/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click"><wa-icon name="folder" variant="regular"></wa-icon> trunk</wa-breadcrumb-item>',
             1, true
         ))
         assert.truthy(html:find(
@@ -588,7 +588,7 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer,#header-left" hx-trigger="click">',
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click">',
             1, true
         ))
         assert.falsy(html:find("click once", 1, true))
@@ -668,7 +668,7 @@ describe("svn-index output_filter", function()
         -- browser that htmx dispatches that event on the request's source
         -- element only if still connected at dispatch time, falling back
         -- to `document` otherwise, and for both of those flows the clicked
-        -- element sits inside whatever this very swap (or its "#breadcrumb"
+        -- element sits inside whatever this very swap (or its "#svn-breadcrumb"
         -- oob swap) just replaced, so it's already disconnected --
         -- "htmx:after:history:push" sidesteps that, firing on `document`
         -- unconditionally with the exact pushed path already available.
@@ -1403,21 +1403,21 @@ describe("svn-index output_filter", function()
         -- "wa-tree#svn-index" HX-Target check above), this is scoped
         -- entirely client-side: only dir.mustache's label itself (the
         -- element with hx-target="#svn-index") carries
-        -- hx-select-oob="#breadcrumb,#footer,#header-left", so only
+        -- hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left", so only
         -- *its own* requests ever pull the fetched page's
         -- breadcrumb/footer/header along -- nav's own in-place lazy-load
         -- fetch is a different element entirely (no hx-select-oob at all)
         -- and is naturally unaffected, with no header-sniffing needed on
-        -- the Lua side. "#breadcrumb" is the wrapping div (not just
+        -- the Lua side. "#svn-breadcrumb" is the wrapping div (not just
         -- <wa-breadcrumb> itself), so the revision badge -- a sibling
         -- inside that same div -- rides along with it as one conceptual
-        -- unit. Scoped to that div, not the whole "#subheader", so this
+        -- unit. Scoped to that div, not the whole "#svn-subheader", so this
         -- swap leaves the "Show folders" wa-switch (also inside
-        -- #subheader) alone -- its own checked state would otherwise reset
+        -- #svn-subheader) alone -- its own checked state would otherwise reset
         -- every time main navigates to a new directory. The footer and
         -- header cluster have no such stateful sibling to protect (both
         -- purely informational/navigational), so each is targeted as a
-        -- whole, unlike #subheader.
+        -- whole, unlike #svn-subheader.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -1426,11 +1426,11 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<div class="wa-cluster" id="breadcrumb">', 1, true))
-        assert.truthy(html:find('<footer slot="footer" id="footer">', 1, true))
-        assert.truthy(html:find('<div class="wa-cluster" id="header-left">', 1, true))
+        assert.truthy(html:find('<div class="wa-cluster" id="svn-breadcrumb">', 1, true))
+        assert.truthy(html:find('<footer slot="footer" id="svn-footer">', 1, true))
+        assert.truthy(html:find('<div class="wa-cluster" id="svn-header-left">', 1, true))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer,#header-left" hx-trigger="click">',
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click">',
             1, true
         ))
     end)

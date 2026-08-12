@@ -74,23 +74,23 @@ async function buildHarness(renderedLogHtml) {
     const styleBlock = extractBlock(source, "<style>", "</style>", "<style>");
     const cdnTagLines = extractCdnTagLines(source);
 
-    let dialogOpenTag = extractLineContaining(source, 'id="history-dialog"', "#history-dialog");
+    let dialogOpenTag = extractLineContaining(source, 'id="svn-history-dialog"', "#svn-history-dialog");
     // Statically pre-opened: this harness isn't exercising the real htmx
     // REPORT fetch, only what happens once the dialog already has content.
-    dialogOpenTag = dialogOpenTag.replace('id="history-dialog"', 'id="history-dialog" open');
+    dialogOpenTag = dialogOpenTag.replace('id="svn-history-dialog"', 'id="svn-history-dialog" open');
 
-    const expandToggleLine = extractLineContaining(source, 'id="history-expand-toggle"', "#history-expand-toggle");
+    const expandToggleLine = extractLineContaining(source, 'id="svn-history-expand-toggle"', "#svn-history-expand-toggle");
 
-    const contentDivLine = extractLineContaining(source, 'id="history-content"', "#history-content");
-    const contentDivOpenTagMatch = contentDivLine.match(/^<div id="history-content">/);
+    const contentDivLine = extractLineContaining(source, 'id="svn-history-content"', "#svn-history-content");
+    const contentDivOpenTagMatch = contentDivLine.match(/^<div id="svn-history-content">/);
     if (!contentDivOpenTagMatch) {
-        throw new Error('could not find a literal \'<div id="history-content">\' opening tag in page.mustache.');
+        throw new Error('could not find a literal \'<div id="svn-history-content">\' opening tag in page.mustache.');
     }
     const contentDivOpenTag = contentDivOpenTagMatch[0];
 
     const dialogTagNameMatch = dialogOpenTag.match(/^<(\w[\w-]*)/);
     if (!dialogTagNameMatch) {
-        throw new Error("could not determine the #history-dialog element's own tag name.");
+        throw new Error("could not determine the #svn-history-dialog element's own tag name.");
     }
     const dialogTagName = dialogTagNameMatch[1];
 
@@ -368,7 +368,7 @@ try {
     record("clicking revision-badge link does not toggle the details open", afterBadgeClick === false);
 
     // 4. "Expand all" opens every entry and relabels to "Collapse all".
-    // Regression check alongside it: "#history-content" is a fixed
+    // Regression check alongside it: "#svn-history-content" is a fixed
     // "height" (not just a "max-height" cap), specifically so the
     // dialog's own overall height stays constant as entries expand --
     // this 3-entry fixture doesn't fill that height even fully expanded,
@@ -377,11 +377,11 @@ try {
     const dialogHeightBeforeExpand = await page.evaluate(
         () => document.querySelector("wa-dialog").shadowRoot.querySelector("[part='dialog']").getBoundingClientRect().height
     );
-    await page.click("#history-expand-toggle");
+    await page.click("#svn-history-expand-toggle");
     await new Promise((r) => setTimeout(r, 200));
     let state = await page.evaluate(() => ({
         states: [...document.querySelectorAll("wa-details.log-item")].map((d) => d.open),
-        label: document.getElementById("history-expand-toggle").textContent.trim(),
+        label: document.getElementById("svn-history-expand-toggle").textContent.trim(),
     }));
     record("Expand all opens every entry", state.states.every((o) => o === true), JSON.stringify(state.states));
     record("button label flips to 'Collapse all'", state.label === "Collapse all", state.label);
@@ -398,7 +398,7 @@ try {
 
     // 5. Expanded content sanity.
     const expandedChecks = await page.evaluate(() => {
-        const html = document.getElementById("history-content").innerHTML;
+        const html = document.getElementById("svn-history-content").innerHTML;
         return {
             hasFullMessage: html.includes("smoke test can measure the clamp/overflow behavior"),
             hasCopyFrom: html.includes("copy-from") && html.includes("old-name.txt"),
@@ -511,11 +511,11 @@ try {
     );
 
     // 6. Clicking again collapses everything and relabels back.
-    await page.click("#history-expand-toggle");
+    await page.click("#svn-history-expand-toggle");
     await new Promise((r) => setTimeout(r, 200));
     state = await page.evaluate(() => ({
         states: [...document.querySelectorAll("wa-details.log-item")].map((d) => d.open),
-        label: document.getElementById("history-expand-toggle").textContent.trim(),
+        label: document.getElementById("svn-history-expand-toggle").textContent.trim(),
     }));
     record("clicking toggle again collapses every entry", state.states.every((o) => o === false));
     record("button label flips back to 'Expand all'", state.label === "Expand all", state.label);
@@ -528,15 +528,15 @@ try {
     });
     await new Promise((r) => setTimeout(r, 100));
     const labelWithOneOpen = await page.evaluate(() =>
-        document.getElementById("history-expand-toggle").textContent.trim()
+        document.getElementById("svn-history-expand-toggle").textContent.trim()
     );
     record("label still reads 'Expand all' when only one of three entries is open", labelWithOneOpen === "Expand all");
 
-    await page.click("#history-expand-toggle");
+    await page.click("#svn-history-expand-toggle");
     await new Promise((r) => setTimeout(r, 200));
     state = await page.evaluate(() => ({
         states: [...document.querySelectorAll("wa-details.log-item")].map((d) => d.open),
-        label: document.getElementById("history-expand-toggle").textContent.trim(),
+        label: document.getElementById("svn-history-expand-toggle").textContent.trim(),
     }));
     record(
         "clicking Expand all with one already open still opens the remaining two",
@@ -545,7 +545,7 @@ try {
     record("label reads 'Collapse all' after that click", state.label === "Collapse all");
 
     // Regression check for the actual reported bug: the label only ever
-    // updated from "#history-expand-toggle"'s own click handler, so
+    // updated from "#svn-history-expand-toggle"'s own click handler, so
     // manually toggling entries one at a time -- bypassing the toggle
     // button entirely, the same as a user clicking each entry's own
     // summary directly -- never recomputed it, leaving it stuck showing
@@ -561,7 +561,7 @@ try {
     });
     await new Promise((r) => setTimeout(r, 100));
     const labelAfterManualCloseAll = await page.evaluate(() =>
-        document.getElementById("history-expand-toggle").textContent.trim()
+        document.getElementById("svn-history-expand-toggle").textContent.trim()
     );
     record(
         "label updates to 'Expand all' after every entry is manually closed one at a time",
@@ -578,7 +578,7 @@ try {
     });
     await new Promise((r) => setTimeout(r, 100));
     const labelAfterManualOpenAll = await page.evaluate(() =>
-        document.getElementById("history-expand-toggle").textContent.trim()
+        document.getElementById("svn-history-expand-toggle").textContent.trim()
     );
     record(
         "label updates to 'Collapse all' after every entry is manually opened one at a time",
@@ -589,7 +589,7 @@ try {
     // Reset to collapsed via the toggle (not manual sets) so the
     // remaining checks below start from the same known state they
     // expected before these regression checks were inserted.
-    await page.click("#history-expand-toggle");
+    await page.click("#svn-history-expand-toggle");
     await new Promise((r) => setTimeout(r, 200));
 
     await page.screenshot({ path: path.join(OUTPUT_DIR, "03-final.png"), fullPage: true });
@@ -736,9 +736,9 @@ try {
     );
 
     // Regression check: the dialog's own "--width: 90vw" (see
-    // page.mustache's "#history-dialog") is uncapped on its own, so on a
+    // page.mustache's "#svn-history-dialog") is uncapped on its own, so on a
     // very wide monitor it (and so the whole row inside it) would just
-    // keep growing indefinitely -- "#history-dialog::part(dialog)" caps
+    // keep growing indefinitely -- "#svn-history-dialog::part(dialog)" caps
     // it at 1620px (90% of 1800px) instead. Targets "::part(dialog)"
     // specifically, not a plain "max-width" on the light-DOM host element
     // -- confirmed for real that the latter doesn't reach the actual
@@ -796,7 +796,7 @@ try {
     );
     await page.setViewport({ width: 1200, height: 900 });
 
-    await page.click("#history-expand-toggle");
+    await page.click("#svn-history-expand-toggle");
     await new Promise((r) => setTimeout(r, 200));
     const desktopBodyIndent = await page.evaluate(() => getComputedStyle(document.querySelector(".log-body")).marginLeft);
     record("desktop: expanded content keeps its left indent", desktopBodyIndent !== "0px", desktopBodyIndent);
@@ -826,7 +826,7 @@ try {
         JSON.stringify(mobileCollapsed)
     );
 
-    await page.click("#history-expand-toggle");
+    await page.click("#svn-history-expand-toggle");
     await new Promise((r) => setTimeout(r, 200));
     const mobileBodyIndent = await page.evaluate(() => getComputedStyle(document.querySelector(".log-body")).marginLeft);
     record("mobile: expanded content drops its left indent (reclaims width)", mobileBodyIndent === "0px", mobileBodyIndent);

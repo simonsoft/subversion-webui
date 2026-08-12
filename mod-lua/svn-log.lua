@@ -470,7 +470,7 @@ function output_filter(r)
     -- The preamble/postamble are static markup with no data of their own
     -- to render (unlike svn-index.lua's, which needs <index>'s rev/path/
     -- base attributes) -- the log fragment now swaps into a permanent
-    -- dialog shell (see page.mustache's "#history-dialog"), which supplies
+    -- dialog shell (see page.mustache's "#svn-history-dialog"), which supplies
     -- its own label/close affordance, so there's no "back to listing" link
     -- here needing a computed href either.
     local preamble_html = templates.preamble

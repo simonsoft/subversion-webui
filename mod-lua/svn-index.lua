@@ -599,13 +599,13 @@ function output_filter(r)
     -- keeps the decision here where the true swap target (from the
     -- incoming request) is actually known. (The breadcrumb itself doesn't
     -- need this: dir.mustache's label carries its own
-    -- hx-select-oob="#breadcrumb" directly, so only that specific
+    -- hx-select-oob="#svn-breadcrumb" directly, so only that specific
     -- element's own requests ever pull the breadcrumb along -- nav's own
     -- lazy-load fetch is a different element entirely and never has that
-    -- attribute. "#breadcrumb" is the wrapping div, not just
+    -- attribute. "#svn-breadcrumb" is the wrapping div, not just
     -- <wa-breadcrumb> itself, so the revision badge (a sibling inside that
     -- same div) rides along with it as one conceptual unit. Scoped to that
-    -- div, not the whole "#subheader", so this swap leaves the "Show
+    -- div, not the whole "#svn-subheader", so this swap leaves the "Show
     -- folders" wa-switch's own state alone.)
     if r.headers_in and is_named_swap_target(r.headers_in["HX-Target"]) then
         r.headers_out["HX-Push-Url"] = request_href .. revision_suffix
@@ -690,10 +690,10 @@ function output_filter(r)
             -- request-specific -- so, also unlike either of those, it goes
             -- stale after an htmx-driven navigation that doesn't reload the
             -- page. page.mustache's header cluster carries an id
-            -- ("#header-left") specifically so the breadcrumb/dir.mustache
+            -- ("#svn-header-left") specifically so the breadcrumb/dir.mustache
             -- navigation links can pull a freshly-rendered one out of their
             -- own full-page response via hx-select-oob, the same way they
-            -- already do for "#breadcrumb"/"#footer".
+            -- already do for "#svn-breadcrumb"/"#svn-footer".
             history_href = escape_html(history_href_raw),
             -- nav starts at the repo root (breadcrumbs[1] is that crumb --
             -- lustache can't reach it directly as {{breadcrumbs.1.hx_href}},

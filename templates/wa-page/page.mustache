@@ -113,8 +113,8 @@ document.addEventListener("htmx:after:swap", (event) => {
 });
 
 // The History link's REPORT response (see svn-log.lua's output_filter)
-// swaps into "#history-content", a permanently-present, initially-empty
-// div inside the static "#history-dialog" -- opening the dialog here,
+// swaps into "#svn-history-content", a permanently-present, initially-empty
+// div inside the static "#svn-history-dialog" -- opening the dialog here,
 // once the swap actually lands, rather than synchronously on click, means
 // it stays closed if the request errors out instead of popping up empty.
 // Re-opening (clicking History again while already viewing an older
@@ -125,13 +125,13 @@ document.addEventListener("htmx:after:swap", (event) => {
 // (__trigger(ctx.sourceElement, "htmx:after:swap", {ctx})) dispatches this
 // event ON THE REQUEST'S SOURCE ELEMENT (here, the History link itself),
 // not the swap target -- and since it bubbles, event.target stays that
-// source element throughout, never becoming "#history-content". The
+// source element throughout, never becoming "#svn-history-content". The
 // resolved swap target is instead reachable at event.detail.ctx.target
 // (confirmed against htmx's own source: ctx.target is reassigned to the
 // actual resolved Element via __resolveTarget() during request setup).
 document.addEventListener("htmx:after:swap", (event) => {
-    if (event.detail.ctx.target?.id === "history-content") {
-        document.getElementById("history-dialog").open = true;
+    if (event.detail.ctx.target?.id === "svn-history-content") {
+        document.getElementById("svn-history-dialog").open = true;
 
         // Every fresh History fetch re-renders entries collapsed (no
         // "open" attribute -- see log-item.mustache) regardless of
@@ -156,7 +156,7 @@ document.addEventListener("htmx:after:swap", (event) => {
 // to the DOM at dispatch time, falling back to `document` otherwise
 // (confirmed via htmx's own source) -- and for both cases above, the
 // clicked element sits inside whatever this very swap (or its
-// accompanying "#breadcrumb" oob swap) just replaced, so it's already
+// accompanying "#svn-breadcrumb" oob swap) just replaced, so it's already
 // disconnected by dispatch time and event.target is just `document`,
 // unrelated to "#svn-index" or nav either way. "htmx:after:history:push"
 // sidesteps that entirely: htmx dispatches it on `document`, unconditionally,
@@ -223,8 +223,8 @@ document.addEventListener("keyup", (event) => {
 });
 
 // "Expand all"/"Collapse all" toggle for the History dialog's own entries
-// (see page.mustache's static "#history-expand-toggle", inside
-// "#history-dialog"'s own header-actions slot -- present in the DOM from
+// (see page.mustache's static "#svn-history-expand-toggle", inside
+// "#svn-history-dialog"'s own header-actions slot -- present in the DOM from
 // initial page load, unlike the entries themselves, which are swapped in
 // fresh on every History fetch). Delegated on document, not bound
 // directly: this script block runs in <head>, before <body> exists, so a
@@ -234,11 +234,11 @@ document.addEventListener("keyup", (event) => {
 // for the same "swapped in fresh" reason -- there's no fixed set of
 // elements to bind to once, up front.
 document.addEventListener("click", (event) => {
-    if (!event.target.closest?.("#history-expand-toggle")) {
+    if (!event.target.closest?.("#svn-history-expand-toggle")) {
         return;
     }
 
-    const items = document.querySelectorAll("#history-content wa-details.log-item");
+    const items = document.querySelectorAll("#svn-history-content wa-details.log-item");
 
     // "Expand all" while any entry is still collapsed (open them all);
     // once every entry is already open, the same click collapses them
@@ -251,7 +251,7 @@ document.addEventListener("click", (event) => {
 });
 
 function setHistoryExpandToggleLabel(allOpen) {
-    const button = document.getElementById("history-expand-toggle");
+    const button = document.getElementById("svn-history-expand-toggle");
 
     if (button) {
         button.textContent = allOpen ? "Collapse all" : "Expand all";
@@ -259,7 +259,7 @@ function setHistoryExpandToggleLabel(allOpen) {
 }
 
 // Each <wa-details class="log-item"> is independently expandable by
-// clicking its own summary directly, not just via "#history-expand-
+// clicking its own summary directly, not just via "#svn-history-expand-
 // toggle" above -- without this, manually opening/closing entries one at
 // a time leaves the toggle's label stale (e.g. every entry manually
 // opened, but the button still reads "Expand all", when clicking it
@@ -286,7 +286,7 @@ function setHistoryExpandToggleLabel(allOpen) {
 let historyExpandToggleSyncScheduled = false;
 
 function syncHistoryExpandToggleLabel() {
-    const items = document.querySelectorAll("#history-content wa-details.log-item");
+    const items = document.querySelectorAll("#svn-history-content wa-details.log-item");
     setHistoryExpandToggleLabel(items.length > 0 && [...items].every((item) => item.open));
 }
 
@@ -302,12 +302,12 @@ function scheduleHistoryExpandToggleLabelSync() {
 }
 
 document.addEventListener("wa-show", (event) => {
-    if (event.target.closest?.("#history-content wa-details.log-item")) {
+    if (event.target.closest?.("#svn-history-content wa-details.log-item")) {
         scheduleHistoryExpandToggleLabelSync();
     }
 });
 document.addEventListener("wa-hide", (event) => {
-    if (event.target.closest?.("#history-content wa-details.log-item")) {
+    if (event.target.closest?.("#svn-history-content wa-details.log-item")) {
         scheduleHistoryExpandToggleLabelSync();
     }
 });
@@ -351,7 +351,7 @@ wa-page::part(header) {
        rule in page-head-end.mustache/page-head-end.custom.mustache,
        rendered into <head> after this <style> block) without touching
        this file. Sets on :root (or any ancestor) reach ::part(header) the
-       same way --width reaches #history-dialog::part(dialog) below --
+       same way --width reaches #svn-history-dialog::part(dialog) below --
        custom properties inherit into shadow trees, unlike ordinary CSS
        properties. */
     background: var(--svn-header-bg, var(--wa-color-brand-fill-loud));
@@ -413,10 +413,11 @@ nav[slot="subheader"] wa-breadcrumb {
    standard custom-element-internals ":state()" pseudo-class (confirmed via
    a real browser -- unlike its "checked" *attribute*, which does NOT
    reflect back when toggled by a user click, only on initial render), so
-   "#subheader:has(...)" can react live to the switch without any listener
-   at all. ".svn-main" is #subheader's own sibling (both direct children of
-   <wa-page>), so the general sibling combinator reaches it directly. */
-#subheader:has(wa-switch:not(:state(checked))) ~ .svn-main .dir {
+   "#svn-subheader:has(...)" can react live to the switch without any
+   listener at all. ".svn-main" is #svn-subheader's own sibling (both direct
+   children of <wa-page>), so the general sibling combinator reaches it
+   directly. */
+#svn-subheader:has(wa-switch:not(:state(checked))) ~ .svn-main .dir {
     display: none;
 }
 
@@ -432,7 +433,7 @@ div.svn-main {
     padding: var(--wa-space-m);
 }
 
-/* "#history-dialog" itself sizes to fit its content by default -- fixed
+/* "#svn-history-dialog" itself sizes to fit its content by default -- fixed
    here (on the content div, not the dialog; a real "height", not just a
    "max-height" cap) so the dialog's own overall height stays constant
    regardless of how many entries exist or how many are expanded, rather
@@ -441,12 +442,12 @@ div.svn-main {
    below it instead -- deliberate, the tradeoff for a dialog that doesn't
    jump around; the list scrolls internally past this height rather than
    growing the dialog past the viewport. */
-#history-content {
+#svn-history-content {
     height: 65vh;
     overflow-y: auto;
 }
 
-/* Stops "--width: 90vw" (set on "#history-dialog" itself, in the markup
+/* Stops "--width: 90vw" (set on "#svn-history-dialog" itself, in the markup
    below) from growing past 1620px (90% of a 1800px window) on a very
    wide monitor. Targets "::part(dialog)", the actual visible dialog box
    living in wa-dialog's own shadow DOM, not a plain "max-width" on the
@@ -454,7 +455,7 @@ div.svn-main {
    doesn't propagate an ordinary CSS property into the shadow tree the
    way a "--custom-property" does; only "::part()" actually reaches the
    element that "width: var(--width)" is applied to internally. */
-#history-dialog::part(dialog) {
+#svn-history-dialog::part(dialog) {
     max-width: 1620px;
 }
 
@@ -810,7 +811,7 @@ wa-tree.svn-nav .updir {
    reveals directories in the main panel (same ":not(:state(checked))"
    condition as the ".svn-main .dir" rule above): one switch for "show
    everything this UI otherwise hides by default", nav and main alike. */
-#subheader:has(wa-switch:not(:state(checked))) ~ nav[slot="navigation"] wa-tree.svn-nav .navhidden {
+#svn-subheader:has(wa-switch:not(:state(checked))) ~ nav[slot="navigation"] wa-tree.svn-nav .navhidden {
     display: none;
 }
 
@@ -826,18 +827,18 @@ wa-tree-item a {
 <body>
 <wa-page>
 <header slot="header">
-<div class="wa-cluster" id="header-left">
+<div class="wa-cluster" id="svn-header-left">
 <wa-icon data-toggle-nav name="bars" label="Menu" style="padding: var(--wa-space-s);"></wa-icon>
 <a href="{{{repo_parent_path}}}"><wa-icon name="house"></wa-icon>Start</a>
 {{#has_base}}<a href="../{{{revision_suffix_up}}}"><wa-icon name="turn-up"></wa-icon>Up</a>{{/has_base}}
-{{#has_base}}<a href="{{{history_href}}}" hx-action="{{{history_href}}}" hx-method="REPORT" hx-target="#history-content" hx-swap="innerHTML" hx-trigger="click"><wa-icon name="clock-rotate-left"></wa-icon>History</a>{{/has_base}}
+{{#has_base}}<a href="{{{history_href}}}" hx-action="{{{history_href}}}" hx-method="REPORT" hx-target="#svn-history-content" hx-swap="innerHTML" hx-trigger="click"><wa-icon name="clock-rotate-left"></wa-icon>History</a>{{/has_base}}
 </div>
 </header>
-<nav slot="subheader" id="subheader">
-<div class="wa-cluster" id="breadcrumb">
+<nav slot="subheader" id="svn-subheader">
+<div class="wa-cluster" id="svn-breadcrumb">
 <wa-breadcrumb>
 <span slot="separator">/</span>
-{{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer,#header-left" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
+{{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
 {{/breadcrumbs}}
 </wa-breadcrumb>
 {{#revision_pinned}}<span class="revision-badge">{{{revision_pinned}}}</span>{{/revision_pinned}}
@@ -852,7 +853,7 @@ wa-tree-item a {
 <wa-tree class="svn-index" id="svn-index">
 {{{svn_index}}}</wa-tree>
 </div>
-<footer slot="footer" id="footer">
+<footer slot="footer" id="svn-footer">
 <span>{{#has_base}}Repository: {{base}} &middot; Path: {{/has_base}}{{path}} {{#has_base}}&middot; Revision: {{rev}}{{/has_base}}</span>
 <em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
 </footer>
@@ -863,9 +864,9 @@ wa-tree-item a {
      renders its own internal native <dialog>, which paints in the
      browser's top layer regardless of DOM ancestry, so nesting it here
      doesn't affect its overlay/positioning behavior at all. -->
-<wa-dialog id="history-dialog" label="History" light-dismiss style="--width: 90vw;">
-<wa-button id="history-expand-toggle" slot="header-actions" appearance="plain" size="s">Expand all</wa-button>
-<div id="history-content"></div>
+<wa-dialog id="svn-history-dialog" label="History" light-dismiss style="--width: 90vw;">
+<wa-button id="svn-history-expand-toggle" slot="header-actions" appearance="plain" size="s">Expand all</wa-button>
+<div id="svn-history-content"></div>
 </wa-dialog>
 </wa-page>
 </body>
