@@ -527,6 +527,54 @@ try {
     );
     record("label reads 'Collapse all' after that click", state.label === "Collapse all");
 
+    // Regression check for the actual reported bug: the label only ever
+    // updated from "#history-expand-toggle"'s own click handler, so
+    // manually toggling entries one at a time -- bypassing the toggle
+    // button entirely, the same as a user clicking each entry's own
+    // summary directly -- never recomputed it, leaving it stuck showing
+    // what was true before the manual changes instead of what a click
+    // would now actually do. All 3 entries are open and the label reads
+    // "Collapse all" at this point (from the previous checks) -- manually
+    // closing every entry individually should update the label to
+    // "Expand all" (not remain stuck on "Collapse all", which would now
+    // be backwards: clicking it would try to open already-closed entries,
+    // not collapse anything).
+    await page.evaluate(() => {
+        document.querySelectorAll("wa-details.log-item").forEach((item) => { item.open = false; });
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    const labelAfterManualCloseAll = await page.evaluate(() =>
+        document.getElementById("history-expand-toggle").textContent.trim()
+    );
+    record(
+        "label updates to 'Expand all' after every entry is manually closed one at a time",
+        labelAfterManualCloseAll === "Expand all",
+        labelAfterManualCloseAll
+    );
+
+    // Mirror case, starting from all-collapsed (just reached above):
+    // manually opening every entry individually should update the label
+    // to "Collapse all" -- this is the exact scenario reported: label
+    // stuck on "Expand all" while every entry is actually already open.
+    await page.evaluate(() => {
+        document.querySelectorAll("wa-details.log-item").forEach((item) => { item.open = true; });
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    const labelAfterManualOpenAll = await page.evaluate(() =>
+        document.getElementById("history-expand-toggle").textContent.trim()
+    );
+    record(
+        "label updates to 'Collapse all' after every entry is manually opened one at a time",
+        labelAfterManualOpenAll === "Collapse all",
+        labelAfterManualOpenAll
+    );
+
+    // Reset to collapsed via the toggle (not manual sets) so the
+    // remaining checks below start from the same known state they
+    // expected before these regression checks were inserted.
+    await page.click("#history-expand-toggle");
+    await new Promise((r) => setTimeout(r, 200));
+
     await page.screenshot({ path: path.join(OUTPUT_DIR, "03-final.png"), fullPage: true });
 
     // 8. No console/page errors during the whole run.

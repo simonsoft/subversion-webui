@@ -242,11 +242,12 @@ document.addEventListener("click", (event) => {
 
     // "Expand all" while any entry is still collapsed (open them all);
     // once every entry is already open, the same click collapses them
-    // all back down -- a stateful toggle, not a one-shot action.
+    // all back down -- a stateful toggle, not a one-shot action. Doesn't
+    // set the label itself -- see the "wa-show"/"wa-hide" listeners below,
+    // which this bulk-set also drives.
     const opening = [...items].some((item) => !item.open);
 
     items.forEach((item) => { item.open = opening; });
-    setHistoryExpandToggleLabel(opening);
 });
 
 function setHistoryExpandToggleLabel(allOpen) {
@@ -256,6 +257,60 @@ function setHistoryExpandToggleLabel(allOpen) {
         button.textContent = allOpen ? "Collapse all" : "Expand all";
     }
 }
+
+// Each <wa-details class="log-item"> is independently expandable by
+// clicking its own summary directly, not just via "#history-expand-
+// toggle" above -- without this, manually opening/closing entries one at
+// a time leaves the toggle's label stale (e.g. every entry manually
+// opened, but the button still reads "Expand all", when clicking it
+// would now actually collapse everything). "wa-show"/"wa-hide" (bubbles,
+// composed -- confirmed against Web Awesome's own source) fire on the
+// <wa-details> host itself whenever "open" changes, whether from a real
+// click or a script setting the property directly (as the bulk toggle
+// above does), so recomputing here covers every way an entry's state can
+// change, uniformly.
+//
+// Deliberately deferred via requestAnimationFrame, not recomputed
+// immediately on each event: a bulk toggle sets "open" on every item in
+// one synchronous loop, firing one "wa-show"/"wa-hide" per item --
+// reacting to each individually would mean trusting a specific firing
+// order to land on the correct final state last, risking a visible
+// flicker between transitional states first. requestAnimationFrame is
+// guaranteed by the event-loop spec to run only after the entire
+// microtask queue -- including every one of those events' own dispatch,
+// however many fire and in whatever order -- has fully drained, so
+// recomputing there always reads settled state. The
+// "historyExpandToggleSyncScheduled" guard then collapses however many
+// events fired in one burst into a single recompute rather than one per
+// event.
+let historyExpandToggleSyncScheduled = false;
+
+function syncHistoryExpandToggleLabel() {
+    const items = document.querySelectorAll("#history-content wa-details.log-item");
+    setHistoryExpandToggleLabel(items.length > 0 && [...items].every((item) => item.open));
+}
+
+function scheduleHistoryExpandToggleLabelSync() {
+    if (historyExpandToggleSyncScheduled) {
+        return;
+    }
+    historyExpandToggleSyncScheduled = true;
+    requestAnimationFrame(() => {
+        historyExpandToggleSyncScheduled = false;
+        syncHistoryExpandToggleLabel();
+    });
+}
+
+document.addEventListener("wa-show", (event) => {
+    if (event.target.closest?.("#history-content wa-details.log-item")) {
+        scheduleHistoryExpandToggleLabelSync();
+    }
+});
+document.addEventListener("wa-hide", (event) => {
+    if (event.target.closest?.("#history-content wa-details.log-item")) {
+        scheduleHistoryExpandToggleLabelSync();
+    }
+});
 </script>
 <style>
 wa-page {
