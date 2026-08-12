@@ -617,6 +617,21 @@ function output_filter(r)
     -- "index" branch of the StartElement handler).
     r.headers_out["ETag"] = nil
 
+    -- Every htmx-issued request against this endpoint -- both nav's own
+    -- lazy-expansion fetches and a real main-content-swap navigation --
+    -- hits the *same* URL as every other request for that path; only
+    -- request headers (HX-Target, HX-Current-URL) distinguish which
+    -- variant of the response comes back (see nav_target_path and the
+    -- ETag omission below). A URL-keyed cache can't see those headers, so
+    -- storing any one variant risks it being replayed for a different one.
+    -- Gated on HX-Request (present on every htmx-issued fetch, htmx.org
+    -- convention) rather than applied to all requests, so an ordinary
+    -- full-page load -- always the same, safely cacheable document for its
+    -- URL -- keeps normal caching.
+    if r.headers_in and r.headers_in["HX-Request"] then
+        r.headers_out["Cache-Control"] = "no-store"
+    end
+
     -- Only a main-content-swap request (dir.mustache's label, targeting a
     -- named element such as wa-page's "#svn-index") represents an actual
     -- "navigate to a new folder" -- the nav tree's own in-place lazy
