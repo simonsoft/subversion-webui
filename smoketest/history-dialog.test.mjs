@@ -679,6 +679,28 @@ try {
         emailFitsWide
     );
 
+    // Regression check: the dialog's own "--width: 90vw" (see
+    // page.mustache's "#history-dialog") is uncapped on its own, so on a
+    // very wide monitor it (and so the whole row inside it) would just
+    // keep growing indefinitely -- "#history-dialog::part(dialog)" caps
+    // it at 1620px (90% of 1800px) instead. Targets "::part(dialog)"
+    // specifically, not a plain "max-width" on the light-DOM host element
+    // -- confirmed for real that the latter doesn't reach the actual
+    // visible dialog box living in wa-dialog's own shadow DOM at all (the
+    // host's own box and the shadow tree's internal element are two
+    // different boxes; only "::part()" reaches the one that matters).
+    await page.setViewport({ width: 3200, height: 900 });
+    const dialogWidthAt3200 = await page.evaluate(() => {
+        const dialog = document.querySelector("wa-dialog");
+        return dialog.shadowRoot.querySelector("[part='dialog']").getBoundingClientRect().width;
+    });
+    record(
+        "desktop: dialog width stays capped at 1620px on a very wide (3200px) viewport, not still growing",
+        Math.abs(dialogWidthAt3200 - 1620) <= TOLERANCE,
+        dialogWidthAt3200
+    );
+    await page.setViewport({ width: 1200, height: 900 });
+
     // Regression check: ".log-message-preview" was originally
     // flex-shrink:0 (rigid), which forced 100% of any space deficit onto
     // ".log-summary-meta" alone -- on a tight row that crushed even a

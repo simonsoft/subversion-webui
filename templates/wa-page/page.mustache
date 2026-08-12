@@ -376,6 +376,18 @@ div.svn-main {
     overflow-y: auto;
 }
 
+/* Stops "--width: 90vw" (set on "#history-dialog" itself, in the markup
+   below) from growing past 1620px (90% of a 1800px window) on a very
+   wide monitor. Targets "::part(dialog)", the actual visible dialog box
+   living in wa-dialog's own shadow DOM, not a plain "max-width" on the
+   host element itself -- confirmed for real that the host's own box
+   doesn't propagate an ordinary CSS property into the shadow tree the
+   way a "--custom-property" does; only "::part()" actually reaches the
+   element that "width: var(--width)" is applied to internally. */
+#history-dialog::part(dialog) {
+    max-width: 1620px;
+}
+
 /* One <wa-details class="log-item"> per History entry (see
    log-item.mustache) -- independent expand/collapse (no shared "name"
    attribute), consistent vertical rhythm across entries via flex+gap
