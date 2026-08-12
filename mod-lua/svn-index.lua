@@ -45,6 +45,49 @@ local function read_template(dir, name)
     return read_file(dir .. name .. ".mustache")
 end
 
+-- Strips developer-facing "why" comments from the page template, so that
+-- documentation meant for someone editing this file doesn't also go out
+-- over the wire on every page load (see SVN_INDEX_STRIP_COMMENTS below).
+-- Run in load_template_set on the whole page, before split_page_template
+-- divides it into preamble/postamble -- not after, so a comment can't end
+-- up straddling that split point, half-stripped. The source file on disk
+-- stays untouched either way.
+--
+-- Block comments (JS and CSS both use /* */ here) are stripped globally;
+-- "//" line comments are scoped to the literal bare "<script>...</script>"
+-- block only, since the two earlier "<script src=\"https://...\">" tags in
+-- <head> contain "//" as part of their URL and must survive untouched.
+local function strip_wire_comments(html)
+    html = html:gsub("/%*.-%*/", "")
+    html = html:gsub("<!%-%-.-%-%->", "")
+
+    html = html:gsub("(<script>)(.-)(</script>)", function(open, body, close)
+        return open .. body:gsub("//[^\n]*", "") .. close
+    end)
+
+    -- Collapses the runs of now-empty lines a removed comment block leaves
+    -- behind (a single gsub, since "%s*" here is greedy and backtracks to
+    -- swallow an entire run of blank lines at once, however long).
+    html = html:gsub("\n%s*\n", "\n")
+
+    return html
+end
+
+-- SVN_INDEX_STRIP_COMMENTS: on (the default) unless explicitly set to one
+-- of "0"/"false"/"off"/"no" (case-insensitive). Lets an admin turn
+-- strip_wire_comments off to get readable page source while debugging.
+local function strip_comments_enabled(r)
+    local value = r.subprocess_env and r.subprocess_env.SVN_INDEX_STRIP_COMMENTS
+
+    if value == nil or value == "" then
+        return true
+    end
+
+    value = value:lower()
+
+    return not (value == "0" or value == "false" or value == "off" or value == "no")
+end
+
 -- The page template must contain the literal "{{{svn_index}}}" tag exactly
 -- once. It is used as a split point, not rendered by lustache as a whole:
 -- the preamble (through the opening <ul>) is rendered as soon as the
@@ -68,7 +111,14 @@ end
 -- (subject to Apache's LuaCodeCache directive being "on").
 local template_cache = {}
 
-local function load_template_set(template_type)
+-- strip_comments decides whether strip_wire_comments runs on the page
+-- template before it's split (see SVN_INDEX_STRIP_COMMENTS below). Not
+-- part of the cache key: env is expected static for a worker's lifetime
+-- (one Apache <Location> config), so whichever value first populates a
+-- given template_type's cache entry sticks for the rest of that worker's
+-- life -- same tradeoff load_template_set already makes for template_type
+-- itself.
+local function load_template_set(template_type, strip_comments)
     local cached = template_cache[template_type]
 
     if cached then
@@ -80,7 +130,13 @@ local function load_template_set(template_type)
     end
 
     local dir = template_dir(template_type)
-    local preamble, postamble = split_page_template(read_template(dir, "page"), template_type)
+    local page = read_template(dir, "page")
+
+    if strip_comments then
+        page = strip_wire_comments(page)
+    end
+
+    local preamble, postamble = split_page_template(page, template_type)
 
     local set = {
         preamble = preamble,
@@ -426,7 +482,7 @@ function output_filter(r)
         template_type = DEFAULT_TEMPLATE_TYPE
     end
 
-    local templates = load_template_set(template_type)
+    local templates = load_template_set(template_type, strip_comments_enabled(r))
 
     -- Anchors every entry's href to this directory's own URL (see the note
     -- above render_entry) instead of leaving them relative. Built from
