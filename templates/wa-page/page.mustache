@@ -826,25 +826,8 @@ wa-tree-item a {
 </head>
 <body>
 <wa-page>
-<header slot="header">
-<div class="wa-cluster" id="svn-header-left">
-<wa-icon data-toggle-nav name="bars" label="Menu" style="padding: var(--wa-space-s);"></wa-icon>
-<a href="{{{repo_parent_path}}}"><wa-icon name="house"></wa-icon>Start</a>
-{{#has_base}}<a href="../{{{revision_suffix_up}}}"><wa-icon name="turn-up"></wa-icon>Up</a>{{/has_base}}
-{{#has_base}}<a href="{{{history_href}}}" hx-action="{{{history_href}}}" hx-method="REPORT" hx-target="#svn-history-content" hx-swap="innerHTML" hx-trigger="click"><wa-icon name="clock-rotate-left"></wa-icon>History</a>{{/has_base}}
-</div>
-</header>
-<nav slot="subheader" id="svn-subheader">
-<div class="wa-cluster" id="svn-breadcrumb">
-<wa-breadcrumb>
-<span slot="separator">/</span>
-{{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
-{{/breadcrumbs}}
-</wa-breadcrumb>
-{{#revision_pinned}}<span class="revision-badge">{{{revision_pinned}}}</span>{{/revision_pinned}}
-</div>
-<wa-switch class="wa-font-size-s">Show folders</wa-switch>
-</nav>
+{{{page-header}}}
+{{{page-subheader}}}
 <nav slot="navigation">
 <wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">
 </wa-tree>
@@ -853,10 +836,7 @@ wa-tree-item a {
 <wa-tree class="svn-index" id="svn-index">
 {{{svn_index}}}</wa-tree>
 </div>
-<footer slot="footer" id="svn-footer">
-<span>{{#has_base}}Repository: {{base}} &middot; Path: {{/has_base}}{{path}} {{#has_base}}&middot; Revision: {{rev}}{{/has_base}}</span>
-<em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
-</footer>
+{{{page-footer}}}
 <!-- Unslotted, so it lands in wa-page's default slot alongside ".svn-main"
      -- deliberately a real descendant of <wa-page>, not a sibling after it,
      so the "wa-page[view='desktop']"/"wa-page[view='mobile']" rules above

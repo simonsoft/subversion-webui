@@ -98,6 +98,13 @@ before `</head>` — a place to add site-specific `<meta>`/`<link>`/`<script>`
 tags (analytics, extra CSS, etc.) via `page-head-end.mustache` or
 `page-head-end.custom.mustache`, without touching `page.mustache` itself.
 
+`wa-page` additionally splits its `<header>`, breadcrumb subheader, and
+`<footer>` out into their own `page-header.mustache`, `page-subheader.mustache`,
+and `page-footer.mustache` files (each rendered the same way, and each
+overridable via a `.custom.mustache` sibling). Unlike `page-head-end`, these
+three are optional per template type — only `wa-page` ships them; the other
+skins simply don't define that region, and it renders as empty.
+
 For example, `wa-page`'s header background color is exposed as the
 `--svn-header-bg` CSS custom property (defaulting to Web Awesome's own
 brand color) — override it by adding this to

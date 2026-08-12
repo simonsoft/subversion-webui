@@ -45,6 +45,30 @@ local function read_template(dir, name)
     return read_file(dir .. name .. ".mustache")
 end
 
+-- Same override preference as read_template(), but tolerates a template
+-- that doesn't exist in this template type's directory at all -- returns
+-- nil rather than erroring, for template names that are genuinely optional
+-- per skin (unlike page-head-end and friends, which every skin must ship).
+local function read_template_optional(dir, name)
+    local custom_path = dir .. name .. ".custom.mustache"
+    local custom_file = io.open(custom_path, "r")
+
+    if custom_file then
+        custom_file:close()
+        return read_file(custom_path)
+    end
+
+    local default_path = dir .. name .. ".mustache"
+    local default_file = io.open(default_path, "r")
+
+    if not default_file then
+        return nil
+    end
+
+    default_file:close()
+    return read_file(default_path)
+end
+
 -- Strips developer-facing "why" comments from the page template, so that
 -- documentation meant for someone editing this file doesn't also go out
 -- over the wire on every page load (see SVN_INDEX_STRIP_COMMENTS below).
@@ -142,6 +166,9 @@ local function load_template_set(template_type, strip_comments)
         preamble = preamble,
         postamble = postamble,
         page_head_end = read_template(dir, "page-head-end"),
+        page_header = read_template_optional(dir, "page-header"),
+        page_subheader = read_template_optional(dir, "page-subheader"),
+        page_footer = read_template_optional(dir, "page-footer"),
         entries = {
             updir = read_template(dir, "updir"),
             file = read_template(dir, "file"),
@@ -707,6 +734,16 @@ function output_filter(r)
         -- head content can reference any of the fields above (e.g. `path`
         -- or `base` in a page-specific <title>/<meta> override).
         context["page-head-end"] = lustache:render(templates.page_head_end, context)
+
+        if templates.page_header then
+            context["page-header"] = lustache:render(templates.page_header, context)
+        end
+        if templates.page_subheader then
+            context["page-subheader"] = lustache:render(templates.page_subheader, context)
+        end
+        if templates.page_footer then
+            context["page-footer"] = lustache:render(templates.page_footer, context)
+        end
 
         return context
     end

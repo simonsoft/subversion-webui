@@ -1,0 +1,11 @@
+<nav slot="subheader" id="svn-subheader">
+<div class="wa-cluster" id="svn-breadcrumb">
+<wa-breadcrumb>
+<span slot="separator">/</span>
+{{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
+{{/breadcrumbs}}
+</wa-breadcrumb>
+{{#revision_pinned}}<span class="revision-badge">{{{revision_pinned}}}</span>{{/revision_pinned}}
+</div>
+<wa-switch class="wa-font-size-s">Show folders</wa-switch>
+</nav>
