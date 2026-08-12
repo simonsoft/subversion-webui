@@ -472,8 +472,14 @@ wa-page[view='desktop'] .log-summary {
    against ".log-summary"'s own rendered content-box width, which already
    reflects the dialog's "--width: 90vw" plus any padding along the way)
    rather than the author's content -- min/max rem bounds around it keep
-   the column legible on a dialog only just past the mobile breakpoint and
-   from growing pointlessly wide on a very large one. flex-shrink:1, with
+   the column legible on a dialog only just past the mobile breakpoint,
+   while still capping how wide it can grow on a very large one -- 32rem,
+   not the 24rem first tried: a real author value can be a full email
+   address (confirmed against a real one, ~28 characters, needing ~218px
+   of text alone), and 24rem left this column's own ellipsis truncating
+   it even at the widest realistic window, regardless of how much actual
+   free space the dialog had to spare -- the cap itself was the
+   bottleneck, not available space. flex-shrink:1, with
    ".log-message-preview" below now shrinkable too (not the flex-shrink:0
    it was tried with first), means space pressure is shared between both
    columns via the normal flex distribution instead of concentrated
@@ -485,11 +491,25 @@ wa-page[view='desktop'] .log-summary {
    one hit its wall. min-width:0 lets it shrink past its own automatic
    minimum when genuinely needed -- ".log-author strong" below is the
    actual ellipsis-truncation target and has its own separate min-width:0
-   for the same reason. */
+   for the same reason. flex-grow:1 (".log-message-preview" below stays
+   grow:0) means this column -- not a dead gap -- absorbs any leftover
+   row space once both columns are past their preferred sizes: the
+   dialog's own width is viewport-relative and uncapped, so on a wide
+   enough window there's more row space than both columns' clamp()-
+   preferred sizes need, and without something claiming it, that surplus
+   was landing entirely in ".log-message-preview"'s own "margin-left:
+   auto" as a growing, purposeless gap between the two columns instead of
+   giving author more room -- confirmed for real: over 1800px of dead
+   space by 3200px wide. max-width repeats the clamp()'s own 32rem cap as
+   a separate property because flex-grow can push a flex item past its
+   flex-basis (which is all clamp() actually constrains) with nothing
+   else stopping it -- clamp()'s max argument bounds the *starting* size,
+   not continued growth. */
 wa-page[view='desktop'] .log-summary-meta {
-    flex-grow: 0;
+    flex-grow: 1;
     flex-shrink: 1;
-    flex-basis: clamp(20rem, 32%, 24rem);
+    flex-basis: clamp(20rem, 32%, 32rem);
+    max-width: 32rem;
     min-width: 0;
     flex-wrap: nowrap;
 }
@@ -538,14 +558,19 @@ wa-page[view='desktop'] .log-author strong {
    column, and is itself a proper column too -- sized the same
    percentage-of-the-row-plus-clamp() way, so it scales with the dialog,
    rather than a flexible one that merely fills whatever space happens to
-   be left; "margin-left: auto" then shoves that column to the row's far
-   right edge. Shrinkable (flex-shrink:1, not the 0 it was tried with
-   first) for the same reason ".log-summary-meta" above has no hard
-   min-width: a rigid column forces the *other* one to absorb 100% of any
-   space deficit alone once its own clamp() floor is reached, defeating
-   the smooth, shared scaling clamp() is supposed to provide across the
-   whole row. Two-line clamp: a -webkit-box, not a fade-gradient overlay
-   -- this app targets evergreen
+   be left. Deliberately flex-grow:0, unlike meta -- this is prose, and a
+   two-line clamp gets harder to read past a certain line length, so once
+   it reaches its own clamp() max it should stop growing rather than keep
+   claiming space; meta absorbs any further leftover instead (see its own
+   flex-grow:1 below), which also means this column naturally ends up at
+   the row's right edge without needing its own "margin-left: auto" to
+   push it there anymore. Shrinkable (flex-shrink:1, not the 0 it was
+   tried with first) for the same reason ".log-summary-meta" above has no
+   hard min-width: a rigid column forces the *other* one to absorb 100%
+   of any space deficit alone once its own clamp() floor is reached,
+   defeating the smooth, shared scaling clamp() is supposed to provide
+   across the whole row. Two-line clamp: a -webkit-box, not a
+   fade-gradient overlay -- this app targets evergreen
    Chromium/Firefox/Safari, which all implement these (nominally
    WebKit-prefixed, now universal) properties, simpler and more robust
    than a gradient mask over wa-details' own light/dark theme tokens, with
@@ -564,6 +589,12 @@ wa-page[view='desktop'] .log-author strong {
     -webkit-box-orient: vertical;
     overflow: hidden;
     white-space: pre-line;
+    /* Mobile's own reading-width cap -- overridden below on desktop to
+       36rem (matching that layout's own clamp() max) instead of just
+       inheriting this value: left as 28rem there too, this quietly
+       capped the desktop column below what its own clamp() intended,
+       confirmed for real -- it never rendered past 448px regardless of
+       how much wider clamp()'s math said it should be able to go. */
     max-width: 28rem;
 }
 
@@ -575,8 +606,8 @@ wa-page[view='desktop'] .log-message-preview {
     flex-grow: 0;
     flex-shrink: 1;
     flex-basis: clamp(16rem, 40%, 36rem);
+    max-width: 36rem;
     min-width: 0;
-    margin-left: auto;
 }
 
 /* The full commit message, revealed once expanded, indented to match

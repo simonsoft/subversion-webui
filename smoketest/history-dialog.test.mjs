@@ -578,9 +578,11 @@ try {
         // depending on how much of the column its own text fills).
         const previewWidths = items.map((el) => el.querySelector(".log-message-preview").getBoundingClientRect().width);
         const previewLefts = items.map((el) => el.querySelector(".log-message-preview").getBoundingClientRect().left);
+        const authorStyle = getComputedStyle(authorStrong);
         return {
             row: getComputedStyle(summary).flexDirection === "row",
-            authorTruncated: authorStrong.scrollWidth > authorStrong.clientWidth + 1,
+            authorEllipsisConfigured:
+                authorStyle.overflow === "hidden" && authorStyle.textOverflow === "ellipsis" && authorStyle.whiteSpace === "nowrap",
             previewNotRightAligned: getComputedStyle(preview).textAlign !== "right",
             previewRightOfMeta: preview.getBoundingClientRect().left >= meta.getBoundingClientRect().right - 1,
             previewFlushRight: Math.abs(preview.getBoundingClientRect().right - summary.getBoundingClientRect().right) <= 1,
@@ -594,8 +596,14 @@ try {
         JSON.stringify(desktopCollapsed)
     );
     record(
-        "desktop: a long (email-address) author truncates with an ellipsis instead of pushing the message",
-        desktopCollapsed.authorTruncated,
+        // Whether a given author value *actually* truncates now depends on
+        // available width (meta grows to absorb leftover row space, see
+        // its own comment in page.mustache) -- covered dynamically by the
+        // narrow-row and wide-row checks further down instead. This just
+        // confirms the ellipsis mechanism itself is wired up correctly,
+        // independent of whatever width happens to be tested at here.
+        "desktop: author ellipsis truncation is correctly configured (overflow/text-overflow/white-space)",
+        desktopCollapsed.authorEllipsisConfigured,
         JSON.stringify(desktopCollapsed)
     );
     record(
@@ -651,6 +659,24 @@ try {
         "desktop: message column actually grows at a wider viewport (scales with the dialog, not a flat rem value)",
         desktopWide.previewWidths[0] > desktopCollapsed.previewWidths[0] + 10,
         JSON.stringify({ at1200: desktopCollapsed.previewWidths[0], at1800: desktopWide.previewWidths[0] })
+    );
+
+    // Regression check for the actual reported bug: ".log-summary-meta"'s
+    // clamp() max was originally 24rem, which capped this column (and so
+    // author's own share of it) well below what a real ~28-character
+    // email address needs to display in full -- truncating it even at
+    // very wide windows, regardless of how much free space the dialog
+    // actually had to spare. The cap itself was the bottleneck, not
+    // available space, so raising it (to 32rem) should let a realistic
+    // email fit without ellipsis once the window is wide enough, not just
+    // shrink less aggressively.
+    const emailFitsWide = await page.evaluate(() => {
+        const strong = [...document.querySelectorAll(".log-author strong")].find((el) => el.textContent.includes("@"));
+        return strong.scrollWidth <= strong.clientWidth + 1;
+    });
+    record(
+        "desktop: a real-length email author fits without ellipsis at a wide (1800px) viewport",
+        emailFitsWide
     );
 
     // Regression check: ".log-message-preview" was originally
