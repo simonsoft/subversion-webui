@@ -445,7 +445,7 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<header slot="header">', 1, true))
         assert.truthy(html:find('<footer slot="footer" id="svn-footer">', 1, true))
         assert.truthy(html:find(
-            [[<wa-tree-item class="file" hx-on:wa-selection-change="this.querySelector(':scope > a[href]')?.click()"><a href="/svn/demo1/README.md"><wa-icon name="file" variant="regular"></wa-icon> README.md</a></wa-tree-item>]],
+            '<wa-tree-item class="file"><a href="/svn/demo1/README.md"><wa-icon name="file" variant="regular"></wa-icon> README.md</a></wa-tree-item>',
             1, true
         ))
     end)
@@ -627,19 +627,17 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        -- No hx-get/hx-trigger of any kind on the wa-tree-item itself (a
-        -- page-wide search for "hx-get"/"lazy" would false-fail here since
-        -- the page's own nav root item and lazy-clear script always contain
-        -- those strings regardless of fixture) -- it only carries
-        -- hx-on:wa-selection-change, same as file.mustache, to synthesize a
-        -- real click on its own plain <a href> for the dead-zone/keyboard
-        -- case, since a repo crossing is a bigger boundary than moving
-        -- between two folders of the same repo and must stay a real
-        -- full-page navigation, not an ajax swap.
-        assert.truthy(html:find(
-            [[<wa-tree-item class="repo" hx-on:wa-selection-change="this.querySelector(':scope > a[href]')?.click()"><a href="/svn/demo1/demo1/">]],
-            1, true
-        ))
+        -- The immediate "class=\"repo\"...><a href=...>" transition (no
+        -- attributes in between) proves this specific entry carries no
+        -- hx-get/lazy wiring -- a page-wide search for "hx-get"/"lazy" would
+        -- false-fail here since the page's own nav root item and lazy-clear
+        -- script always contain those strings regardless of fixture. The
+        -- dead-zone/keyboard click synthesis for this plain <a href> (same
+        -- as file.mustache) lives on each <wa-tree>'s own
+        -- hx-on:wa-selection-change instead (see page.mustache) -- not
+        -- here, since Web Awesome's own wa-tree dispatches that event on
+        -- itself, never on the individual wa-tree-item.
+        assert.truthy(html:find('<wa-tree-item class="repo"><a href="/svn/demo1/demo1/">', 1, true))
     end)
 
     it("removes the lazy attribute after its own swap lands, via a page-level htmx:after:swap listener", function()
@@ -792,7 +790,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<wa-tree class="svn-index" id="svn-index">', 1, true))
+        assert.truthy(html:find('<wa-tree class="svn-index" id="svn-index" hx-on:wa-selection-change=', 1, true))
     end)
 
     it("wires the wa-page navigation tree itself to load the repo root's own listing, with no top-level wrapper item", function()
@@ -816,7 +814,7 @@ describe("svn-index output_filter", function()
         }, "/svn/myrepo/trunk/", { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find(
-            '<wa-tree class="svn-nav" hx-get="/svn/myrepo/" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">',
+            [[<wa-tree class="svn-nav" hx-get="/svn/myrepo/" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > a[href]')?.click())">]],
             1, true
         ))
     end)
@@ -1219,7 +1217,7 @@ describe("svn-index output_filter", function()
             { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_HIDE_DIR = "^lang$" }
         )
 
-        assert.truthy(html:find([[<wa-tree-item class="repo" hx-on:wa-selection-change=]], 1, true))
+        assert.truthy(html:find('<wa-tree-item class="repo">', 1, true))
         assert.falsy(html:find('class="repo navhidden"', 1, true))
     end)
 

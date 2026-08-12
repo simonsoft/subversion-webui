@@ -790,9 +790,10 @@ wa-tree.svn-nav .updir {
 }
 
 /* Navigation is driven off wa-selection-change (see dir.mustache's own
-   hx-trigger, and file/repo.mustache's own hx-on:wa-selection-change), not
-   off where in the row a click lands -- the label itself just shouldn't
-   look like a hyperlink. */
+   hx-trigger, and each <wa-tree>'s own hx-on:wa-selection-change below,
+   which synthesizes a real click on a selected leaf's plain <a> for
+   file/repo entries), not off where in the row a click lands -- the label
+   itself just shouldn't look like a hyperlink. */
 wa-tree-item a {
     color: inherit;
     text-decoration: none;
@@ -804,12 +805,29 @@ wa-tree-item a {
 <wa-page>
 {{{page-header}}}
 {{{page-subheader}}}
+<!-- file.mustache/repo.mustache's wa-tree-item is a plain <a href> with no
+     htmx at all (real browser navigation, sometimes a file download -- not
+     something an ajax swap can stand in for), so wa-tree's own selecting-
+     click-anywhere-in-the-row and keyboard Enter/Space never reach it: the
+     row's own dead zone doesn't hit the anchor, and wa-tree's keydown
+     handler drives selection by mutating state, never firing a native
+     click. hx-on:wa-selection-change here (not on the item itself) is
+     deliberate: Web Awesome's own wa-tree dispatches this event on itself,
+     never on the individual wa-tree-item (confirmed against wa-tree's own
+     source, tree.ts's selectItem()) -- a listener on the item would sit on
+     a descendant of where the event actually fires and would never see it,
+     since bubbling only flows outward to ancestors, never down into
+     descendants. Scoped to selection.forEach(...) rather than a single
+     item, since single-selection mode still reports an array; dir entries
+     (a <span>, not an <a>) are unaffected -- the querySelector simply
+     finds nothing to click for those, already handled by dir.mustache's
+     own trigger instead. -->
 <nav slot="navigation">
-<wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">
+<wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > a[href]')?.click())">
 </wa-tree>
 </nav>
 <div class="svn-main">
-<wa-tree class="svn-index" id="svn-index">
+<wa-tree class="svn-index" id="svn-index" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > a[href]')?.click())">
 {{{svn_index}}}</wa-tree>
 </div>
 {{{page-footer}}}
