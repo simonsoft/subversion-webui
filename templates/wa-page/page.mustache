@@ -423,11 +423,17 @@ div.svn-main {
     padding: var(--wa-space-m);
 }
 
-/* "#history-dialog" itself sizes to fit its content by default -- capped
-   here (on the content div, not the dialog) so a long history still
-   scrolls internally instead of growing the dialog past the viewport. */
+/* "#history-dialog" itself sizes to fit its content by default -- fixed
+   here (on the content div, not the dialog; a real "height", not just a
+   "max-height" cap) so the dialog's own overall height stays constant
+   regardless of how many entries exist or how many are expanded, rather
+   than visibly growing/shrinking the whole dialog as the user expands or
+   collapses individual entries. A short history just leaves blank space
+   below it instead -- deliberate, the tradeoff for a dialog that doesn't
+   jump around; the list scrolls internally past this height rather than
+   growing the dialog past the viewport. */
 #history-content {
-    max-height: 65vh;
+    height: 65vh;
     overflow-y: auto;
 }
 

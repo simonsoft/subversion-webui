@@ -368,6 +368,15 @@ try {
     record("clicking revision-badge link does not toggle the details open", afterBadgeClick === false);
 
     // 4. "Expand all" opens every entry and relabels to "Collapse all".
+    // Regression check alongside it: "#history-content" is a fixed
+    // "height" (not just a "max-height" cap), specifically so the
+    // dialog's own overall height stays constant as entries expand --
+    // this 3-entry fixture doesn't fill that height even fully expanded,
+    // exactly the "dialog resizes when it isn't already full" case this
+    // guards against.
+    const dialogHeightBeforeExpand = await page.evaluate(
+        () => document.querySelector("wa-dialog").shadowRoot.querySelector("[part='dialog']").getBoundingClientRect().height
+    );
     await page.click("#history-expand-toggle");
     await new Promise((r) => setTimeout(r, 200));
     let state = await page.evaluate(() => ({
@@ -376,6 +385,14 @@ try {
     }));
     record("Expand all opens every entry", state.states.every((o) => o === true), JSON.stringify(state.states));
     record("button label flips to 'Collapse all'", state.label === "Collapse all", state.label);
+    const dialogHeightAfterExpand = await page.evaluate(
+        () => document.querySelector("wa-dialog").shadowRoot.querySelector("[part='dialog']").getBoundingClientRect().height
+    );
+    record(
+        "dialog's own height stays constant when expanding all entries (doesn't fill it)",
+        dialogHeightAfterExpand === dialogHeightBeforeExpand,
+        JSON.stringify({ before: dialogHeightBeforeExpand, after: dialogHeightAfterExpand })
+    );
 
     await page.screenshot({ path: path.join(OUTPUT_DIR, "02-expanded.png"), fullPage: true });
 
