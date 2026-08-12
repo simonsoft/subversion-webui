@@ -45,12 +45,13 @@ local function read_template(dir, name)
     return read_file(dir .. name .. ".mustache")
 end
 
--- Strips developer-facing "why" comments from the page template's rendered
--- output, so that documentation meant for someone editing this file doesn't
--- also go out over the wire on every page load (see SVN_INDEX_STRIP_COMMENTS
--- below). Applied in render_preamble/render_postamble, not baked into
--- load_template_set's cached copy -- the source file on disk stays
--- untouched either way.
+-- Strips developer-facing "why" comments from the page template, so that
+-- documentation meant for someone editing this file doesn't also go out
+-- over the wire on every page load (see SVN_INDEX_STRIP_COMMENTS below).
+-- Run in load_template_set on the whole page, before split_page_template
+-- divides it into preamble/postamble -- not after, so a comment can't end
+-- up straddling that split point, half-stripped. The source file on disk
+-- stays untouched either way.
 --
 -- Block comments (JS and CSS both use /* */ here) are stripped globally;
 -- "//" line comments are scoped to the literal bare "<script>...</script>"
@@ -110,7 +111,14 @@ end
 -- (subject to Apache's LuaCodeCache directive being "on").
 local template_cache = {}
 
-local function load_template_set(template_type)
+-- strip_comments decides whether strip_wire_comments runs on the page
+-- template before it's split (see SVN_INDEX_STRIP_COMMENTS below). Not
+-- part of the cache key: env is expected static for a worker's lifetime
+-- (one Apache <Location> config), so whichever value first populates a
+-- given template_type's cache entry sticks for the rest of that worker's
+-- life -- same tradeoff load_template_set already makes for template_type
+-- itself.
+local function load_template_set(template_type, strip_comments)
     local cached = template_cache[template_type]
 
     if cached then
@@ -122,7 +130,13 @@ local function load_template_set(template_type)
     end
 
     local dir = template_dir(template_type)
-    local preamble, postamble = split_page_template(read_template(dir, "page"), template_type)
+    local page = read_template(dir, "page")
+
+    if strip_comments then
+        page = strip_wire_comments(page)
+    end
+
+    local preamble, postamble = split_page_template(page, template_type)
 
     local set = {
         preamble = preamble,
@@ -468,8 +482,7 @@ function output_filter(r)
         template_type = DEFAULT_TEMPLATE_TYPE
     end
 
-    local templates = load_template_set(template_type)
-    local strip_comments = strip_comments_enabled(r)
+    local templates = load_template_set(template_type, strip_comments_enabled(r))
 
     -- Anchors every entry's href to this directory's own URL (see the note
     -- above render_entry) instead of leaving them relative. Built from
@@ -699,13 +712,11 @@ function output_filter(r)
     end
 
     local function render_preamble()
-        local preamble = strip_comments and strip_wire_comments(templates.preamble) or templates.preamble
-        return lustache:render(preamble, template_context())
+        return lustache:render(templates.preamble, template_context())
     end
 
     local function render_postamble()
-        local postamble = strip_comments and strip_wire_comments(templates.postamble) or templates.postamble
-        return lustache:render(postamble, template_context())
+        return lustache:render(templates.postamble, template_context())
     end
 
     local parser = lxp.new({

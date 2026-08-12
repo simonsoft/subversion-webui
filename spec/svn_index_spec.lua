@@ -451,6 +451,15 @@ describe("svn-index output_filter", function()
     end)
 
     it("strips developer-facing comments from the wa-page shell by default", function()
+        -- load_template_set's cache is keyed by template_type alone, not
+        -- by SVN_INDEX_STRIP_COMMENTS (see its own comment: production
+        -- never varies that env within one worker's lifetime, so whichever
+        -- mode first loads "wa-page" wins for the rest of the process).
+        -- Other tests above already loaded "wa-page" in default (stripped)
+        -- mode, but re-dofile'ing here gets a fresh template_cache so this
+        -- test doesn't depend on that happening to be true.
+        dofile(ROOT .. "mod-lua/svn-index.lua")
+
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -469,6 +478,11 @@ describe("svn-index output_filter", function()
     end)
 
     it("serves the wa-page shell with comments intact when SVN_INDEX_STRIP_COMMENTS is disabled", function()
+        -- Same reasoning as above, in reverse: without a fresh
+        -- template_cache here, this would see whatever mode an earlier
+        -- test already loaded "wa-page" in.
+        dofile(ROOT .. "mod-lua/svn-index.lua")
+
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
