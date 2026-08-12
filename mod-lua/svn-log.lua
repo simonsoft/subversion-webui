@@ -30,6 +30,21 @@ local function read_file(path)
     return content
 end
 
+-- Duplicated from svn-index.lua (see its own comment for the rationale):
+-- loads "<name>.mustache" unless a "<name>.custom.mustache" sits alongside
+-- it in the same template type's directory.
+local function read_template(dir, name)
+    local custom_path = dir .. name .. ".custom.mustache"
+    local custom_file = io.open(custom_path, "r")
+
+    if custom_file then
+        custom_file:close()
+        return read_file(custom_path)
+    end
+
+    return read_file(dir .. name .. ".mustache")
+end
+
 -- Duplicated from svn-index.lua: no require-able shared module exists in
 -- this repo, and this is the only other file that needs it.
 local function escape_html(value)
@@ -286,7 +301,7 @@ local function load_log_template_set(template_type)
     end
 
     local dir = template_dir(template_type)
-    local raw = read_file(dir .. "log.mustache")
+    local raw = read_template(dir, "log")
     local marker_start, marker_end = raw:find(SVNLOG_TAG, 1, true)
 
     if not marker_start then
@@ -297,7 +312,7 @@ local function load_log_template_set(template_type)
     local set = {
         preamble = raw:sub(1, marker_start - 1),
         postamble = raw:sub(marker_end + 1),
-        item = read_file(dir .. "log-item.mustache")
+        item = read_template(dir, "log-item")
     }
 
     log_template_cache[template_type] = set

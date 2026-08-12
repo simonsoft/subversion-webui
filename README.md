@@ -75,6 +75,21 @@ have dropped native client-side XSLT support, see
 [README-xslt-polyfill.md](README-xslt-polyfill.md) for an independent
 output filter that polyfills it instead.
 
+### Customizing templates
+
+Every `.mustache` file under a `templates/<type>/` directory can be
+overridden without editing (or forking) the shipped file: if a
+`name.custom.mustache` sits alongside `name.mustache` in that same
+directory, it's loaded instead. This works for every template file
+(`page`, `dir`, `file`, `repo`, `updir`, `page-head-end`, and, for
+`wa-page`, `log`/`log-item`) in all four template types.
+
+Each template type also ships an empty `page-head-end.mustache`, rendered
+with the exact same variable context as `page.mustache` and inserted just
+before `</head>` — a place to add site-specific `<meta>`/`<link>`/`<script>`
+tags (analytics, extra CSS, etc.) via `page-head-end.mustache` or
+`page-head-end.custom.mustache`, without touching `page.mustache` itself.
+
 ### History (wa-page skin only)
 
 `wa-page` adds a "History" link to the page header that issues a real HTTP

@@ -29,6 +29,22 @@ local function read_file(path)
     return content
 end
 
+-- Loads "<name>.mustache" from a template type's directory, unless a
+-- "<name>.custom.mustache" sits alongside it -- in which case that's loaded
+-- instead. Lets a site override a single template file without forking the
+-- whole set, and without editing a file this repo itself tracks.
+local function read_template(dir, name)
+    local custom_path = dir .. name .. ".custom.mustache"
+    local custom_file = io.open(custom_path, "r")
+
+    if custom_file then
+        custom_file:close()
+        return read_file(custom_path)
+    end
+
+    return read_file(dir .. name .. ".mustache")
+end
+
 -- The page template must contain the literal "{{{svn_index}}}" tag exactly
 -- once. It is used as a split point, not rendered by lustache as a whole:
 -- the preamble (through the opening <ul>) is rendered as soon as the
@@ -64,16 +80,17 @@ local function load_template_set(template_type)
     end
 
     local dir = template_dir(template_type)
-    local preamble, postamble = split_page_template(read_file(dir .. "page.mustache"), template_type)
+    local preamble, postamble = split_page_template(read_template(dir, "page"), template_type)
 
     local set = {
         preamble = preamble,
         postamble = postamble,
+        page_head_end = read_template(dir, "page-head-end"),
         entries = {
-            updir = read_file(dir .. "updir.mustache"),
-            file = read_file(dir .. "file.mustache"),
-            dir = read_file(dir .. "dir.mustache"),
-            repo = read_file(dir .. "repo.mustache")
+            updir = read_template(dir, "updir"),
+            file = read_template(dir, "file"),
+            dir = read_template(dir, "dir"),
+            repo = read_template(dir, "repo")
         }
     }
 
@@ -583,7 +600,7 @@ function output_filter(r)
             history_href_raw = append_query(history_href_raw, "repo_root=" .. repo_root)
         end
 
-        return {
+        local context = {
             base = index.base,
             path = index.path,
             rev = index.rev,
@@ -629,6 +646,13 @@ function output_filter(r)
             -- Collection-of-Repositories listing (no repo to root at).
             nav_root_path = has_base and breadcrumbs[1].hx_href or "."
         }
+
+        -- Rendered with this same context (minus itself) so site-supplied
+        -- head content can reference any of the fields above (e.g. `path`
+        -- or `base` in a page-specific <title>/<meta> override).
+        context["page-head-end"] = lustache:render(templates.page_head_end, context)
+
+        return context
     end
 
     local function render_preamble()
