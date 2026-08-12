@@ -599,7 +599,7 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find(
-            [[<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="wa-selection-change[event.detail.selection.includes(this.parentElement)] from:closest wa-tree delay:150ms, click[this.parentElement.selected]">]],
+            [[<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="wa-selection-change[event.detail.selection.includes(this.parentElement)] from:closest wa-tree throttle:150ms, click[this.parentElement.selected]">]],
             1, true
         ))
     end)
@@ -1447,7 +1447,7 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<footer slot="footer" id="svn-footer">', 1, true))
         assert.truthy(html:find('<div class="wa-cluster" id="svn-header-left">', 1, true))
         assert.truthy(html:find(
-            [[<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="wa-selection-change[event.detail.selection.includes(this.parentElement)] from:closest wa-tree delay:150ms, click[this.parentElement.selected]">]],
+            [[<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="wa-selection-change[event.detail.selection.includes(this.parentElement)] from:closest wa-tree throttle:150ms, click[this.parentElement.selected]">]],
             1, true
         ))
     end)
