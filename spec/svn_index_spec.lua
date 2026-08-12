@@ -450,6 +450,25 @@ describe("svn-index output_filter", function()
         ))
     end)
 
+    it("exposes the wa-page header's background color as an overridable --svn-header-bg custom property", function()
+        -- No value is set for --svn-header-bg anywhere in the shipped
+        -- template -- only used as a var() fallback -- so a site overrides
+        -- it by setting the property itself from later CSS (e.g. a
+        -- page-head-end.mustache <style> block), without editing this file.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(
+            "background: var(--svn-header-bg, var(--wa-color-brand-fill-loud));",
+            1, true
+        ))
+    end)
+
     it("builds a breadcrumb trail (with htmx expansion and repo/dir icons) and the \"Start\"/\"Up\" toolbar hrefs from path depth", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">

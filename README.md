@@ -90,6 +90,20 @@ before `</head>` — a place to add site-specific `<meta>`/`<link>`/`<script>`
 tags (analytics, extra CSS, etc.) via `page-head-end.mustache` or
 `page-head-end.custom.mustache`, without touching `page.mustache` itself.
 
+For example, `wa-page`'s header background color is exposed as the
+`--svn-header-bg` CSS custom property (defaulting to Web Awesome's own
+brand color) — override it by adding this to
+`templates/wa-page/page-head-end.mustache` (or the `.custom.mustache`
+variant):
+
+```html
+<style>
+:root {
+    --svn-header-bg: #2c3e50;
+}
+</style>
+```
+
 ### History (wa-page skin only)
 
 `wa-page` adds a "History" link to the page header that issues a real HTTP

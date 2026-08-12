@@ -345,7 +345,16 @@ wa-page[view='mobile'] {
    itself, not nested inside a further shadow root). */
 wa-page::part(header) {
     align-items: center;
-    background: var(--wa-color-brand-fill-loud);
+    /* --svn-header-bg has no value of its own here -- only a fallback --
+       so a site can override the header's background color by setting it
+       from a later stylesheet (e.g. a `:root { --svn-header-bg: ...; }`
+       rule in page-head-end.mustache/page-head-end.custom.mustache,
+       rendered into <head> after this <style> block) without touching
+       this file. Sets on :root (or any ancestor) reach ::part(header) the
+       same way --width reaches #history-dialog::part(dialog) below --
+       custom properties inherit into shadow trees, unlike ordinary CSS
+       properties. */
+    background: var(--svn-header-bg, var(--wa-color-brand-fill-loud));
     color: var(--wa-color-neutral-fill-quiet);
 }
 
