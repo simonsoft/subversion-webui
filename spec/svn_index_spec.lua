@@ -1494,6 +1494,46 @@ describe("svn-index output_filter", function()
         assert.falsy(r.headers_out["ETag"])
     end)
 
+    it("does not set Cache-Control on a plain, non-htmx page load, since that response is always the same, safely cacheable document for its URL", function()
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        })
+
+        assert.falsy(r.headers_out["Cache-Control"])
+    end)
+
+    it("sets Cache-Control: no-store for a main-content-swap request, since it shares its URL with nav's own lazy-expansion fetches and only request headers distinguish them", function()
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, nil,
+            { ["HX-Request"] = "true", ["HX-Current-URL"] = "http://host/svn/demo1/trunk/", ["HX-Target"] = "wa-tree#svn-index" }
+        )
+
+        assert.are.equal("no-store", r.headers_out["Cache-Control"])
+    end)
+
+    it("sets Cache-Control: no-store for nav's own lazy-expansion fetches, so a cache never replays a stale expansion state for a URL it shares with other requests", function()
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, nil,
+            { ["HX-Request"] = "true", ["HX-Current-URL"] = "http://host/svn/demo1/trunk/", ["HX-Target"] = "wa-tree" }
+        )
+
+        assert.are.equal("no-store", r.headers_out["Cache-Control"])
+    end)
+
     it("renders an empty {{{page-head-end}}} placeholder by default (all four shipped templates ship an empty page-head-end.mustache)", function()
         local fixture = {
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
