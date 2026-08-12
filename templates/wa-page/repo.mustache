@@ -1,1 +1,1 @@
-<wa-tree-item class="repo"><a href="{{{hx_href}}}"><wa-icon name="database"></wa-icon> {{{name}}}/</a></wa-tree-item>
+<wa-tree-item class="repo" hx-on:wa-selection-change="this.querySelector(':scope > a[href]')?.click()"><a href="{{{hx_href}}}"><wa-icon name="database"></wa-icon> {{{name}}}/</a></wa-tree-item>
