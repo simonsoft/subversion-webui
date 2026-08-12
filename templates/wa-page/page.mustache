@@ -112,6 +112,36 @@ document.addEventListener("htmx:after:swap", (event) => {
     }
 });
 
+// The History link's REPORT response (see svn-log.lua's output_filter)
+// swaps into "#history-content", a permanently-present, initially-empty
+// div inside the static "#history-dialog" -- opening the dialog here,
+// once the swap actually lands, rather than synchronously on click, means
+// it stays closed if the request errors out instead of popping up empty.
+// Re-opening (clicking History again while already viewing an older
+// result) is harmless: "open = true" on an already-open wa-dialog is a
+// no-op, confirmed against a real browser.
+//
+// Deliberately NOT event.target: htmx's own source
+// (__trigger(ctx.sourceElement, "htmx:after:swap", {ctx})) dispatches this
+// event ON THE REQUEST'S SOURCE ELEMENT (here, the History link itself),
+// not the swap target -- and since it bubbles, event.target stays that
+// source element throughout, never becoming "#history-content". The
+// resolved swap target is instead reachable at event.detail.ctx.target
+// (confirmed against htmx's own source: ctx.target is reassigned to the
+// actual resolved Element via __resolveTarget() during request setup).
+document.addEventListener("htmx:after:swap", (event) => {
+    if (event.detail.ctx.target?.id === "history-content") {
+        document.getElementById("history-dialog").open = true;
+
+        // Every fresh History fetch re-renders entries collapsed (no
+        // "open" attribute -- see log-item.mustache) regardless of
+        // whatever expand/collapse state was left over from a previous
+        // view of this same dialog, so the toggle's own label is reset
+        // here to match.
+        setHistoryExpandToggleLabel(false);
+    }
+});
+
 // Nav's own [selected] wa-tree-item is only a one-time snapshot, taken
 // when nav rendered that item itself (root population or lazy-expansion,
 // both hx-target="this" -- see the ".svn-nav" branch above). Clicking a
@@ -190,6 +220,96 @@ document.addEventListener("keyup", (event) => {
     const item = event.target.closest?.("wa-tree-item");
 
     item?.querySelector(":scope > span[hx-get], :scope > a[href]")?.click();
+});
+
+// "Expand all"/"Collapse all" toggle for the History dialog's own entries
+// (see page.mustache's static "#history-expand-toggle", inside
+// "#history-dialog"'s own header-actions slot -- present in the DOM from
+// initial page load, unlike the entries themselves, which are swapped in
+// fresh on every History fetch). Delegated on document, not bound
+// directly: this script block runs in <head>, before <body> exists, so a
+// direct getElementById(...).addEventListener(...) here would find
+// nothing -- the same reason every other listener in this file is
+// registered on document. Re-queries wa-details.log-item at click time
+// for the same "swapped in fresh" reason -- there's no fixed set of
+// elements to bind to once, up front.
+document.addEventListener("click", (event) => {
+    if (!event.target.closest?.("#history-expand-toggle")) {
+        return;
+    }
+
+    const items = document.querySelectorAll("#history-content wa-details.log-item");
+
+    // "Expand all" while any entry is still collapsed (open them all);
+    // once every entry is already open, the same click collapses them
+    // all back down -- a stateful toggle, not a one-shot action. Doesn't
+    // set the label itself -- see the "wa-show"/"wa-hide" listeners below,
+    // which this bulk-set also drives.
+    const opening = [...items].some((item) => !item.open);
+
+    items.forEach((item) => { item.open = opening; });
+});
+
+function setHistoryExpandToggleLabel(allOpen) {
+    const button = document.getElementById("history-expand-toggle");
+
+    if (button) {
+        button.textContent = allOpen ? "Collapse all" : "Expand all";
+    }
+}
+
+// Each <wa-details class="log-item"> is independently expandable by
+// clicking its own summary directly, not just via "#history-expand-
+// toggle" above -- without this, manually opening/closing entries one at
+// a time leaves the toggle's label stale (e.g. every entry manually
+// opened, but the button still reads "Expand all", when clicking it
+// would now actually collapse everything). "wa-show"/"wa-hide" (bubbles,
+// composed -- confirmed against Web Awesome's own source) fire on the
+// <wa-details> host itself whenever "open" changes, whether from a real
+// click or a script setting the property directly (as the bulk toggle
+// above does), so recomputing here covers every way an entry's state can
+// change, uniformly.
+//
+// Deliberately deferred via requestAnimationFrame, not recomputed
+// immediately on each event: a bulk toggle sets "open" on every item in
+// one synchronous loop, firing one "wa-show"/"wa-hide" per item --
+// reacting to each individually would mean trusting a specific firing
+// order to land on the correct final state last, risking a visible
+// flicker between transitional states first. requestAnimationFrame is
+// guaranteed by the event-loop spec to run only after the entire
+// microtask queue -- including every one of those events' own dispatch,
+// however many fire and in whatever order -- has fully drained, so
+// recomputing there always reads settled state. The
+// "historyExpandToggleSyncScheduled" guard then collapses however many
+// events fired in one burst into a single recompute rather than one per
+// event.
+let historyExpandToggleSyncScheduled = false;
+
+function syncHistoryExpandToggleLabel() {
+    const items = document.querySelectorAll("#history-content wa-details.log-item");
+    setHistoryExpandToggleLabel(items.length > 0 && [...items].every((item) => item.open));
+}
+
+function scheduleHistoryExpandToggleLabelSync() {
+    if (historyExpandToggleSyncScheduled) {
+        return;
+    }
+    historyExpandToggleSyncScheduled = true;
+    requestAnimationFrame(() => {
+        historyExpandToggleSyncScheduled = false;
+        syncHistoryExpandToggleLabel();
+    });
+}
+
+document.addEventListener("wa-show", (event) => {
+    if (event.target.closest?.("#history-content wa-details.log-item")) {
+        scheduleHistoryExpandToggleLabelSync();
+    }
+});
+document.addEventListener("wa-hide", (event) => {
+    if (event.target.closest?.("#history-content wa-details.log-item")) {
+        scheduleHistoryExpandToggleLabelSync();
+    }
 });
 </script>
 <style>
@@ -303,6 +423,369 @@ div.svn-main {
     padding: var(--wa-space-m);
 }
 
+/* "#history-dialog" itself sizes to fit its content by default -- fixed
+   here (on the content div, not the dialog; a real "height", not just a
+   "max-height" cap) so the dialog's own overall height stays constant
+   regardless of how many entries exist or how many are expanded, rather
+   than visibly growing/shrinking the whole dialog as the user expands or
+   collapses individual entries. A short history just leaves blank space
+   below it instead -- deliberate, the tradeoff for a dialog that doesn't
+   jump around; the list scrolls internally past this height rather than
+   growing the dialog past the viewport. */
+#history-content {
+    height: 65vh;
+    overflow-y: auto;
+}
+
+/* Stops "--width: 90vw" (set on "#history-dialog" itself, in the markup
+   below) from growing past 1620px (90% of a 1800px window) on a very
+   wide monitor. Targets "::part(dialog)", the actual visible dialog box
+   living in wa-dialog's own shadow DOM, not a plain "max-width" on the
+   host element itself -- confirmed for real that the host's own box
+   doesn't propagate an ordinary CSS property into the shadow tree the
+   way a "--custom-property" does; only "::part()" actually reaches the
+   element that "width: var(--width)" is applied to internally. */
+#history-dialog::part(dialog) {
+    max-width: 1620px;
+}
+
+/* One <wa-details class="log-item"> per History entry (see
+   log-item.mustache) -- independent expand/collapse (no shared "name"
+   attribute), consistent vertical rhythm across entries via flex+gap
+   rather than per-item margins. --log-revision-column is the single
+   source of truth for a shared left-indent column, sized to comfortably
+   fit a 6-digit revision number -- everything that needs to line up
+   underneath the revision badge (".log-revision-slot",
+   ".log-message-preview", ".log-body", all below) keys off this one
+   value. Deliberately "rem", not "em": different elements using it live
+   in different parts of wa-details' own internals (its summary slot vs.
+   its default content slot), which can have different computed
+   font-sizes -- a real risk, not just caution, confirmed via a real
+   browser measurably misaligning two elements that used "em" here
+   instead. "rem" is always relative to the root font-size, so every use
+   resolves to the identical pixel value regardless of local font-size
+   context. */
+.svn-log {
+    --log-revision-column: 4rem;
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-xs);
+}
+
+/* Reuses the existing dashed-box style shared with the breadcrumb's own
+   "?p=REV" indicator (see ".revision-badge" above), but as a real link
+   now -- reset so it doesn't look like a boring blue hyperlink, matching
+   this file's own "wa-tree-item a" reset below for the same reason. */
+a.revision-badge {
+    color: inherit;
+    text-decoration: none;
+}
+
+/* Reserves the fixed-width indent column; the badge itself (see
+   ".revision-badge" above) stays tight around its own digits and just
+   sits left-aligned inside this wrapper, so shorter revisions leave
+   visible empty space to their right rather than stretching the badge's
+   own box to match. */
+.log-revision-slot {
+    display: inline-block;
+    min-width: var(--log-revision-column);
+}
+
+/* The copy/move source indicator's own revision badge (see
+   log-item.mustache's ".copy-from") -- same square dashed-box style, but
+   smaller, and never wrapped in ".log-revision-slot", since it sits
+   inline mid-sentence rather than anchoring a layout column. */
+.log-item .revision-badge-small {
+    font-size: 0.75em;
+}
+
+/* Two summary layouts depending on wa-page's own "view" attribute
+   (https://webawesome.com/docs/components/page -- the same desktop/mobile
+   split already used above for the header/navigation, reflecting actual
+   available layout width rather than a raw viewport media query). This
+   unqualified rule is the mobile/fallback layout: meta row, then the
+   message on its own row underneath -- there isn't reliably enough width
+   for a two-column layout at that size. "wa-page[view='desktop']" below
+   switches to a single row instead, meta and message side by side. */
+.log-summary {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-2xs);
+    /* wa-details' own shadow-DOM header doesn't stretch this slotted div to
+       the header's full available width -- left implicit, it's shrink-to-
+       fit around its own content instead, and that shrink-to-fit width
+       varies slightly per entry. Harmless in the column layout above, but
+       breaks the desktop row below: ".log-summary-meta"'s own flex-grow
+       needs real leftover row space to absorb, which a shrink-to-fit
+       container -- sized to exactly fit its children, with nothing left
+       over -- never has any of. */
+    width: 100%;
+}
+
+wa-page[view='desktop'] .log-summary {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--wa-space-m);
+}
+
+.log-summary-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--wa-space-s);
+}
+
+/* Not sized off the author text, for the same reason --log-revision-column
+   above is fixed: author is free text that can be anything from "bob" to
+   a full email address, so leaving this column's width to its content
+   would make every entry's message start position only as reliable as
+   that guess. The "%" term in the clamp() below ties this column's size
+   to the dialog's own real width instead (a percentage flex-basis
+   resolves against ".log-summary"'s own rendered content-box width,
+   which already reflects the dialog's "--width: 90vw" plus any padding
+   along the way); the min/max rem bounds keep it legible on a dialog
+   only just past the mobile breakpoint, and cap how wide it grows on a
+   very large one -- 32rem, sized against a real email address (~28
+   characters, ~218px of text alone), so a realistic author value can
+   actually fit rather than always ellipsis-truncating regardless of how
+   much space the dialog has to spare. flex-shrink:1 and min-width:0
+   share any space deficit with ".log-message-preview" below (also
+   shrinkable) via normal flex distribution, rather than concentrating it
+   entirely on one column -- ".log-author strong" below is the actual
+   ellipsis-truncation target and carries its own min-width:0 for the
+   same shrink-below-automatic-minimum reason. flex-grow:1
+   (".log-message-preview" stays grow:0) means this column, not a dead
+   gap, absorbs any leftover row space: the dialog's own width is
+   viewport-relative and uncapped, so a wide window can leave more row
+   space than either column's preferred size needs, and without
+   something claiming it that surplus just becomes empty space between
+   the two columns. max-width repeats the clamp()'s own 32rem cap as a
+   separate property because flex-grow can push a flex item past its
+   flex-basis (all clamp() actually constrains) with nothing else
+   stopping it -- clamp()'s max argument bounds the *starting* size, not
+   continued growth. */
+wa-page[view='desktop'] .log-summary-meta {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: clamp(20rem, 32%, 32rem);
+    max-width: 32rem;
+    min-width: 0;
+    flex-wrap: nowrap;
+}
+
+.log-author {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--wa-space-2xs);
+    color: var(--wa-color-text-quiet);
+}
+
+wa-page[view='desktop'] .log-author {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* The actual truncation target -- ellipsis goes on the text itself, not
+   the flex row that also contains the icon, since a flex container with
+   overflow:hidden doesn't truncate its children's rendered text on its
+   own. */
+wa-page[view='desktop'] .log-author strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+/* Both the always-visible collapsed preview and the expanded full message
+   (".log-message-full" below) show the same content, just clamped vs.
+   not -- sharing this same font/color treatment is what makes the
+   expanded one read as "the same text, just fully shown" rather than a
+   distinct code block. white-space is deliberately NOT shared here (see
+   each rule below) -- ".log-message-full" needs "pre-wrap", not
+   "pre-line", to avoid a real fidelity regression. */
+.log-message-preview,
+.log-message-full {
+    color: var(--wa-color-text-quiet);
+}
+
+/* Mobile: on its own row below ".log-summary-meta" (revision/date/
+   author), indented to the exact same fixed column ".log-body" below
+   also uses -- not positioned by flowing after (or right-aligning past)
+   the author field, for the same reason ".log-summary-meta" above isn't
+   sized off the author text on desktop. Desktop (see
+   "wa-page[view='desktop']" below) instead shares a row with that meta
+   column, sized the same percentage-of-the-row-plus-clamp() way so it
+   scales with the dialog. Deliberately flex-grow:0, unlike meta -- this
+   is prose, and a two-line clamp gets harder to read past a certain line
+   length, so once it reaches its own clamp() max it should stop growing
+   rather than keep claiming space; meta absorbs any further leftover
+   instead (see its own flex-grow:1 below), which also naturally leaves
+   this column at the row's right edge with no push needed to put it
+   there. Shrinkable (flex-shrink:1) for the same reason ".log-summary-
+   meta" above has no hard min-width: a rigid column forces the *other*
+   one to absorb 100% of any space deficit alone once its own clamp()
+   floor is reached, defeating the smooth, shared scaling clamp() is
+   supposed to provide across the whole row. Two-line clamp: a
+   -webkit-box, not a fade-gradient overlay -- this app targets evergreen
+   Chromium/Firefox/Safari, which all implement these (nominally
+   WebKit-prefixed, now universal) properties, simpler and more robust
+   than a gradient mask over wa-details' own light/dark theme tokens, with
+   no separate overflow-detection needed either. Hidden entirely once the
+   entry is expanded (see ".log-item[open]" below) -- the full message
+   takes over instead, so the same text is never shown twice at once.
+   white-space: pre-line (not the full-fidelity "pre-wrap"
+   ".log-message-full" uses below) preserves embedded line breaks but
+   collapses runs of multiple spaces/tabs -- an acceptable trade-off for
+   an already-truncated 2-line summary, avoiding the wider, more code-like
+   look "pre-wrap" gives a message with intentional multi-space
+   formatting. */
+.log-message-preview {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: pre-line;
+    /* Mobile's own reading-width cap -- overridden below on desktop to
+       36rem, matching that layout's own clamp() max, rather than just
+       inheriting this smaller value and silently capping the desktop
+       column below what its own clamp() intends. */
+    max-width: 28rem;
+}
+
+.log-item[open] .log-message-preview {
+    display: none;
+}
+
+wa-page[view='desktop'] .log-message-preview {
+    flex-grow: 0;
+    flex-shrink: 1;
+    flex-basis: clamp(16rem, 40%, 36rem);
+    max-width: 36rem;
+    min-width: 0;
+}
+
+/* The full commit message, revealed once expanded, indented to match
+   ".log-body" below. Uses Web Awesome's own "wa-flank" utility (see
+   log-item.mustache: this div's two direct children are the comment icon,
+   then the message text) so a wrapped message stays in its own column to
+   the right of the icon instead of its continuation lines sliding back
+   underneath it -- ordinary inline content (icon + text in one flow)
+   can't do this; wrapped lines of plain inline content always return to
+   the container's own left edge, not the position just past the icon.
+   white-space: pre-wrap (not ".log-message-preview"'s own "pre-line")
+   preserves runs of multiple spaces/tabs as well as newlines -- this is
+   the "show me everything, exactly as written" view, so it keeps full
+   fidelity for a message using intentional multi-space formatting (an
+   indented list, an ASCII-aligned snippet, etc.), which "pre-line" alone
+   would otherwise silently collapse. Height-capped at 12rem -- roomy
+   enough for most real commit messages to read in full without
+   scrolling, while still bounding a pathological multi-hundred-line
+   message to a fixed, independently scrollable box instead of growing
+   the whole dialog past the viewport. */
+.log-message-full {
+    white-space: pre-wrap;
+    margin: 0 0 var(--wa-space-s);
+    max-height: 12rem;
+    overflow-y: auto;
+    /* wa-flank centers its two children by default, which centers the
+       icon against the full height of a wrapped multi-line message
+       instead of sitting next to its first line. baseline lines the icon
+       up with the text's own first-line baseline regardless of how many
+       lines the message wraps to -- flex-start looked wrong too: it pins
+       the icon to the very top of the line box, above the glyphs'
+       cap-height, so it read as floating above the text rather than
+       beside it. */
+    align-items: baseline;
+    /* wa-flank's own default gap is wider than ".changed-paths li" below
+       sets explicitly, which left the message text starting further from
+       its icon than each changed-path's text does. Matching it here keeps
+       the icon-to-text gap identical in both places. */
+    gap: var(--wa-space-2xs);
+}
+
+/* Dims the comment icon (rather than showing an empty italic span next to
+   a full-strength icon, which reads as "this entry is broken") when a
+   revision genuinely has no log message. */
+.log-message-empty wa-icon {
+    opacity: 0.4;
+}
+
+/* ".log-message-preview" (above) and this both indent to the exact same
+   fixed column by default -- past the revision column plus the row's own
+   gap -- so the collapsed and expanded states share one consistent left
+   edge, kept in one shared rule rather than repeating the same calc()
+   twice. Both view-specific overrides below drop this indent back to 0
+   again on their own terms: desktop, because ".log-message-preview" is a
+   sibling of the meta row rather than indented underneath it there;
+   mobile, to reclaim the column's width on a screen where it's scarce,
+   for both the collapsed preview and the expanded body alike.
+   --flank-size is Web Awesome's own "wa-flank" utility custom property
+   (https://webawesome.com/docs/utilities/flank/), controlling how wide
+   the fixed/natural-size first child of a ".wa-flank" is -- set once
+   here, it inherits down to both ".log-message-full" and every
+   ".changed-paths li" below (both use ".wa-flank" with an icon as their
+   first child), so the message icon and every changed-path icon reserve
+   the exact same column width and land in the same vertical line,
+   regardless of each icon's own glyph metrics. */
+.log-message-preview,
+.log-body {
+    margin-left: calc(var(--log-revision-column) + var(--wa-space-s));
+}
+
+.log-body {
+    --flank-size: 1.5rem;
+}
+
+wa-page[view='mobile'] .log-message-preview,
+wa-page[view='mobile'] .log-body {
+    margin-left: 0;
+}
+
+.changed-paths {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-2xs);
+}
+
+/* Each <li> is itself a "wa-flank" (see log-item.mustache: its own two
+   direct children are the action icon, then a <span> wrapping the path
+   link and any copy-from indicator) -- own "display" deliberately left
+   unset here so wa-flank's own utility CSS (loaded earlier, in <head>)
+   supplies it uncontested; redeclaring "display: flex" on this same
+   selector would win the cascade (this stylesheet loads after Web
+   Awesome's own) and silently break the flank layout. --flank-size (see
+   ".log-body" above) is what actually aligns this icon with the log
+   message's own icon above it -- but only once margin is reset here too:
+   Web Awesome's own base stylesheet gives every <li> a default
+   margin-inline-start (18px), a general typography reset with no
+   awareness this specific <li> is a custom flex layout, not a bulleted
+   list item -- left unreset, it pushed this icon further right than
+   ".log-message-full"'s own icon, out of alignment despite both sharing
+   the same --flank-size. */
+.changed-paths li {
+    margin: 0;
+    gap: var(--wa-space-2xs);
+    align-items: baseline;
+}
+
+.changed-paths a {
+    color: inherit;
+}
+
+/* A copy/move's own source indicator, inline after the destination path
+   -- no arrow icon (read as confusing), just "from <path> <small revision
+   badge>". */
+.copy-from {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--wa-space-2xs);
+    color: var(--wa-color-text-quiet);
+    font-size: var(--wa-font-size-s);
+}
+
 /* The navigation tree only ever browses folders -- files (and the ".."
    entry, which is superseded by the header's "Up" button) fetched into it
    via htmx are hidden here regardless of how deeply they end up nested. */
@@ -333,17 +816,18 @@ wa-tree-item a {
 <body>
 <wa-page>
 <header slot="header">
-<div class="wa-cluster">
+<div class="wa-cluster" id="header-left">
 <wa-icon data-toggle-nav name="bars" label="Menu" style="padding: var(--wa-space-s);"></wa-icon>
 <a href="{{{repo_parent_path}}}"><wa-icon name="house"></wa-icon>Start</a>
 {{#has_base}}<a href="../{{{revision_suffix_up}}}"><wa-icon name="turn-up"></wa-icon>Up</a>{{/has_base}}
+{{#has_base}}<a href="{{{history_href}}}" hx-action="{{{history_href}}}" hx-method="REPORT" hx-target="#history-content" hx-swap="innerHTML" hx-trigger="click"><wa-icon name="clock-rotate-left"></wa-icon>History</a>{{/has_base}}
 </div>
 </header>
 <nav slot="subheader" id="subheader">
 <div class="wa-cluster" id="breadcrumb">
 <wa-breadcrumb>
 <span slot="separator">/</span>
-{{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
+{{#breadcrumbs}}<wa-breadcrumb-item{{^last}} hx-get="{{{hx_href}}}" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer,#header-left" hx-trigger="click"{{/last}}>{{#is_repo}}<wa-icon name="database"></wa-icon> {{/is_repo}}{{#is_dir}}<wa-icon name="folder" variant="regular"></wa-icon> {{/is_dir}}{{name}}</wa-breadcrumb-item>
 {{/breadcrumbs}}
 </wa-breadcrumb>
 {{#revision_pinned}}<span class="revision-badge">{{{revision_pinned}}}</span>{{/revision_pinned}}
@@ -362,6 +846,17 @@ wa-tree-item a {
 <span>{{#has_base}}Repository: {{base}} &middot; Path: {{/has_base}}{{path}} {{#has_base}}&middot; Revision: {{rev}}{{/has_base}}</span>
 <em>Powered by <a href="{{svn_href}}">Apache Subversion</a> version {{svn_version}}.</em>
 </footer>
+<!-- Unslotted, so it lands in wa-page's default slot alongside ".svn-main"
+     -- deliberately a real descendant of <wa-page>, not a sibling after it,
+     so the "wa-page[view='desktop']"/"wa-page[view='mobile']" rules above
+     (see ".log-summary" etc.) actually match its contents. wa-dialog
+     renders its own internal native <dialog>, which paints in the
+     browser's top layer regardless of DOM ancestry, so nesting it here
+     doesn't affect its overlay/positioning behavior at all. -->
+<wa-dialog id="history-dialog" label="History" light-dismiss style="--width: 90vw;">
+<wa-button id="history-expand-toggle" slot="header-actions" appearance="plain" size="small">Expand all</wa-button>
+<div id="history-content"></div>
+</wa-dialog>
 </wa-page>
 </body>
 </html>

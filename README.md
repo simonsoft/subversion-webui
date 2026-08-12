@@ -74,6 +74,85 @@ For serving XML responses (e.g. `SVNIndexXSLT` output) to browsers that
 have dropped native client-side XSLT support, see
 [README-xslt-polyfill.md](README-xslt-polyfill.md) for an independent
 output filter that polyfills it instead.
+
+### History (wa-page skin only)
+
+`wa-page` adds a "History" link to the page header that issues a real HTTP
+`REPORT` request (svn's log-report) against the directory currently being
+browsed, rendered as a basic log table in place of the directory listing.
+This needs two additional filters on the same `<Location /svn>` block used
+above -- an input filter that synthesizes the log-report request body, and
+an output filter that renders its XML response as HTML:
+
+```
+LuaInputFilter SVN_LOG_REPORT_BODY \
+        "/opt/subversion-webui/mod-lua/svn-log.lua" \
+        input_filter
+
+LuaOutputFilter SVN_LOG_HTML \
+        "/opt/subversion-webui/mod-lua/svn-log.lua" \
+        output_filter
+
+<Location /svn>
+
+    # ... existing SVNIndexXSLT / SVN_XML_INDEX filter config from above ...
+
+    SetInputFilter SVN_LOG_REPORT_BODY
+
+    FilterDeclare SVN_LOG_HTML
+
+    FilterProvider SVN_LOG_HTML SVN_LOG_HTML \
+        "%{REQUEST_METHOD} == 'REPORT' \
+            && %{CONTENT_TYPE} =~ m#^(?:text|application)/xml(?:;|$)# \
+            && %{REQUEST_URI} =~ m#/$#"
+
+    FilterProtocol SVN_LOG_HTML "change=yes;byteranges=no"
+    FilterChain SVN_LOG_HTML
+
+    # Maximum number of log entries returned by the History link.
+    # Defaults to 50 when unset.
+    # SetEnv SVN_LOG_LIMIT 50
+
+    # Locale for the date shown on each log entry (BCP-47 language tag,
+    # e.g. "sv"). Omitted/unset falls back to the browser's own locale.
+    # SetEnv SVN_LOG_DATE_LANG sv
+
+</Location>
+```
+
+`SetInputFilter` (unlike `FilterDeclare`/`FilterProvider`) has no per-request
+condition syntax, so it activates on every request under this `Location` --
+including real `svn` client traffic, which also uses `REPORT` for its own
+protocol purposes (update-report, etc.) against the exact same URL space.
+`SVN_LOG_REPORT_BODY`'s `input_filter` guards against this itself: it only
+ever acts on a `REPORT` request whose `Content-Type` is form-encoded --
+htmx v4's own default for the History link's request (no `hx-vals`/form
+ancestor to serialize; confirmed to be
+`application/x-www-form-urlencoded;charset=UTF-8`), and nothing else in
+this app or in real `svn` client traffic ever sends. This is deliberately an
+allow-list, not a deny-list on XML: real `svn` clients always declare
+`Content-Type: text/xml` on a REPORT body (a DeltaV/WebDAV convention,
+confirmed against Subversion's own `libsvn_ra_serf` source), but a
+misbehaving or non-standard client that fails to set that -- or sets
+something else entirely -- must still pass through untouched rather than
+being silently treated as this app's own. Every request that isn't
+*exactly* the History link's own declared Content-Type, real svn-client
+REPORT traffic included, passes through unmodified.
+
+This feature is wired into the `wa-page` template only; `SVN_INDEX_TEMPLATE`
+must be set to `wa-page` for the History link to appear (see above) -- the
+other three templates have no `log.mustache`/`log-item.mustache` files and
+are unaffected by this filter pair being installed (they simply never send a
+non-XML-content-typed `REPORT` request).
+
+`SVN_INDEX_QUERY_FILE` (see above) is now also consulted by the History
+log's own output filter -- the same literal query-string fragment is
+appended to a changed-path's link when it refers to a file (never a
+directory), exactly mirroring how it's already applied to `svn-index.lua`'s
+own file-entry links. Existing deployments that already set
+`SVN_INDEX_QUERY_FILE` get this behavior automatically, with no config
+change needed.
+
 ### Apache httpd transfer
 
 The transfer will be chunked unless returned in a single brigade. This is already the case with mod_dav_svn regardless of additional filter. However, if deflate or other compression filter is enabled, the compressed response might fit into the compression filter's buffer and then become a regular transfer with Content-Length header.
@@ -91,3 +170,48 @@ luarocks install lrexlib-pcre2
 
 busted spec/
 ```
+
+### Browser smoke test (History dialog, optional)
+
+The tests above run `output_filter` against the real `luaexpat`/`lustache`
+dependencies, but everything downstream of its own HTML string -- whether
+the real Web Awesome custom elements (`<wa-details>`, `<wa-dialog>`,
+`<wa-format-date>`) actually behave as documented once loaded in a real
+browser, and whether the CSS two-line clamp on each entry's collapsed
+preview actually clamps to the correct pixel height -- is outside what a
+pure-Lua `busted` test can verify at all. `smoketest/` is a separate,
+optional, Puppeteer-driven check that renders the real `svn-log.lua`
+output through a real browser to cover exactly that gap.
+
+It is entirely independent of `busted spec/`: not run as part of it, adds
+no Node.js dependency to the rest of the repo, and isn't required for
+ordinary development -- `busted spec/` remains the primary, fast test loop.
+
+Prerequisites:
+
+- Node.js >=20.
+- A `lua5.3` interpreter on `PATH` (already required for `busted spec/`
+  above); override with `LUA_BIN=lua` (or similar) if it's named
+  differently on your system.
+- Outbound network access to `ka-f.webawesome.com` and `cdn.jsdelivr.net`
+  -- the same CDN hosts `templates/wa-page/page.mustache` itself loads Web
+  Awesome/htmx from. This cannot run fully offline.
+- `npm install` downloads Puppeteer's own bundled Chromium (roughly
+  200MB) on first run, cached under `smoketest/.cache/puppeteer` (see
+  `.puppeteerrc.cjs`) rather than the shared `~/.cache/puppeteer`.
+
+```
+cd smoketest
+npm install
+npm test
+```
+
+Screenshots and the generated harness page are written to
+`smoketest/output/` (gitignored) for manual inspection.
+
+If `npm install`/Puppeteer's launch fails citing a permissions problem in
+its cache directory, this is almost always a stale/root-owned
+`~/.cache/puppeteer` left over from some unrelated earlier install on that
+machine -- `.puppeteerrc.cjs` avoids this by pointing `cacheDirectory` at
+a project-local path instead, so a fresh clone shouldn't hit it. If it
+does anyway, delete `smoketest/.cache/` and re-run `npm install`.

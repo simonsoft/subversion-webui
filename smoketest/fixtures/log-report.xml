@@ -1,0 +1,31 @@
+<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>103</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2026-08-10T14:22:04.000000Z</S:date>
+<D:comment>Fix typo in README.</D:comment>
+<S:modified-path node-kind="file">/trunk/README.txt</S:modified-path>
+</S:log-item>
+<S:log-item>
+<D:version-name>102</D:version-name>
+<D:creator-displayname>bob.johansson@example.com</D:creator-displayname>
+<S:date>2026-08-09T09:15:00.000000Z</S:date>
+<D:comment>This is a much longer commit message that should wrap across
+several lines and definitely exceed a two-line clamp when the entry is
+collapsed, so the smoke test can measure the clamp/overflow behavior
+against a real browser layout rather than just asserting it via string
+matching in the Lua spec suite.</D:comment>
+<S:added-path node-kind="file" copyfrom-path="/trunk/old-name.txt" copyfrom-rev="90">/trunk/new-name.txt</S:added-path>
+<S:deleted-path node-kind="dir">/trunk/obsolete</S:deleted-path>
+</S:log-item>
+<S:log-item>
+<D:version-name>101</D:version-name>
+<D:creator-displayname>carol</D:creator-displayname>
+<S:date>2026-08-08T16:40:12.000000Z</S:date>
+<D:comment>Initial import.
+
+  - added main.c
+  - added README.txt</D:comment>
+<S:modified-path node-kind="file">/trunk/main.c</S:modified-path>
+</S:log-item>
+</S:log-report>

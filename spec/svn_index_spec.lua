@@ -468,11 +468,11 @@ describe("svn-index output_filter", function()
         -- BOTH htmx's own fetch AND the anchor's native default navigation,
         -- racing each other into a real full-page reload).
         assert.truthy(html:find(
-            '<wa-breadcrumb-item hx-get="/svn/myrepo/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer" hx-trigger="click"><wa-icon name="database"></wa-icon> myrepo</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item hx-get="/svn/myrepo/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer,#header-left" hx-trigger="click"><wa-icon name="database"></wa-icon> myrepo</wa-breadcrumb-item>',
             1, true
         ))
         assert.truthy(html:find(
-            '<wa-breadcrumb-item hx-get="/svn/myrepo/trunk/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer" hx-trigger="click"><wa-icon name="folder" variant="regular"></wa-icon> trunk</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item hx-get="/svn/myrepo/trunk/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer,#header-left" hx-trigger="click"><wa-icon name="folder" variant="regular"></wa-icon> trunk</wa-breadcrumb-item>',
             1, true
         ))
         assert.truthy(html:find(
@@ -524,7 +524,7 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer" hx-trigger="click">',
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer,#header-left" hx-trigger="click">',
             1, true
         ))
         assert.falsy(html:find("click once", 1, true))
@@ -1012,6 +1012,41 @@ describe("svn-index output_filter", function()
         ))
     end)
 
+    it("appends repo_root to history_href, layering after an existing \"?p=REV\" pin with \"&amp;\"", function()
+        -- svn-log.lua's own output_filter has no way to know where the
+        -- repo root sits in the URL space (only the directory-listing XML
+        -- this file parses carries <index base="..." path="...">) -- it
+        -- reads this back via r.args to anchor changed-path links. Built
+        -- raw (both request_href+revision_suffix and the repo_root
+        -- addition) and escape_html'd exactly once at the end, like every
+        -- other href in this file -- hence "&amp;", not "&".
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/trunk/" base="myrepo">
+</index>
+</svn>]]
+        }, "/svn/myrepo/trunk/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(
+            'hx-action="/svn/myrepo/trunk/?p=10&amp;repo_root=/svn/myrepo/"',
+            1, true
+        ))
+    end)
+
+    it("appends repo_root to history_href using \"?\" rather than \"&amp;\" when unpinned", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="10" path="/trunk/" base="myrepo">
+</index>
+</svn>]]
+        }, "/svn/myrepo/trunk/", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(
+            'hx-action="/svn/myrepo/trunk/?repo_root=/svn/myrepo/"',
+            1, true
+        ))
+    end)
+
     it("tags a dir entry matching SVN_INDEX_HIDE_DIR with the \"navhidden\" class, leaving a non-matching sibling plain", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
@@ -1289,28 +1324,36 @@ describe("svn-index output_filter", function()
         end
     end)
 
-    it("pulls the breadcrumb and footer along via hx-select-oob on dir.mustache's own main-swap label", function()
-        -- Both would otherwise go stale once main's content is swapped to
-        -- a different directory -- the footer shows the current
-        -- repository/path/revision, exactly the same kind of "reflects
-        -- wherever main currently is" content the breadcrumb already is.
+    it("pulls the breadcrumb, footer, and header cluster along via hx-select-oob on dir.mustache's own main-swap label", function()
+        -- All three would otherwise go stale once main's content is
+        -- swapped to a different directory -- the footer shows the current
+        -- repository/path/revision, the same kind of "reflects wherever
+        -- main currently is" content the breadcrumb already is, and the
+        -- header cluster's own "History" link (history_href, see
+        -- template_context) is both absolute and request-specific --
+        -- unlike "Start" (fixed) or "Up" (a relative href that re-resolves
+        -- against wherever the browser currently is), it goes stale after
+        -- exactly this kind of non-reloading navigation unless refreshed
+        -- the same way.
         -- Rather than a server-side distinction (like HX-Push-Url's
         -- "wa-tree#svn-index" HX-Target check above), this is scoped
         -- entirely client-side: only dir.mustache's label itself (the
         -- element with hx-target="#svn-index") carries
-        -- hx-select-oob="#breadcrumb,#footer", so only *its own* requests
-        -- ever pull the fetched page's breadcrumb/footer along -- nav's
-        -- own in-place lazy-load fetch is a different element entirely (no
-        -- hx-select-oob at all) and is naturally unaffected, with no
-        -- header-sniffing needed on the Lua side. "#breadcrumb" is the
-        -- wrapping div (not just <wa-breadcrumb> itself), so the revision
-        -- badge -- a sibling inside that same div -- rides along with it
-        -- as one conceptual unit. Scoped to that div, not the whole
-        -- "#subheader", so this swap leaves the "Show folders" wa-switch
-        -- (also inside #subheader) alone -- its own checked state would
-        -- otherwise reset every time main navigates to a new directory.
-        -- The footer has no such stateful sibling to protect (it's purely
-        -- informational), so it's targeted as a whole, unlike #subheader.
+        -- hx-select-oob="#breadcrumb,#footer,#header-left", so only
+        -- *its own* requests ever pull the fetched page's
+        -- breadcrumb/footer/header along -- nav's own in-place lazy-load
+        -- fetch is a different element entirely (no hx-select-oob at all)
+        -- and is naturally unaffected, with no header-sniffing needed on
+        -- the Lua side. "#breadcrumb" is the wrapping div (not just
+        -- <wa-breadcrumb> itself), so the revision badge -- a sibling
+        -- inside that same div -- rides along with it as one conceptual
+        -- unit. Scoped to that div, not the whole "#subheader", so this
+        -- swap leaves the "Show folders" wa-switch (also inside
+        -- #subheader) alone -- its own checked state would otherwise reset
+        -- every time main navigates to a new directory. The footer and
+        -- header cluster have no such stateful sibling to protect (both
+        -- purely informational/navigational), so each is targeted as a
+        -- whole, unlike #subheader.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -1321,8 +1364,9 @@ describe("svn-index output_filter", function()
 
         assert.truthy(html:find('<div class="wa-cluster" id="breadcrumb">', 1, true))
         assert.truthy(html:find('<footer slot="footer" id="footer">', 1, true))
+        assert.truthy(html:find('<div class="wa-cluster" id="header-left">', 1, true))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer" hx-trigger="click">',
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#breadcrumb,#footer,#header-left" hx-trigger="click">',
             1, true
         ))
     end)
