@@ -805,29 +805,34 @@ wa-tree-item a {
 <wa-page>
 {{{page-header}}}
 {{{page-subheader}}}
-<!-- file.mustache/repo.mustache's wa-tree-item is a plain <a href> with no
-     htmx at all (real browser navigation, sometimes a file download -- not
-     something an ajax swap can stand in for), so wa-tree's own selecting-
-     click-anywhere-in-the-row and keyboard Enter/Space never reach it: the
-     row's own dead zone doesn't hit the anchor, and wa-tree's keydown
-     handler drives selection by mutating state, never firing a native
-     click. hx-on:wa-selection-change here (not on the item itself) is
-     deliberate: Web Awesome's own wa-tree dispatches this event on itself,
-     never on the individual wa-tree-item (confirmed against wa-tree's own
-     source, tree.ts's selectItem()) -- a listener on the item would sit on
-     a descendant of where the event actually fires and would never see it,
-     since bubbling only flows outward to ancestors, never down into
-     descendants. Scoped to selection.forEach(...) rather than a single
-     item, since single-selection mode still reports an array; dir entries
-     (a <span>, not an <a>) are unaffected -- the querySelector simply
-     finds nothing to click for those, already handled by dir.mustache's
-     own trigger instead. -->
+<!-- Neither dir.mustache's <span hx-get> nor file/repo.mustache's plain
+     <a href> ever activates via wa-tree's own selecting-click-anywhere-in-
+     the-row or keyboard Enter/Space: wa-tree's keydown handler drives
+     selection by mutating state, never firing a native click, and a
+     dead-zone click (indentation/chevron area, or empty row space) never
+     lands on either child element. hx-on:wa-selection-change here (not on
+     the item itself) is deliberate: Web Awesome's own wa-tree dispatches
+     this event on itself, never on the individual wa-tree-item (confirmed
+     against wa-tree's own source, tree.ts's selectItem()) -- a listener on
+     the item would sit on a descendant of where the event actually fires
+     and would never see it, since bubbling only flows outward to
+     ancestors, never down into descendants. One shared handler covers
+     both entry kinds: a synthesized click on dir's span re-fires its own
+     existing hx-get/hx-target/hx-swap/hx-select/hx-select-oob (no
+     double-fire -- dir.mustache's own "click[this.parentElement.selected]"
+     filter only matches once .selected is already true, which is only
+     ever the case for this synthetic replay or a genuine reselect, never
+     the original click that caused the selection in the first place); a
+     synthesized click on file/repo's anchor is real browser navigation,
+     sometimes a file download, that no ajax swap could stand in for.
+     Scoped to selection.forEach(...) rather than a single item, since
+     single-selection mode still reports an array. -->
 <nav slot="navigation">
-<wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > a[href]')?.click())">
+<wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">
 </wa-tree>
 </nav>
 <div class="svn-main">
-<wa-tree class="svn-index" id="svn-index" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > a[href]')?.click())">
+<wa-tree class="svn-index" id="svn-index" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">
 {{{svn_index}}}</wa-tree>
 </div>
 {{{page-footer}}}
