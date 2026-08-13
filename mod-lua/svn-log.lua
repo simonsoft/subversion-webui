@@ -731,6 +731,18 @@ function output_filter(r)
     -- it silently drops that row.
     final_parts[#final_parts + 1] = table.concat(pending_output)
 
+    -- The postamble itself, unlike the streamed items above it, is a
+    -- small fragment fully known at this point -- rendered through
+    -- lustache once here, exactly like svn-index.lua's own
+    -- page-header/page-subheader/page-footer are pre-rendered into named
+    -- context keys and resolved via a single lustache:render call (see its
+    -- own "context[\"page-header\"] = lustache:render(...)" convention).
+    -- log.mustache's own postamble region carries a literal
+    -- "{{{svn_log_more}}}" placeholder (right before its closing "</div>")
+    -- for exactly this: left absent from postamble_context, it simply
+    -- interpolates to nothing, same as a missing page-header does today.
+    local postamble_context = {}
+
     -- A "load more" sentinel is only worth appending when this batch was
     -- actually full (rendered_count == resolved_limit): per
     -- build_log_report_body's own rationale comment above, mod_dav_svn
@@ -751,13 +763,13 @@ function output_filter(r)
         if last_revision_num and last_revision_num > 0 then
             local more_href = build_more_href(request_href, tostring(last_revision_num - 1), repo_root)
 
-            final_parts[#final_parts + 1] = lustache:render(templates.more, {
+            postamble_context.svn_log_more = lustache:render(templates.more, {
                 more_href = escape_html(more_href)
             })
         end
     end
 
-    final_parts[#final_parts + 1] = postamble_html
+    final_parts[#final_parts + 1] = lustache:render(postamble_html, postamble_context)
 
     coroutine.yield(table.concat(final_parts))
 

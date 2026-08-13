@@ -505,19 +505,19 @@ div.svn-main {
 }
 
 /* The continuous-scroll sentinel (see log-more.mustache) -- a direct child
-   of ".svn-log", so it already inherits the flex-column stacking/gap above
-   and just needs its own centered, muted loading affordance. Intersecting
-   this element is what triggers the next batch's fetch (see its own
-   "hx-trigger"), so it must stay genuinely visible/laid-out (not
-   display:none) for IntersectionObserver to ever fire on it. */
+   of ".svn-log", so it already inherits the flex-column stacking/gap above.
+   Its own layout/centering/muted-text styling is handled entirely by Web
+   Awesome utility classes on the markup itself (wa-cluster,
+   wa-justify-content-center, wa-color-text-quiet, wa-font-size-s) -- only
+   padding is set here, since Web Awesome has no padding/spacing-inset
+   utility of its own. Intersecting this element is what triggers the next
+   batch's fetch (see its own "hx-trigger"), so it must stay genuinely
+   visible/laid-out (not display:none) for IntersectionObserver to ever
+   fire on it -- the "htmx-indicator" child (see log-more.mustache) is what
+   actually stays invisible until the fetch is in flight, not this element
+   itself. */
 .svn-log-more {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--wa-space-xs);
     padding: var(--wa-space-s);
-    color: var(--wa-color-text-quiet);
-    font-size: var(--wa-font-size-s);
 }
 
 /* Reuses the existing dashed-box style shared with the breadcrumb's own
