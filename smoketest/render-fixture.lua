@@ -109,10 +109,18 @@ local function run_output_filter(xml, unparsed_uri, subprocess_env)
     return table.concat(pieces)
 end
 
-local fixture_xml = read_file(script_dir() .. "fixtures/log-report.xml")
+-- Optional CLI args (arg[1]: fixture path, arg[2]: browse URI) let a second
+-- caller render a different fixture/URI combination through this same real
+-- output_filter -- see history-dialog.test.mjs's own folder-toggle test
+-- section. Both default to today's original hardcoded values, so the
+-- original no-args invocation is unaffected.
+local fixture_path = arg[1] or (script_dir() .. "fixtures/log-report.xml")
+local browse_uri = arg[2] or "/svn/demo1/trunk/?repo_root=/svn/demo1/"
+
+local fixture_xml = read_file(fixture_path)
 
 io.write(run_output_filter(
     fixture_xml,
-    "/svn/demo1/trunk/?repo_root=/svn/demo1/",
+    browse_uri,
     { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_LIMIT = "50" }
 ))

@@ -79,7 +79,17 @@ async function buildHarness(renderedLogHtml) {
     // REPORT fetch, only what happens once the dialog already has content.
     dialogOpenTag = dialogOpenTag.replace('id="svn-history-dialog"', 'id="svn-history-dialog" open');
 
-    const expandToggleLine = extractLineContaining(source, 'id="svn-history-expand-toggle"', "#svn-history-expand-toggle");
+    // The folder-toggle switch and expand-toggle button live together
+    // inside one "wa-cluster" wrapper div (for shared baseline alignment --
+    // see its own comment in page.mustache), so both come out as a single
+    // block extraction rather than two independent extractLineContaining()
+    // calls: extractBlock()'s "find the first closing tag after the open
+    // tag" search correctly lands on this div's own "</div>", since neither
+    // <wa-switch>...</wa-switch> nor <wa-button>...</wa-button> in between
+    // contains a nested "</div>" of their own.
+    const headerActionsBlock = extractBlock(
+        source, '<div class="wa-cluster wa-gap-s" slot="header-actions">', "</div>", "header-actions cluster"
+    );
 
     const contentDivLine = extractLineContaining(source, 'id="svn-history-content"', "#svn-history-content");
     const contentDivOpenTagMatch = contentDivLine.match(/^<div id="svn-history-content">/);
@@ -125,7 +135,7 @@ ${styleBlock}
 <body>
 <wa-page>
 ${dialogOpenTag}
-${expandToggleLine}
+${headerActionsBlock}
 ${contentDivOpenTag}
 ${renderedLogHtml}
 </div>
@@ -153,9 +163,11 @@ function wrapWithView(html, view) {
 // --- Run the real Lua driver (renders real HTML via the actual
 // mod-lua/svn-log.lua output_filter, not a hand-approximated mock). ---
 
-function renderLogHtml() {
+function renderLogHtml(fixturePath, browseUri) {
     const luaBin = process.env.LUA_BIN || "lua5.3";
-    const result = spawnSync(luaBin, [path.join(__dirname, "render-fixture.lua")], { encoding: "utf8" });
+    const args = [path.join(__dirname, "render-fixture.lua")];
+    if (fixturePath) args.push(fixturePath, browseUri);
+    const result = spawnSync(luaBin, args, { encoding: "utf8" });
 
     if (result.error) {
         throw new Error(
@@ -186,10 +198,23 @@ const renderedLogHtml = renderLogHtml();
 const harness = await buildHarness(renderedLogHtml);
 await writeFile(path.join(OUTPUT_DIR, "harness.html"), harness, "utf8");
 
+// Separate fixture/harness for the "Folder only" toggle checks below: one
+// own-change entry (a property change on /trunk itself), two
+// descendant-only entries -- kept apart from the shared 3-item
+// log-report.xml fixture above, which ~15 other assertions in this file
+// depend on for exact item count/order/content.
+const renderedFolderToggleHtml = renderLogHtml(
+    path.join(__dirname, "fixtures", "log-report-folder-toggle.xml"),
+    "/svn/demo1/trunk/?repo_root=/svn/demo1/"
+);
+const folderToggleHarness = await buildHarness(renderedFolderToggleHtml);
+await writeFile(path.join(OUTPUT_DIR, "harness-folder-toggle.html"), folderToggleHarness, "utf8");
+
 const server = http.createServer((req, res) => {
     let body = harness;
     if (req.url === "/desktop") body = wrapWithView(harness, "desktop");
     else if (req.url === "/mobile") body = wrapWithView(harness, "mobile");
+    else if (req.url === "/folder-toggle") body = folderToggleHarness;
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(body);
 });
@@ -214,6 +239,7 @@ try {
             customElements.whenDefined("wa-dialog"),
             customElements.whenDefined("wa-details"),
             customElements.whenDefined("wa-button"),
+            customElements.whenDefined("wa-switch"),
             customElements.whenDefined("wa-format-date"),
             customElements.whenDefined("wa-icon"),
         ])
@@ -596,6 +622,100 @@ try {
 
     // 8. No console/page errors during the whole run.
     record("no console/page errors during the whole run", consoleErrors.length === 0, consoleErrors.join(" | "));
+
+    // 8b. "Folder only" toggle: a pure-CSS ":has()"/":state(checked)" show/hide
+    // (see page.mustache's own "#svn-history-dialog:has(wa-switch:state(checked))"
+    // rule) driven by the "log-item-own-change" class svn-log.lua's
+    // render_log_item computes per entry -- no htmx request involved, so this
+    // is checked against the separate log-report-folder-toggle.xml fixture
+    // (one own-change entry, two descendant-only entries) on its own page,
+    // not the shared 3-item fixture above.
+    await page.goto(`http://127.0.0.1:${port}/folder-toggle`, { waitUntil: "networkidle0" });
+    await page.evaluate(() =>
+        Promise.all([
+            customElements.whenDefined("wa-dialog"),
+            customElements.whenDefined("wa-details"),
+            customElements.whenDefined("wa-switch"),
+        ])
+    );
+    await new Promise((r) => setTimeout(r, 300));
+
+    const folderToggleInitial = await page.evaluate(() =>
+        [...document.querySelectorAll("wa-details.log-item")].map((el) => ({
+            ownChange: el.classList.contains("log-item-own-change"),
+            visible: getComputedStyle(el).display !== "none",
+        }))
+    );
+    record(
+        "folder toggle: fixture sanity -- exactly one of the 3 entries is marked own-change",
+        folderToggleInitial.filter((c) => c.ownChange).length === 1,
+        JSON.stringify(folderToggleInitial)
+    );
+    record(
+        "folder toggle: all 3 entries visible before toggling (default off)",
+        folderToggleInitial.every((c) => c.visible),
+        JSON.stringify(folderToggleInitial)
+    );
+
+    await page.screenshot({ path: path.join(OUTPUT_DIR, "05-folder-toggle-off.png"), fullPage: true });
+
+    // Confirmed via manual investigation: page.click()'s real, coordinate-
+    // hit-tested mouse click doesn't reliably reach wa-switch's internal
+    // <input> through its shadow-DOM <label>/<slot> wrapping in headless
+    // Chromium, even though a genuine user click does in a real browser --
+    // an element.click() call (same technique this file already uses for
+    // wa-details.open elsewhere) reliably toggles it instead, and is what's
+    // actually being tested here: the CSS ":has()"/":state(checked)" rule's
+    // reaction to the switch's checked state, not Puppeteer's own hit-testing.
+    await page.evaluate(() => document.getElementById("svn-history-folder-toggle").click());
+    await new Promise((r) => setTimeout(r, 200));
+    const folderToggleOn = await page.evaluate(() =>
+        [...document.querySelectorAll("wa-details.log-item")].map((el) => ({
+            ownChange: el.classList.contains("log-item-own-change"),
+            visible: getComputedStyle(el).display !== "none",
+        }))
+    );
+    record(
+        "folder toggle: after toggling on, exactly (and only) the own-change entry stays visible",
+        folderToggleOn.every((c) => c.visible === c.ownChange),
+        JSON.stringify(folderToggleOn)
+    );
+
+    await page.screenshot({ path: path.join(OUTPUT_DIR, "06-folder-toggle-on.png"), fullPage: true });
+
+    // Regression check for the central design claim: newly-appended "load
+    // more" entries (rendered via the exact same log-item.mustache/
+    // render_log_item path) must inherit the toggle automatically -- no
+    // re-click, no JS wiring beyond the CSS rule itself. Simulated here by
+    // injecting a plain descendant-only entry (no "log-item-own-change"
+    // class) directly, since CSS class/tag selectors match regardless of
+    // whether the custom element's own JS has upgraded the node.
+    await page.evaluate(() => {
+        const container = document.getElementById("svn-history-content");
+        const appended = document.createElement("wa-details");
+        appended.className = "log-item log-item-descendant-change";
+        container.appendChild(appended);
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    const appendedEntryVisible = await page.evaluate(() => {
+        const items = document.querySelectorAll("wa-details.log-item");
+        return getComputedStyle(items[items.length - 1]).display !== "none";
+    });
+    record(
+        "folder toggle: a freshly-appended descendant-only entry is hidden immediately while the toggle is on, with no further action",
+        appendedEntryVisible === false
+    );
+
+    await page.evaluate(() => document.getElementById("svn-history-folder-toggle").click());
+    await new Promise((r) => setTimeout(r, 200));
+    const folderToggleOff = await page.evaluate(() =>
+        [...document.querySelectorAll("wa-details.log-item")].map((el) => getComputedStyle(el).display !== "none")
+    );
+    record(
+        "folder toggle: clicking again shows every entry again, including the appended one",
+        folderToggleOff.every((v) => v === true),
+        JSON.stringify(folderToggleOff)
+    );
 
     // 9. Responsive layout, driven by wa-page's own "view" attribute (see
     // wrapWithView() above): desktop puts the collapsed message in a

@@ -715,4 +715,121 @@ describe("svn-log output_filter", function()
         assert.truthy(html:find('<div class="log-item-custom">CUSTOM:7</div>', 1, true))
         assert.falsy(html:find("DEFAULT:", 1, true))
     end)
+
+    it("marks a log-item log-item-own-change when the browsed folder's own path is in changed_paths", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>15</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>Set property on trunk</D:comment>
+<S:modified-path node-kind="dir">/trunk</S:modified-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find('<wa-details class="log-item log-item-own-change">', 1, true))
+    end)
+
+    it("marks a log-item log-item-descendant-change, not log-item-own-change, when only a child path changed", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>16</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>Edit a file under trunk</D:comment>
+<S:modified-path node-kind="file">/trunk/foo.txt</S:modified-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
+
+        assert.falsy(html:find('log-item-own-change', 1, true))
+        assert.truthy(html:find('<wa-details class="log-item log-item-descendant-change">', 1, true))
+    end)
+
+    it("applies both classes together when a single revision changes both the folder itself and a descendant", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>17</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>Reprop trunk and add a file</D:comment>
+<S:modified-path node-kind="dir">/trunk</S:modified-path>
+<S:added-path node-kind="file">/trunk/new.txt</S:added-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find('<wa-details class="log-item log-item-own-change log-item-descendant-change">', 1, true))
+    end)
+
+    it("treats the repo root's own changed-path sentinel \"/\" as an own-change when browsing the repo root itself", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>1</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>Initial repo creation</D:comment>
+<S:added-path node-kind="dir">/</S:added-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find('<wa-details class="log-item log-item-own-change">', 1, true))
+    end)
+
+    it("applies neither class when repo_root is absent, even for what would otherwise be an exact own-path match", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>18</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>No repo_root here</D:comment>
+<S:modified-path node-kind="dir">/trunk</S:modified-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/")
+
+        assert.falsy(html:find('log-item-own-change', 1, true))
+        assert.falsy(html:find('log-item-descendant-change', 1, true))
+        assert.truthy(html:find('<wa-details class="log-item">', 1, true))
+    end)
+
+    it("compares own-change paths in percent-encoded space, matching a raw changed-path against an encoded browsed folder", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>19</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>Reprop an oddly-named dir</D:comment>
+<S:modified-path node-kind="dir">/my dir</S:modified-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/my%20dir/?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find('<wa-details class="log-item log-item-own-change">', 1, true))
+    end)
+
+    it("applies neither class, without crashing, when repo_root isn't actually a prefix of the browsed folder's own URL", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>20</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>Mismatched repo_root</D:comment>
+<S:modified-path node-kind="dir">/trunk</S:modified-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/?repo_root=/svn/otherrepo/")
+
+        assert.falsy(html:find('log-item-own-change', 1, true))
+        assert.falsy(html:find('log-item-descendant-change', 1, true))
+    end)
 end)

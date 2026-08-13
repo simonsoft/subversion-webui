@@ -1,0 +1,23 @@
+<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>53</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2026-08-12T10:00:00.000000Z</S:date>
+<D:comment>Set svn:ignore on trunk itself.</D:comment>
+<S:modified-path node-kind="dir">/trunk</S:modified-path>
+</S:log-item>
+<S:log-item>
+<D:version-name>52</D:version-name>
+<D:creator-displayname>bob</D:creator-displayname>
+<S:date>2026-08-11T15:30:00.000000Z</S:date>
+<D:comment>Add a new file under trunk.</D:comment>
+<S:added-path node-kind="file">/trunk/new-file.txt</S:added-path>
+</S:log-item>
+<S:log-item>
+<D:version-name>51</D:version-name>
+<D:creator-displayname>carol</D:creator-displayname>
+<S:date>2026-08-10T09:00:00.000000Z</S:date>
+<D:comment>Edit an existing file under trunk.</D:comment>
+<S:modified-path node-kind="file">/trunk/main.c</S:modified-path>
+</S:log-item>
+</S:log-report>
