@@ -79,8 +79,17 @@ async function buildHarness(renderedLogHtml) {
     // REPORT fetch, only what happens once the dialog already has content.
     dialogOpenTag = dialogOpenTag.replace('id="svn-history-dialog"', 'id="svn-history-dialog" open');
 
-    const folderToggleLine = extractLineContaining(source, 'id="svn-history-folder-toggle"', "#svn-history-folder-toggle");
-    const expandToggleLine = extractLineContaining(source, 'id="svn-history-expand-toggle"', "#svn-history-expand-toggle");
+    // The folder-toggle switch and expand-toggle button live together
+    // inside one "wa-cluster" wrapper div (for shared baseline alignment --
+    // see its own comment in page.mustache), so both come out as a single
+    // block extraction rather than two independent extractLineContaining()
+    // calls: extractBlock()'s "find the first closing tag after the open
+    // tag" search correctly lands on this div's own "</div>", since neither
+    // <wa-switch>...</wa-switch> nor <wa-button>...</wa-button> in between
+    // contains a nested "</div>" of their own.
+    const headerActionsBlock = extractBlock(
+        source, '<div class="wa-cluster wa-gap-s" slot="header-actions">', "</div>", "header-actions cluster"
+    );
 
     const contentDivLine = extractLineContaining(source, 'id="svn-history-content"', "#svn-history-content");
     const contentDivOpenTagMatch = contentDivLine.match(/^<div id="svn-history-content">/);
@@ -126,8 +135,7 @@ ${styleBlock}
 <body>
 <wa-page>
 ${dialogOpenTag}
-${folderToggleLine}
-${expandToggleLine}
+${headerActionsBlock}
 ${contentDivOpenTag}
 ${renderedLogHtml}
 </div>

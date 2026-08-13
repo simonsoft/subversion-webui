@@ -893,8 +893,10 @@ wa-tree-item a {
      browser's top layer regardless of DOM ancestry, so nesting it here
      doesn't affect its overlay/positioning behavior at all. -->
 <wa-dialog id="svn-history-dialog" label="History" light-dismiss style="--width: 90vw;">
-<wa-switch id="svn-history-folder-toggle" slot="header-actions" class="wa-font-size-s">Folder only</wa-switch>
-<wa-button id="svn-history-expand-toggle" slot="header-actions" appearance="plain" size="s">Expand all</wa-button>
+<div class="wa-cluster wa-gap-s" slot="header-actions">
+<wa-switch id="svn-history-folder-toggle" class="wa-font-size-s">Folder only</wa-switch>
+<wa-button id="svn-history-expand-toggle" appearance="plain" size="s">Expand all</wa-button>
+</div>
 <div id="svn-history-content"></div>
 </wa-dialog>
 </wa-page>
