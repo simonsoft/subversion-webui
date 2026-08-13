@@ -153,9 +153,16 @@ LuaOutputFilter SVN_LOG_HTML \
     FilterProtocol SVN_LOG_HTML "change=yes;byteranges=no"
     FilterChain SVN_LOG_HTML
 
-    # Maximum number of log entries returned by the History link.
-    # Defaults to 50 when unset.
+    # Maximum number of log entries returned by the History link's initial
+    # fetch. Defaults to 50 when unset.
     # SetEnv SVN_LOG_LIMIT 50
+
+    # Maximum number of log entries returned by each continuous-scroll
+    # "load more" batch, once the dialog's list is scrolled to its own
+    # bottom (independent of SVN_LOG_LIMIT above, which only governs the
+    # initial fetch). Defaults to whatever SVN_LOG_LIMIT itself resolves to
+    # when unset -- i.e. a uniform page size everywhere.
+    # SetEnv SVN_LOG_LIMIT_SCROLL 50
 
     # Locale for the date shown on each log entry (BCP-47 language tag,
     # e.g. "sv"). Omitted/unset falls back to the browser's own locale.
@@ -196,6 +203,16 @@ directory), exactly mirroring how it's already applied to `svn-index.lua`'s
 own file-entry links. Existing deployments that already set
 `SVN_INDEX_QUERY_FILE` get this behavior automatically, with no config
 change needed.
+
+The History dialog scrolls continuously: once its own internal list is
+scrolled to the bottom, a "load more" batch is fetched and appended
+automatically via htmx, reusing the exact same `REPORT`-interception
+mechanism as the initial fetch. Each batch's own size is `SVN_LOG_LIMIT`
+(initial fetch) or `SVN_LOG_LIMIT_SCROLL` (every subsequent batch) -- so the
+total amount of history reachable this way is effectively unbounded,
+without changing the bounded cost of any single request. Scrolling stops on
+its own, with no further requests, once a batch comes back smaller than its
+own limit (the repository's actual history has been exhausted).
 
 ### Apache httpd transfer
 

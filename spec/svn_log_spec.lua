@@ -250,6 +250,45 @@ describe("svn-log input_filter", function()
         assert.truthy(body:find('<S:limit>10</S:limit>', 1, true))
     end)
 
+    it("honors SVN_LOG_LIMIT_SCROLL instead of SVN_LOG_LIMIT on a continuous-scroll continuation request (?more=1)", function()
+        local body = run_input_filter(
+            {}, "/svn/demo1/trunk/?more=1", { SVN_LOG_LIMIT = "10", SVN_LOG_LIMIT_SCROLL = "200" }
+        )
+
+        assert.truthy(body:find('<S:limit>200</S:limit>', 1, true))
+    end)
+
+    it("ignores SVN_LOG_LIMIT_SCROLL on a plain (non-continuation) request, even when it's set", function()
+        local body = run_input_filter(
+            {}, "/svn/demo1/trunk/", { SVN_LOG_LIMIT = "10", SVN_LOG_LIMIT_SCROLL = "200" }
+        )
+
+        assert.truthy(body:find('<S:limit>10</S:limit>', 1, true))
+    end)
+
+    it("falls back to SVN_LOG_LIMIT's own resolution when SVN_LOG_LIMIT_SCROLL is unset on a ?more=1 request", function()
+        local body = run_input_filter(
+            {}, "/svn/demo1/trunk/?more=1", { SVN_LOG_LIMIT = "10" }
+        )
+
+        assert.truthy(body:find('<S:limit>10</S:limit>', 1, true))
+    end)
+
+    it("falls back all the way to the hardcoded default on a ?more=1 request when neither limit env var is set", function()
+        local body = run_input_filter({}, "/svn/demo1/trunk/?more=1")
+
+        assert.truthy(body:find('<S:limit>50</S:limit>', 1, true))
+    end)
+
+    it("falls back to SVN_LOG_LIMIT for an invalid SVN_LOG_LIMIT_SCROLL on a ?more=1 request, never emitting the raw attacker string", function()
+        local body = run_input_filter(
+            {}, "/svn/demo1/trunk/?more=1", { SVN_LOG_LIMIT = "10", SVN_LOG_LIMIT_SCROLL = "not-a-number" }
+        )
+
+        assert.truthy(body:find('<S:limit>10</S:limit>', 1, true))
+        assert.falsy(body:find("not-a-number", 1, true))
+    end)
+
     it("discards whatever body chunks the client actually sent", function()
         local body = run_input_filter(
             { "<garbage", "-not-xml->" }, "/svn/demo1/trunk/"
@@ -549,6 +588,112 @@ describe("svn-log output_filter", function()
 
         assert.falsy(without_lang:find(' lang="', 1, true))
         assert.truthy(without_lang:find('minute="numeric"></wa-format-date>', 1, true))
+    end)
+
+    it("appends a 'load more' sentinel when a batch comes back exactly full (rendered_count == the resolved limit)", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>10</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/", { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_LIMIT = "1" })
+
+        -- A full 1-item batch (== SVN_LOG_LIMIT) means older history may
+        -- still exist -- the sentinel pins the next fetch one revision
+        -- below the last one actually rendered, and marks itself as a
+        -- continuation via "more=1" (see resolve_log_limit).
+        assert.truthy(html:find('class="svn-log-more"', 1, true))
+        assert.truthy(html:find('hx-action="/svn/demo1/trunk/?p=9&amp;more=1"', 1, true))
+    end)
+
+    it("omits the sentinel when a batch comes back short of the resolved limit (log-report already reached end-revision=0 on its own)", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>10</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/", { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_LIMIT = "5" })
+
+        assert.falsy(html:find('svn-log-more', 1, true))
+    end)
+
+    it("omits the sentinel when the last rendered revision is already 0, even though the batch was otherwise full", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>0</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/", { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_LIMIT = "1" })
+
+        assert.falsy(html:find('svn-log-more', 1, true))
+    end)
+
+    it("echoes repo_root through into the sentinel's own more_href when present, omits it when absent", function()
+        local with_repo_root = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>10</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/", { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_LIMIT = "1" })
+
+        assert.truthy(with_repo_root:find(
+            'hx-action="/svn/demo1/trunk/?p=9&amp;more=1&amp;repo_root=/svn/demo1/"', 1, true
+        ))
+
+        local without_repo_root = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>10</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/", { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_LIMIT = "1" })
+
+        assert.falsy(without_repo_root:find('repo_root', 1, true))
+    end)
+
+    it("uses SVN_LOG_LIMIT_SCROLL (not SVN_LOG_LIMIT) as the resolved limit when rendering a continuation request's own response", function()
+        -- Confirms output_filter's own resolve_log_limit call reads the
+        -- same "more=1" flag input_filter does: a 2-item batch is "full"
+        -- here (SVN_LOG_LIMIT_SCROLL=2), even though it's short of
+        -- SVN_LOG_LIMIT=10 -- proving the sentinel decision used the
+        -- scroll limit, not the plain one, for this ?more=1 request.
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>10</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+</S:log-item>
+<S:log-item>
+<D:version-name>9</D:version-name>
+<D:creator-displayname>bob</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>y</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/?more=1", { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_LIMIT = "10", SVN_LOG_LIMIT_SCROLL = "2" })
+
+        assert.truthy(html:find('hx-action="/svn/demo1/trunk/?p=8&amp;more=1"', 1, true))
     end)
 
     it("prefers \"log-item.custom.mustache\" over \"log-item.mustache\" when both exist (mirrors svn-index.lua's own override convention)", function()
