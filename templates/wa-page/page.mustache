@@ -312,7 +312,6 @@ document.addEventListener("wa-hide", (event) => {
 wa-page {
     --menu-width: 25rem;
     --aside-width: 15rem;
-    font-size: var(--wa-font-size-s);
 }
 
 wa-page[view='desktop'] {
@@ -355,7 +354,6 @@ wa-page::part(header) {
 }
 
 header[slot="header"] {
-    font-size: var(--wa-font-size-m);
     --wa-link-decoration-default: none;
     /*--wa-color-text-link: var(--wa-color-text-normal);*/
     padding: var(--wa-space-s);
@@ -383,10 +381,6 @@ nav[slot="subheader"] {
     border-block-end: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
 }
 
-nav[slot="subheader"] wa-breadcrumb {
-    font-size: var(--wa-font-size-m);
-}
-
 /* "Display the revision to the right of the breadcrumbs in a square
    (non-rounded but dashed)" -- shown only while actively pinned to a past
    revision via "?p=REV" (see "revision_pinned" in template_context()),
@@ -395,7 +389,6 @@ nav[slot="subheader"] wa-breadcrumb {
     border: var(--wa-border-width-s) dashed var(--wa-color-surface-border);
     border-radius: 0;
     padding: 0 var(--wa-space-2xs);
-    font-size: var(--wa-font-size-s);
 }
 
 /* Pure-CSS show/hide, no JS: wa-switch exposes its checked state via the
@@ -411,7 +404,6 @@ nav[slot="subheader"] wa-breadcrumb {
 }
 
 footer[slot="footer"] {
-    font-size: var(--wa-font-size-xs);
     padding: var(--wa-space-xs);
     border-block-start: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
 }
@@ -592,7 +584,6 @@ wa-page[view='desktop'] .log-summary-meta {
     display: inline-flex;
     align-items: center;
     gap: var(--wa-space-2xs);
-    color: var(--wa-color-text-quiet);
 }
 
 wa-page[view='desktop'] .log-author {
@@ -611,17 +602,13 @@ wa-page[view='desktop'] .log-author strong {
     min-width: 0;
 }
 
-/* Both the always-visible collapsed preview and the expanded full message
-   (".log-message-full" below) show the same content, just clamped vs.
-   not -- sharing this same font/color treatment is what makes the
-   expanded one read as "the same text, just fully shown" rather than a
-   distinct code block. white-space is deliberately NOT shared here (see
-   each rule below) -- ".log-message-full" needs "pre-wrap", not
-   "pre-line", to avoid a real fidelity regression. */
-.log-message-preview,
-.log-message-full {
-    color: var(--wa-color-text-quiet);
-}
+/* The always-visible collapsed preview and the expanded full message both
+   carry "wa-color-text-quiet" directly in their markup (see log-item.mustache)
+   -- sharing this same font/color treatment is what makes the expanded one
+   read as "the same text, just fully shown" rather than a distinct code
+   block. white-space is deliberately NOT shared (see each rule below) --
+   ".log-message-full" needs "pre-wrap", not "pre-line", to avoid a real
+   fidelity regression. */
 
 /* Mobile: on its own row below ".log-summary-meta" (revision/date/
    author), indented to the exact same fixed column ".log-body" below
@@ -797,8 +784,6 @@ wa-page[view='mobile'] .log-body {
     display: inline-flex;
     align-items: center;
     gap: var(--wa-space-2xs);
-    color: var(--wa-color-text-quiet);
-    font-size: var(--wa-font-size-s);
 }
 
 /* The navigation tree only ever browses folders -- files (and the ".."
@@ -833,7 +818,7 @@ wa-tree-item a {
 {{{page-head-end}}}
 </head>
 <body>
-<wa-page>
+<wa-page class="wa-font-size-s">
 {{{page-header}}}
 {{{page-subheader}}}
 <!-- Neither dir.mustache's <span hx-get> nor file/repo.mustache's plain
