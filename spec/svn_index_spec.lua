@@ -571,10 +571,27 @@ describe("svn-index output_filter", function()
         -- after the fact (see the "htmx:after:swap" tests below) -- so
         -- outside of that, hx-trigger="wa-lazy-load" just sits dormant
         -- until nav sets lazy=true, at which point wa-tree-item's own
-        -- chevron interaction can fire it. Separately, clicking the label
-        -- itself (a plain "click", not "click once") re-fetches and swaps
-        -- #svn-index's content every time, so main updates no matter how
-        -- many times the same or a different entry is clicked.
+        -- chevron interaction can fire it. Separately, the label's own
+        -- "click[this.parentElement.selected]" trigger only fires a plain
+        -- click when the item is already selected -- covering the
+        -- reselect-to-refresh case (a click that *doesn't* change
+        -- selection never fires wa-selection-change at all) -- and each
+        -- <wa-tree>'s own centralized hx-on:wa-selection-change (see
+        -- page.mustache) covers everything else: a selecting click
+        -- anywhere in the item's row (not just the label) or keyboard
+        -- activation, by synthesizing a real click on this same span once
+        -- Web Awesome's own wa-tree reports the selection change (it
+        -- dispatches that event on itself, never on the individual
+        -- wa-tree-item -- confirmed via wa-tree's own source, tree.ts's
+        -- selectItem()). No double-fire: by the time that synthetic click
+        -- lands, .selected is already true (wa-tree sets it before
+        -- dispatching), so it satisfies the very same
+        -- "click[this.parentElement.selected]" filter -- while the
+        -- original real click that *caused* the selection does not, since
+        -- it's evaluated before wa-tree's own handler (further up the
+        -- bubble chain) has had a chance to mutate .selected. So main
+        -- updates no matter how many times the same or a different entry
+        -- is activated.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -588,10 +605,9 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click">',
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click[this.parentElement.selected]">',
             1, true
         ))
-        assert.falsy(html:find("click once", 1, true))
     end)
 
     it("never wires htmx onto wa-page repo entries, since expansion must not span across repositories", function()
@@ -614,7 +630,12 @@ describe("svn-index output_filter", function()
         -- attributes in between) proves this specific entry carries no
         -- hx-get/lazy wiring -- a page-wide search for "hx-get"/"lazy" would
         -- false-fail here since the page's own nav root item and lazy-clear
-        -- script always contain those strings regardless of fixture.
+        -- script always contain those strings regardless of fixture. The
+        -- dead-zone/keyboard click synthesis for this plain <a href> (same
+        -- as file.mustache) lives on each <wa-tree>'s own
+        -- hx-on:wa-selection-change instead (see page.mustache) -- not
+        -- here, since Web Awesome's own wa-tree dispatches that event on
+        -- itself, never on the individual wa-tree-item.
         assert.truthy(html:find('<wa-tree-item class="repo"><a href="/svn/demo1/demo1/">', 1, true))
     end)
 
@@ -768,7 +789,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<wa-tree class="svn-index" id="svn-index">', 1, true))
+        assert.truthy(html:find('<wa-tree class="svn-index" id="svn-index" hx-on:wa-selection-change=', 1, true))
     end)
 
     it("wires the wa-page navigation tree itself to load the repo root's own listing, with no top-level wrapper item", function()
@@ -792,7 +813,7 @@ describe("svn-index output_filter", function()
         }, "/svn/myrepo/trunk/", { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find(
-            '<wa-tree class="svn-nav" hx-get="/svn/myrepo/" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">',
+            [[<wa-tree class="svn-nav" hx-get="/svn/myrepo/" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">]],
             1, true
         ))
     end)
@@ -1430,7 +1451,7 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<footer slot="footer" id="svn-footer">', 1, true))
         assert.truthy(html:find('<div class="wa-cluster" id="svn-header-left">', 1, true))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click">',
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click[this.parentElement.selected]">',
             1, true
         ))
     end)
