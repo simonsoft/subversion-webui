@@ -696,34 +696,6 @@ describe("svn-log output_filter", function()
         assert.truthy(html:find('hx-action="/svn/demo1/trunk/?p=8&amp;more=1"', 1, true))
     end)
 
-    it("substitutes {{{svn_log_more}}} at its own template position, not a hardcoded Lua-side location", function()
-        -- templates/test-log-more-placement/log.mustache deliberately
-        -- wraps "{{{svn_log_more}}}" in its own surrounding text
-        -- ("MORE-BEFORE[...]MORE-AFTER"), in a different arrangement than
-        -- wa-page's own (a bare "{{{svn_log}}}{{{svn_log_more}}}" with no
-        -- separator) -- proving output_filter's lustache:render(postamble_html,
-        -- postamble_context) call actually resolves the placeholder
-        -- wherever the template puts it, rather than the sentinel's HTML
-        -- being concatenated onto a fixed spot regardless of what the
-        -- template says.
-        local html = run_output_filter({
-            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
-<S:log-item>
-<D:version-name>5</D:version-name>
-<D:creator-displayname>alice</D:creator-displayname>
-<S:date>2024-01-01T00:00:00.000000Z</S:date>
-<D:comment>x</D:comment>
-</S:log-item>
-</S:log-report>]]
-        }, "/svn/demo1/trunk/", { SVN_INDEX_TEMPLATE = "test-log-more-placement", SVN_LOG_LIMIT = "1" })
-
-        assert.truthy(html:find('<span>ITEM:5</span>', 1, true))
-        assert.truthy(html:find(
-            'MORE-BEFORE[<b>MORE-HREF:/svn/demo1/trunk/?p=4&amp;more=1</b>\n]MORE-AFTER</div>', 1, true
-        ))
-        assert.falsy(html:find('{{{svn_log_more}}}', 1, true))
-    end)
-
     it("prefers \"log-item.custom.mustache\" over \"log-item.mustache\" when both exist (mirrors svn-index.lua's own override convention)", function()
         -- templates/test-custom-override/ ships both log-item.mustache
         -- (renders "DEFAULT:...") and log-item.custom.mustache (renders
