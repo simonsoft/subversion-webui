@@ -1229,7 +1229,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, "/svn/demo1/trunk/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(pinned_html:find('<span class="revision-badge">10</span>', 1, true))
+        assert.truthy(pinned_html:find('<span class="revision-badge wa-font-size-s">10</span>', 1, true))
 
         local head_html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
@@ -1448,7 +1448,7 @@ describe("svn-index output_filter", function()
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find('<div class="wa-cluster" id="svn-breadcrumb">', 1, true))
-        assert.truthy(html:find('<footer slot="footer" id="svn-footer">', 1, true))
+        assert.truthy(html:find('<footer slot="footer" id="svn-footer" class="wa-font-size-xs">', 1, true))
         assert.truthy(html:find('<div class="wa-cluster" id="svn-header-left">', 1, true))
         assert.truthy(html:find(
             '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click[this.parentElement.selected]">',

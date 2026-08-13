@@ -354,14 +354,14 @@ describe("svn-log output_filter", function()
 
         assert.truthy(html:find('<div class="svn-log">', 1, true))
 
-        assert.truthy(html:find('<a class="revision-badge" href="/svn/demo1/trunk/?p=42">42</a>', 1, true))
+        assert.truthy(html:find('<a class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/?p=42">42</a>', 1, true))
         assert.truthy(html:find('<wa-icon name="user" variant="solid" style="font-size: 0.8rem;"></wa-icon> <strong>alice</strong>', 1, true))
         assert.truthy(html:find('date="2024-01-01T12:00:00.000000Z" month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric"></wa-format-date>', 1, true))
         assert.truthy(html:find('<em>Fix bug</em>', 1, true))
-        assert.truthy(html:find('<div class="log-message-full wa-flank"><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon><em>Fix bug</em></div>', 1, true))
+        assert.truthy(html:find('<div class="log-message-full wa-flank wa-color-text-quiet"><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon><em>Fix bug</em></div>', 1, true))
         assert.truthy(html:find('<wa-icon name="pen" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/foo.txt?p=42">/trunk/foo.txt</a></span>', 1, true))
 
-        assert.truthy(html:find('<a class="revision-badge" href="/svn/demo1/trunk/?p=41">41</a>', 1, true))
+        assert.truthy(html:find('<a class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/?p=41">41</a>', 1, true))
         assert.truthy(html:find('<wa-icon name="plus" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/bar.txt?p=41">/trunk/bar.txt</a></span>', 1, true))
         assert.truthy(html:find('<wa-icon name="trash" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/old.txt?p=41">/trunk/old.txt</a></span>', 1, true))
 
@@ -382,10 +382,10 @@ describe("svn-log output_filter", function()
 </S:log-report>]]
         }, "/svn/demo1/trunk/")
 
-        assert.truthy(html:find('<a class="revision-badge" href="/svn/demo1/trunk/?p=7">7</a>', 1, true))
+        assert.truthy(html:find('<a class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/?p=7">7</a>', 1, true))
         assert.truthy(html:find('<strong>carol</strong>', 1, true))
         assert.truthy(html:find('<em>Initial import</em>', 1, true))
-        assert.truthy(html:find('<div class="log-message-full wa-flank"><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon><em>Initial import</em></div>', 1, true))
+        assert.truthy(html:find('<div class="log-message-full wa-flank wa-color-text-quiet"><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon><em>Initial import</em></div>', 1, true))
     end)
 
     it("HTML-escapes the commit message and changed-path text", function()
@@ -425,10 +425,10 @@ describe("svn-log output_filter", function()
 </S:log-report>]]
         }, "/svn/demo1/trunk/")
 
-        assert.truthy(html:find('<div class="log-message-preview log-message-empty">', 1, true))
-        assert.truthy(html:find('<div class="log-message-full log-message-empty wa-flank">', 1, true))
-        assert.truthy(html:find('<div class="log-message-preview"><span>', 1, true))
-        assert.truthy(html:find('<div class="log-message-full wa-flank">', 1, true))
+        assert.truthy(html:find('<div class="log-message-preview log-message-empty wa-color-text-quiet">', 1, true))
+        assert.truthy(html:find('<div class="log-message-full log-message-empty wa-flank wa-color-text-quiet">', 1, true))
+        assert.truthy(html:find('<div class="log-message-preview wa-color-text-quiet"><span>', 1, true))
+        assert.truthy(html:find('<div class="log-message-full wa-flank wa-color-text-quiet">', 1, true))
     end)
 
     it("treats a whitespace-only log message as blank too, not just a literal empty string", function()
@@ -445,8 +445,8 @@ describe("svn-log output_filter", function()
 </S:log-report>]]
         }, "/svn/demo1/trunk/")
 
-        assert.truthy(html:find('<div class="log-message-preview log-message-empty">', 1, true))
-        assert.truthy(html:find('<div class="log-message-full log-message-empty wa-flank">', 1, true))
+        assert.truthy(html:find('<div class="log-message-preview log-message-empty wa-color-text-quiet">', 1, true))
+        assert.truthy(html:find('<div class="log-message-full log-message-empty wa-flank wa-color-text-quiet">', 1, true))
     end)
 
     it("still renders a valid, empty div when there are zero log items", function()
@@ -488,7 +488,7 @@ describe("svn-log output_filter", function()
 </S:log-report>]]
         }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
 
-        assert.truthy(html:find('<span class="copy-from">from <a href="/svn/demo1/trunk/old-name.txt?p=30">/trunk/old-name.txt</a> <span class="revision-badge revision-badge-small">30</span></span>', 1, true))
+        assert.truthy(html:find('<span class="copy-from wa-color-text-quiet wa-font-size-s">from <a href="/svn/demo1/trunk/old-name.txt?p=30">/trunk/old-name.txt</a> <span class="revision-badge revision-badge-small wa-font-size-s">30</span></span>', 1, true))
         assert.falsy(html:find('arrow-right', 1, true))
         assert.falsy(html:find('@30', 1, true))
 
@@ -514,7 +514,7 @@ describe("svn-log output_filter", function()
 </S:log-report>]]
         }, "/svn/demo1/trunk/")
 
-        assert.truthy(html:find('<a class="revision-badge" href="/svn/demo1/trunk/?p=12">12</a>', 1, true))
+        assert.truthy(html:find('<a class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/?p=12">12</a>', 1, true))
         -- This exact, closed substring (icon straight through to the
         -- </li>, no <a href> in between) wouldn't match if a link had
         -- been produced.
