@@ -345,7 +345,7 @@ wa-page::part(header) {
        so a site can override the header's background color by setting it
        from a later stylesheet (e.g. a `:root { --svn-header-bg: ...; }`
        rule in page-head-end.mustache/page-head-end.custom.mustache,
-       rendered into <head> after this <style> block) without touching
+       rendered into <head> after this stylesheet block) without touching
        this file. Sets on :root (or any ancestor) reach ::part(header) the
        same way --width reaches #svn-history-dialog::part(dialog) below --
        custom properties inherit into shadow trees, unlike ordinary CSS
@@ -446,6 +446,24 @@ div.svn-main {
    element that "width: var(--width)" is applied to internally. */
 #svn-history-dialog::part(dialog) {
     max-width: 1620px;
+}
+
+/* "Folder only" toggle: same pure-CSS ":state(checked)" technique as
+   "Show folders" above, but opposite polarity -- checked here RESTRICTS
+   the view (hides everything but entries touching the browsed folder's
+   own path), where "Show folders"' checked state REVEALS more. A plain
+   descendant combinator, not "~": unlike "Show folders" (a sibling of
+   ".svn-main"), the switch here and ".log-item" are both actual
+   descendants of "#svn-history-dialog" itself (the switch via its
+   "header-actions" slot, the entries via "#svn-history-content" nested
+   inside) -- a sibling combinator wouldn't even match. Entries lacking
+   ".log-item-own-change" entirely (e.g. because repo_root was absent
+   from this History link -- see svn-log.lua's own render_context.
+   own_relative_path) are all hidden once checked, the same class of
+   degradation as changed-path links themselves falling back to plain
+   unlinked text in that case. */
+#svn-history-dialog:has(wa-switch:state(checked)) wa-details.log-item:not(.log-item-own-change) {
+    display: none;
 }
 
 /* One <wa-details class="log-item"> per History entry (see
@@ -875,6 +893,7 @@ wa-tree-item a {
      browser's top layer regardless of DOM ancestry, so nesting it here
      doesn't affect its overlay/positioning behavior at all. -->
 <wa-dialog id="svn-history-dialog" label="History" light-dismiss style="--width: 90vw;">
+<wa-switch id="svn-history-folder-toggle" slot="header-actions" class="wa-font-size-s">Folder only</wa-switch>
 <wa-button id="svn-history-expand-toggle" slot="header-actions" appearance="plain" size="s">Expand all</wa-button>
 <div id="svn-history-content"></div>
 </wa-dialog>

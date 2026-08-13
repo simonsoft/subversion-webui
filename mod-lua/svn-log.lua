@@ -406,6 +406,19 @@ end
 
 local function render_log_item(templates, item, context)
     local changed_paths = {}
+    -- "Folder only" toggle support (see page.mustache's own
+    -- "#svn-history-folder-toggle"/CSS): own_change means the browsed
+    -- folder's OWN path (context.own_relative_path) is itself in this
+    -- item's changed_paths -- creation, deletion, replace, or a
+    -- property-only change, since a bare presence check covers all of
+    -- those regardless of cp.action. descendant_change means some path
+    -- STRICTLY UNDER the browsed folder changed. Not mutually exclusive:
+    -- a single commit can both reprop the folder and add a child. Neither
+    -- is ever set when context.own_relative_path is nil (repo_root
+    -- absent/mismatched -- see output_filter) -- same degradation class
+    -- as changed-path links themselves falling back to plain unlinked
+    -- text in that case.
+    local own_change, descendant_change = nil, nil
 
     for _, cp in ipairs(item.changed_paths) do
         local href = build_changed_path_href(
@@ -433,6 +446,23 @@ local function render_log_item(templates, item, context)
         end
 
         changed_paths[#changed_paths + 1] = entry
+
+        -- Compared in the SAME normalized form (percent-encoded, no
+        -- leading "/") build_changed_path_href already puts every
+        -- changed-path into for href-building, against
+        -- context.own_relative_path (derived the same way in
+        -- output_filter) -- reusing percent_encode_path rather than
+        -- inventing a decode counterpart.
+        if context.own_relative_path then
+            local cp_relative = percent_encode_path((cp.path:gsub("^/", "")))
+
+            if cp_relative == context.own_relative_path then
+                own_change = true
+            elseif context.own_relative_path == ""
+                or cp_relative:sub(1, #context.own_relative_path + 1) == context.own_relative_path .. "/" then
+                descendant_change = true
+            end
+        end
     end
 
     return lustache:render(templates.item, {
@@ -456,7 +486,13 @@ local function render_log_item(templates, item, context)
         -- boolean flag needed. {{{message}}}'s own interpolation already
         -- renders nothing for a nil value, same as it would for "".
         message = (item.message:match("^%s*$") == nil) and escape_html(item.message) or nil,
-        changed_paths = changed_paths
+        changed_paths = changed_paths,
+        -- nil (not false) when unset -- same reasoning as "message" above:
+        -- a plain Lua nil is unambiguously falsy to mustache, so
+        -- log-item.mustache can key {{#own_change}}/{{#descendant_change}}
+        -- directly off these fields.
+        own_change = own_change or nil,
+        descendant_change = descendant_change or nil
     })
 end
 
@@ -524,11 +560,35 @@ function output_filter(r)
         date_lang = nil
     end
 
+    -- The browsed folder's own repo-root-relative path, normalized the
+    -- same way build_changed_path_href already normalizes every
+    -- changed-path entry (percent-encoded, no leading "/") -- lets
+    -- render_log_item compare against each changed_paths[i].path directly
+    -- without a decode step. nil whenever it can't be derived: repo_root
+    -- absent (stale History link, same case build_changed_path_href
+    -- already degrades for), or not actually a prefix of request_href
+    -- (mismatched/stale link -- request_href is this request's own URL
+    -- path, it can only fail to start with repo_root if the two disagree
+    -- about where the repo root sits).
+    --
+    -- Browsing the repo root itself makes this "" (request_href ==
+    -- repo_root) -- mod_dav_svn represents the root itself in
+    -- changed-paths as "/", which strips via the exact same
+    -- cp.path:gsub("^/", "") render_log_item already applies to every
+    -- other changed-path to "" too, so the exact-match comparison there
+    -- handles this case with no special-casing here.
+    local own_relative_path = nil
+
+    if repo_root and repo_root ~= "" and request_href:sub(1, #repo_root) == repo_root then
+        own_relative_path = request_href:sub(#repo_root + 1):gsub("/$", "")
+    end
+
     local render_context = {
         request_href = request_href,
         repo_root = repo_root,
         query_file_params = query_file_params,
-        date_lang = date_lang
+        date_lang = date_lang,
+        own_relative_path = own_relative_path
     }
 
     -- The preamble/postamble are static markup with no data of their own
