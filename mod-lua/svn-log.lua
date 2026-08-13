@@ -132,6 +132,32 @@ local function validate_nonneg_integer(str)
     return string.format("%d", n)
 end
 
+-- SVN_LOG_LIMIT_SCROLL governs each continuous-scroll ("load more") batch's
+-- own size, independent of SVN_LOG_LIMIT (which governs only the initial
+-- batch shown when History is first opened) -- lets an admin allow a much
+-- bigger page size once a user is actively scrolling for more history,
+-- without raising the cost of the synchronous initial fetch every History
+-- click pays. Falls back to SVN_LOG_LIMIT's own resolution (default 50)
+-- when unset/invalid, or when more_flag is false (a plain, non-continuation
+-- request never consults SVN_LOG_LIMIT_SCROLL at all, even if it happens to
+-- be set) -- so today's uniform single-limit behavior is what an
+-- unconfigured server still gets. Shared by both filters (defined in this
+-- one file, so no cross-file duplication is needed the way
+-- svn-index.lua/svn-log.lua duplicate helpers between each other):
+-- input_filter uses it to build <S:limit>, output_filter uses it to know
+-- what ceiling this request's own response was actually bounded by (see
+-- the "load more" sentinel decision in output_filter).
+local function resolve_log_limit(env, more_flag)
+    if more_flag then
+        local scroll_limit = validate_nonneg_integer(env and env.SVN_LOG_LIMIT_SCROLL)
+        if scroll_limit then
+            return scroll_limit
+        end
+    end
+
+    return validate_nonneg_integer(env and env.SVN_LOG_LIMIT) or tostring(DEFAULT_LOG_LIMIT)
+end
+
 -- Deliberately an allow-list, not a deny-list ("is this definitely NOT
 -- svn-client traffic"): only a REPORT whose Content-Type is *exactly*
 -- form-encoded is ever treated as this app's own -- everything else
@@ -234,9 +260,13 @@ function input_filter(r)
         coroutine.yield()
     end
 
-    local limit = validate_nonneg_integer(
-        r.subprocess_env and r.subprocess_env.SVN_LOG_LIMIT
-    ) or tostring(DEFAULT_LOG_LIMIT)
+    -- "more=1" marks a continuous-scroll continuation request (see
+    -- output_filter's own sentinel/more_href construction below) -- it
+    -- only ever changes which limit env var resolve_log_limit consults,
+    -- never anything else about how this body is built (peg_revision is
+    -- read and applied identically either way).
+    local more_flag = parse_query_param(r.args, "more") == "1"
+    local limit = resolve_log_limit(r.subprocess_env, more_flag)
 
     local peg_revision = validate_nonneg_integer(parse_query_param(r.args, "p"))
 
@@ -312,7 +342,8 @@ local function load_log_template_set(template_type)
     local set = {
         preamble = raw:sub(1, marker_start - 1),
         postamble = raw:sub(marker_end + 1),
-        item = read_template(dir, "log-item")
+        item = read_template(dir, "log-item"),
+        more = read_template(dir, "log-more")
     }
 
     log_template_cache[template_type] = set
@@ -347,6 +378,27 @@ local function build_changed_path_href(repo_root, path, revision, node_kind, que
 
     if node_kind == "file" then
         href = append_query(href, query_file_params)
+    end
+
+    return href
+end
+
+-- Builds the "load more" sentinel's own href: same directory currently
+-- being browsed (request_href, exactly like render_log_item's own
+-- revision_href below), pinned via "?p=" at one revision below the last
+-- entry actually rendered -- continuing the backward walk from exactly
+-- where this batch left off, without re-showing that last entry itself.
+-- "more=1" is what tells input_filter/output_filter's own resolve_log_limit
+-- calls to consult SVN_LOG_LIMIT_SCROLL instead of SVN_LOG_LIMIT for this
+-- next batch. repo_root is echoed through unchanged (same raw query-string
+-- value this request itself received) so changed-path links keep working
+-- on the next batch too -- it isn't otherwise derivable by this filter
+-- (see build_changed_path_href's own comment on why).
+local function build_more_href(request_href, next_revision, repo_root)
+    local href = request_href .. "?p=" .. next_revision .. "&more=1"
+
+    if repo_root and repo_root ~= "" then
+        href = href .. "&repo_root=" .. repo_root
     end
 
     return href
@@ -413,6 +465,10 @@ function output_filter(r)
     local element_count = 0
     local rendered_count = 0
     local pending_output = {}
+    -- Revision of the last <S:log-item> actually rendered -- the anchor
+    -- for the "load more" sentinel's own next "?p=" pin (see
+    -- build_more_href), updated as items stream through EndElement below.
+    local last_revision = nil
 
     -- Reuses SVN_INDEX_TEMPLATE (not a separate env var): the History link
     -- only exists in wa-page's own page.mustache, so this filter only ever
@@ -441,6 +497,14 @@ function output_filter(r)
     -- History link -- changed-path links simply render as plain, unlinked
     -- text in that case.
     local repo_root = parse_query_param(r.args, "repo_root")
+
+    -- Mirrors input_filter's own "more=1" read: only changes which limit
+    -- resolve_log_limit consults below (to know the ceiling this
+    -- request's own <S:limit> was actually sent with), never anything
+    -- about rendering shape -- the log.mustache preamble/postamble wrapper
+    -- is emitted unconditionally, on every request alike.
+    local more_flag = parse_query_param(r.args, "more") == "1"
+    local resolved_limit = tonumber(resolve_log_limit(r.subprocess_env, more_flag))
 
     -- SVN_INDEX_QUERY_FILE: the same env var svn-index.lua already reads
     -- for its own file-entry links (locked-in decision: reused, not a
@@ -563,6 +627,7 @@ function output_filter(r)
             if name == "S:log-item" and item then
                 rendered_count = rendered_count + 1
                 pending_output[#pending_output + 1] = render_log_item(templates, item, render_context)
+                last_revision = item.revision
                 item = nil
             end
         end
@@ -666,7 +731,45 @@ function output_filter(r)
     -- it silently drops that row.
     final_parts[#final_parts + 1] = table.concat(pending_output)
 
-    final_parts[#final_parts + 1] = postamble_html
+    -- The postamble itself, unlike the streamed items above it, is a
+    -- small fragment fully known at this point -- rendered through
+    -- lustache once here, exactly like svn-index.lua's own
+    -- page-header/page-subheader/page-footer are pre-rendered into named
+    -- context keys and resolved via a single lustache:render call (see its
+    -- own "context[\"page-header\"] = lustache:render(...)" convention).
+    -- log.mustache's own postamble region carries a literal
+    -- "{{{svn_log_more}}}" placeholder (right before its closing "</div>")
+    -- for exactly this: left absent from postamble_context, it simply
+    -- interpolates to nothing, same as a missing page-header does today.
+    local postamble_context = {}
+
+    -- A "load more" sentinel is only worth appending when this batch was
+    -- actually full (rendered_count == resolved_limit): per
+    -- build_log_report_body's own rationale comment above, mod_dav_svn
+    -- stops the backward walk as soon as the limit is reached, so
+    -- returning FEWER entries than that is a definitive signal the walk
+    -- already reached end-revision=0 on its own -- no further history
+    -- exists, and a follow-up fetch would only ever come back empty.
+    -- last_revision <= 0 is the same "nothing older exists" case reached a
+    -- different way (this batch's own last entry already IS the very
+    -- first revision) -- checked defensively even though a full batch
+    -- reaching revision 0 exactly would already fail the rendered_count
+    -- check above in practice (walking to end-revision=0 means the walk
+    -- stopped on its own, so rendered_count < resolved_limit almost
+    -- always holds too in that case).
+    if rendered_count > 0 and rendered_count == resolved_limit then
+        local last_revision_num = tonumber(last_revision)
+
+        if last_revision_num and last_revision_num > 0 then
+            local more_href = build_more_href(request_href, tostring(last_revision_num - 1), repo_root)
+
+            postamble_context.svn_log_more = lustache:render(templates.more, {
+                more_href = escape_html(more_href)
+            })
+        end
+    end
+
+    final_parts[#final_parts + 1] = lustache:render(postamble_html, postamble_context)
 
     coroutine.yield(table.concat(final_parts))
 

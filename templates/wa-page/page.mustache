@@ -142,6 +142,28 @@ document.addEventListener("htmx:after:swap", (event) => {
     }
 });
 
+// A continuous-scroll append (see log-more.mustache's own sentinel,
+// swapped via hx-target="this" hx-swap="outerHTML") only ever replaces
+// itself with a fresh batch of COLLAPSED entries (log-item.mustache never
+// renders "open") plus, possibly, a new sentinel for the next batch --
+// never touching any already-rendered entry's own "open" state. So unlike
+// the full-dialog-swap case above, the toggle's label is never reset here
+// -- only re-derived from current reality, via the exact same
+// wa-show/wa-hide-driven sync used for manual per-entry toggling
+// (scheduleHistoryExpandToggleLabelSync, below): if the label already read
+// "Collapse all" before this append, the newly-appended (collapsed)
+// entries mean that's no longer true, and this is the only place that
+// invariant can break without either event firing on any existing entry.
+// event.detail.ctx.target is the sentinel's own (by-then-detached, since
+// outerHTML already replaced it) DOM node -- still a valid object
+// reference with its own classList, same as the dialog-open check above
+// relies on for id.
+document.addEventListener("htmx:after:swap", (event) => {
+    if (event.detail.ctx.target?.classList?.contains("svn-log-more")) {
+        scheduleHistoryExpandToggleLabelSync();
+    }
+});
+
 // Nav's own [selected] wa-tree-item is only a one-time snapshot, taken
 // when nav rendered that item itself (root population or lazy-expansion,
 // both hx-target="this" -- see the ".svn-nav" branch above). Clicking a
@@ -454,6 +476,22 @@ div.svn-main {
     display: flex;
     flex-direction: column;
     gap: var(--wa-space-xs);
+}
+
+/* The continuous-scroll sentinel (see log-more.mustache) -- a direct child
+   of ".svn-log", so it already inherits the flex-column stacking/gap above.
+   Its own layout/centering/muted-text styling is handled entirely by Web
+   Awesome utility classes on the markup itself (wa-cluster,
+   wa-justify-content-center, wa-color-text-quiet, wa-font-size-s) -- only
+   padding is set here, since Web Awesome has no padding/spacing-inset
+   utility of its own. Intersecting this element is what triggers the next
+   batch's fetch (see its own "hx-trigger"), so it must stay genuinely
+   visible/laid-out (not display:none) for IntersectionObserver to ever
+   fire on it -- the "htmx-indicator" child (see log-more.mustache) is what
+   actually stays invisible until the fetch is in flight, not this element
+   itself. */
+.svn-log-more {
+    padding: var(--wa-space-s);
 }
 
 /* Reuses the existing dashed-box style shared with the breadcrumb's own
