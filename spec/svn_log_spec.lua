@@ -832,4 +832,59 @@ describe("svn-log output_filter", function()
         assert.falsy(html:find('log-item-own-change', 1, true))
         assert.falsy(html:find('log-item-descendant-change', 1, true))
     end)
+
+    -- File targets: the per-file history icon and the "?history=" deep
+    -- link (both built in svn-index.lua) fire a REPORT against a FILE's
+    -- own URL, which never carries a trailing slash -- unlike every test
+    -- above, all of which use a directory-shaped unparsed_uri. These
+    -- confirm output_filter's own request_href is no longer force-slashed
+    -- (see its own comment), so it doesn't corrupt the hrefs it builds.
+    it("does not force a trailing slash onto a file target's own revision_href", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>42</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>Edit file</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/file.txt?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find('href="/svn/demo1/trunk/file.txt?p=42"', 1, true))
+        assert.falsy(html:find('file.txt/?p=42', 1, true))
+    end)
+
+    it("does not force a trailing slash into the 'load more' sentinel href for a file target", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>10</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/file.txt", { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_LIMIT = "1" })
+
+        assert.truthy(html:find('hx-action="/svn/demo1/trunk/file.txt?p=9&amp;more=1"', 1, true))
+        assert.falsy(html:find('file.txt/?p=9', 1, true))
+    end)
+
+    it("still classifies own_change correctly for a file target without a trailing slash", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>15</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>Edit file itself</D:comment>
+<S:modified-path node-kind="file">/trunk/file.txt</S:modified-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/file.txt?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find('<wa-details class="log-item log-item-own-change">', 1, true))
+        assert.falsy(html:find('log-item-descendant-change', 1, true))
+    end)
 end)

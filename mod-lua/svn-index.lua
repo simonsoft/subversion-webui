@@ -244,6 +244,28 @@ local function append_query(href, extra_query)
     return href .. (href:find("?", 1, true) and "&" or "?") .. extra_query
 end
 
+-- Validates a query-string value names a plain, single path segment, with
+-- no traversal potential -- used both for "?history=<filename>" (a direct
+-- child of the browsed directory) and for "/log.html"'s own "?base="
+-- redirect param (redirect_handler, further below): both are
+-- attacker-controlled and get concatenated directly into a URL. This is a
+-- real security boundary, not just a UX nicety: rejects an embedded
+-- literal "/" (a multi-segment path), a percent-encoded "%2f"/"%2F" (would
+-- otherwise decode to a "/" once concatenated downstream, smuggling a
+-- multi-segment path past a literal-"/"-only check), and "."/".."/empty
+-- (self/parent-directory references). Returns the value unchanged when
+-- valid, nil otherwise (treated the same as the param being absent).
+local function validate_path_segment(value)
+    if not value or value == ""
+        or value == "." or value == ".."
+        or value:find("/", 1, true)
+        or value:lower():find("%2f", 1, true) then
+        return nil
+    end
+
+    return value
+end
+
 -- htmx resolves the "HX-Target" request header to "<tagname>#<id>" when the
 -- swap target has an id, or just "<tagname>" when it doesn't (confirmed via
 -- a real browser). Every template here gives an id only to the element
@@ -372,14 +394,37 @@ local ENTRY_CONTEXT_BUILDERS = {
     -- query_file_params (SVN_INDEX_QUERY_FILE) is applied only to file
     -- entries' own links (confirmed with the user) -- dir/updir/repo never
     -- receive it.
-    file = function(attr, request_href, query_file_params)
+    file = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, revision_suffix)
         local href = attr.href or "#"
         local hx_href = append_query(request_href .. href, query_file_params)
+
+        -- History link for this file: a REPORT against this resource,
+        -- anchored with the same repo_root output_filter's own top-level
+        -- history_href_raw uses, targeting this entry's own href instead
+        -- of the browsed directory itself. NOT ".. revision_suffix" here,
+        -- unlike that top-level construction -- mod_dav_svn's own XML
+        -- "href" attribute already includes "?p=REV" itself when pinned
+        -- (the same reason hx_href above never appends revision_suffix
+        -- either -- see this file's own top-of-ENTRY_CONTEXT_BUILDERS
+        -- comment); appending it again here would double the pin
+        -- ("?p=5?p=5"). attr.href is already correctly percent-encoded by
+        -- mod_dav_svn and never carries a trailing slash for a file --
+        -- exactly the shape svn-log.lua's own output_filter now expects
+        -- (see its own comment on request_href).
+        local history_href_raw = request_href .. href
+
+        if repo_root then
+            history_href_raw = append_query(history_href_raw, "repo_root=" .. repo_root)
+        end
 
         return {
             name = escape_html(attr.name or attr.href or ""),
             href = escape_html(href),
-            hx_href = escape_html(hx_href)
+            hx_href = escape_html(hx_href),
+            -- nil (renders nothing) when repo_root is unknown -- same
+            -- degrade-gracefully pattern svn-log.lua's own changed-path
+            -- links already use.
+            history_href = repo_root and escape_html(history_href_raw) or nil
         }
     end,
 
@@ -468,7 +513,7 @@ local ENTRY_CONTEXT_BUILDERS = {
 -- same context shape as "dir".
 ENTRY_CONTEXT_BUILDERS.repo = ENTRY_CONTEXT_BUILDERS.dir
 
-local function render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern)
+local function render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, revision_suffix)
     local build_context = ENTRY_CONTEXT_BUILDERS[element]
     local entry_template = templates.entries[element]
 
@@ -476,7 +521,7 @@ local function render_entry(element, attr, request_href, templates, query_file_p
         return nil
     end
 
-    return lustache:render(entry_template, build_context(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern))
+    return lustache:render(entry_template, build_context(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, revision_suffix))
 end
 
 function output_filter(r)
@@ -495,6 +540,19 @@ function output_filter(r)
         base = ""
     }
     local index_seen = false
+
+    -- The repo root's own absolute, query-string-free URL, plus the
+    -- breadcrumb data it's derived from -- computed once, as soon as
+    -- "<index>" is parsed (see the StartElement handler below: "<index>" is
+    -- always parsed before any entry, so index.base/index.path are already
+    -- known there), and reused both by template_context() (the page-level
+    -- header/footer/history_href) and by render_entry() (each file entry's
+    -- own history_href, and "?history=" query-param handling) -- a single
+    -- computation rather than recomputing breadcrumbs twice.
+    local repo_root = nil
+    local breadcrumbs = nil
+    local segment_count = nil
+    local repo_parent_path = nil
 
     local svn = {
         version = "",
@@ -536,6 +594,16 @@ function output_filter(r)
     -- nav_root_path (reuses breadcrumbs[1]), and HX-Push-Url.
     local revision_pinned = parse_query_param(r.args, "p")
     local revision_suffix = revision_pinned and ("?p=" .. revision_pinned) or ""
+
+    -- "?history=<filename>" deep link: opens the History dialog
+    -- automatically, scoped to a direct-child file of the directory being
+    -- browsed (see /log.html's own redirect_handler, which is how a user
+    -- typically arrives at a URL shaped like this). Already
+    -- percent-encoded as received (query values are never decoded here,
+    -- consistent with every other param this file reads) -- concatenated
+    -- directly onto request_href the same way an XML "href" attribute
+    -- already is elsewhere in this file.
+    local history_target = validate_path_segment(parse_query_param(r.args, "history"))
 
     -- SVN_INDEX_QUERY_FILE: despite the name, this is the literal extra
     -- query-string fragment itself (e.g. "view=details&this=that"), not a
@@ -666,26 +734,14 @@ function output_filter(r)
     -- in this file (including the ETag guard below) keys off it alone.
     local function template_context()
         local has_base = index.base ~= ""
-        local breadcrumbs, segment_count, repo_parent_path = compute_breadcrumbs(index.path, index.base, has_base, request_href, revision_suffix)
 
-        -- repo_root: the repo root's own absolute, query-string-free URL,
-        -- passed through on history_href so svn-log.lua's output_filter
-        -- (which never sees mod_dav_svn's own <index base="..."
-        -- path="..."> attributes -- only svn-index.lua does) can anchor
-        -- changed-path links to a real URL. breadcrumbs[1].hx_href already
-        -- carries THIS request's own revision_suffix baked in (see
-        -- href_through() above) -- stripped back off here, since repo_root
-        -- itself must be revision-suffix-free: each log entry re-adds its
-        -- own "?p=REV" using its own revision, not necessarily this
-        -- request's.
-        --
-        -- Known, acceptable limitation (matching this codebase's existing
-        -- precision level -- e.g. SVN_INDEX_QUERY_FILE's own values are
-        -- also never percent-encoded): not percent-encoded as a
-        -- query-string value here, so a literal "&"/"#" inside a
-        -- repository name would corrupt it. Extremely unlikely in
-        -- practice, not worth solving now.
-        local repo_root = has_base and breadcrumbs[1].hx_href:match("^([^?]*)") or nil
+        -- breadcrumbs/segment_count/repo_parent_path/repo_root are computed
+        -- once, in the StartElement handler's "index" branch below (as soon
+        -- as index.base/index.path are known), and reused here rather than
+        -- recomputed -- render_entry() (each file entry's own history_href)
+        -- needs the same repo_root too, and index.base/index.path never
+        -- change after that point regardless of how many times
+        -- template_context() itself is called (preamble, postamble).
 
         -- Built raw (unescaped) first, then escape_html'd exactly once at
         -- the very end -- matching every other href in this file -- rather
@@ -696,6 +752,24 @@ function output_filter(r)
 
         if repo_root then
             history_href_raw = append_query(history_href_raw, "repo_root=" .. repo_root)
+        end
+
+        -- "?history=<filename>" deep link (see the "history_target" read
+        -- near the top of output_filter): same construction as
+        -- history_href_raw above, but targeting a direct-child file
+        -- instead of the browsed directory itself -- lets
+        -- page.mustache render a declarative "hx-trigger=\"load\"" on
+        -- "#svn-history-content" so the file's history fetches and the
+        -- dialog opens automatically, with no bootstrap script. nil
+        -- (renders nothing) whenever history_target is absent/invalid or
+        -- repo_root is unknown -- same degrade-gracefully pattern
+        -- history_href itself already follows.
+        local history_query_href = nil
+
+        if history_target and repo_root then
+            local history_query_href_raw = request_href .. history_target .. revision_suffix
+            history_query_href_raw = append_query(history_query_href_raw, "repo_root=" .. repo_root)
+            history_query_href = escape_html(history_query_href_raw)
         end
 
         local context = {
@@ -737,6 +811,7 @@ function output_filter(r)
             -- own full-page response via hx-select-oob, the same way they
             -- already do for "#svn-breadcrumb"/"#svn-footer".
             history_href = escape_html(history_href_raw),
+            history_query_href = history_query_href,
             -- nav starts at the repo root (breadcrumbs[1] is that crumb --
             -- lustache can't reach it directly as {{breadcrumbs.1.hx_href}},
             -- since breadcrumbs is an integer-indexed array, not
@@ -827,6 +902,37 @@ function output_filter(r)
                     r.headers_out["ETag"] = 'W/"' .. index.rev .. '-lua"'
                 end
 
+                -- Computed once, right here, rather than inside
+                -- template_context() (which used to recompute this on every
+                -- call) -- render_entry() below (each file entry's own
+                -- history_href) needs repo_root too, and index.base/
+                -- index.path never change after this point.
+                do
+                    local has_base = index.base ~= ""
+                    breadcrumbs, segment_count, repo_parent_path = compute_breadcrumbs(index.path, index.base, has_base, request_href, revision_suffix)
+                    -- repo_root: the repo root's own absolute,
+                    -- query-string-free URL, passed through on
+                    -- history_href so svn-log.lua's output_filter (which
+                    -- never sees mod_dav_svn's own <index base="..."
+                    -- path="..."> attributes -- only svn-index.lua does)
+                    -- can anchor changed-path links to a real URL.
+                    -- breadcrumbs[1].hx_href already carries THIS request's
+                    -- own revision_suffix baked in (see href_through()
+                    -- above) -- stripped back off here, since repo_root
+                    -- itself must be revision-suffix-free: each log entry
+                    -- re-adds its own "?p=REV" using its own revision, not
+                    -- necessarily this request's.
+                    --
+                    -- Known, acceptable limitation (matching this
+                    -- codebase's existing precision level -- e.g.
+                    -- SVN_INDEX_QUERY_FILE's own values are also never
+                    -- percent-encoded): not percent-encoded as a
+                    -- query-string value here, so a literal "&"/"#" inside
+                    -- a repository name would corrupt it. Extremely
+                    -- unlikely in practice, not worth solving now.
+                    repo_root = has_base and breadcrumbs[1].hx_href:match("^([^?]*)") or nil
+                end
+
                 r:debug(string.format(
                     "SVN index metadata: rev=%s path=%s base=%s",
                     index.rev,
@@ -848,7 +954,7 @@ function output_filter(r)
                 element = "repo"
             end
 
-            local html = render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern)
+            local html = render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, revision_suffix)
 
             if html then
                 rendered_count = rendered_count + 1
@@ -967,4 +1073,120 @@ function output_filter(r)
         svn.version,
         os.clock() - started_at
     ))
+end
+
+-- ---------------------------------------------------------------------
+-- redirect_handler: a plain mod_lua content handler (registered via
+-- LuaMapHandler, NOT a filter -- a different, simpler protocol: one-shot
+-- r:puts()/return, no coroutine.yield/bucket streaming) for
+-- "/log.html?base=<repo>&target=<repo-relative-path>&torev=<revision>".
+-- Redirects (a real HTTP 302) to the corresponding directory's own index
+-- page with "?history=<filename>&p=<torev>" -- the deep-link query param
+-- output_filter (above) already understands -- so "/log.html" stays a
+-- stable, shareable/bookmarkable entry point without being a second page.
+-- ---------------------------------------------------------------------
+
+-- Duplicated from svn-log.lua (no shared require-able module exists in
+-- this repo): validates a query-string value is a plain non-negative
+-- integer, since it's attacker-controlled and gets concatenated directly
+-- into a redirect Location below.
+local function validate_nonneg_integer(str)
+    if not str then
+        return nil
+    end
+
+    local n = tonumber(str)
+
+    if not n or n ~= math.floor(n) or n < 0 then
+        return nil
+    end
+
+    return string.format("%d", n)
+end
+
+-- Duplicated from svn-log.lua's own percent_encode_path (see its comment
+-- there for the full byte-by-byte-is-UTF-8-safe rationale). Needed here
+-- because "target" is decoded (see percent_decode below) before being
+-- split into parent_path/filename, so both halves must be re-encoded
+-- before they can go into a new URL -- unlike svn-index.lua's own
+-- mod_dav_svn-sourced hrefs elsewhere in this file, which arrive already
+-- percent-encoded and are never decoded at all.
+local function percent_encode_path(path)
+    return (tostring(path or ""):gsub("[^%w%-%._~/]", function(ch)
+        return string.format("%%%02X", ch:byte())
+    end))
+end
+
+-- "target" arrives percent-encoded (an ordinary query-string value), but
+-- needs decoding first so it can be split on its real "/" separators --
+-- splitting the still-encoded string would miss any "/" a client chose to
+-- send as a literal "%2F" instead (both equally valid ways to encode a "/"
+-- inside a URI query component). Re-encoded again afterward (see
+-- percent_encode_path above) once split into parent_path/filename. "+" is
+-- deliberately left as a literal "+", not decoded to a space: unlike
+-- application/x-www-form-urlencoded bodies, a URI's own query component
+-- never gives "+" that meaning (RFC 3986), and nothing else in this app
+-- treats query values as form-encoded either.
+local function percent_decode(str)
+    return (tostring(str or ""):gsub("%%(%x%x)", function(hex)
+        return string.char(tonumber(hex, 16))
+    end))
+end
+
+function redirect_handler(r)
+    if r.method ~= "GET" then
+        r.status = 405
+        r.content_type = "text/plain"
+        r:puts("Method not allowed")
+        return apache2.OK
+    end
+
+    local base = validate_path_segment(parse_query_param(r.args, "base"))
+    local target = parse_query_param(r.args, "target")
+    local torev = validate_nonneg_integer(parse_query_param(r.args, "torev"))
+
+    if not base or not target or target == "" then
+        r.status = 400
+        r.content_type = "text/plain"
+        r:puts("Missing or invalid \"base\" and/or \"target\" query parameters")
+        return apache2.OK
+    end
+
+    local decoded_target = percent_decode(target)
+
+    -- Split at the LAST "/": everything through it is the parent
+    -- directory path, everything after it is the filename. No "/" at all
+    -- means target is a single, repo-root-level segment (parent_path
+    -- defaults to "/").
+    local parent_path, filename = decoded_target:match("^(.*/)([^/]*)$")
+
+    if not parent_path then
+        parent_path, filename = "/", decoded_target
+    end
+
+    local location_prefix = (r.subprocess_env and r.subprocess_env.SVN_LOCATION_PREFIX) or "/svn"
+    local location = location_prefix .. "/" .. base .. percent_encode_path(parent_path)
+
+    if filename == "" then
+        -- target itself named a directory (trailing "/", or the repo
+        -- root) -- directory history is already reachable via the
+        -- existing page-level "History" link, so redirect there with no
+        -- "?history=" param rather than erroring.
+    elseif filename == "." or filename == ".." then
+        r.status = 400
+        r.content_type = "text/plain"
+        r:puts("Invalid \"target\" query parameter")
+        return apache2.OK
+    else
+        location = append_query(location, "history=" .. percent_encode_path(filename))
+    end
+
+    if torev then
+        location = append_query(location, "p=" .. torev)
+    end
+
+    r.status = 302
+    r.headers_out["Location"] = location
+
+    return apache2.OK
 end

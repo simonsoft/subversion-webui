@@ -148,7 +148,7 @@ LuaOutputFilter SVN_LOG_HTML \
     FilterProvider SVN_LOG_HTML SVN_LOG_HTML \
         "%{REQUEST_METHOD} == 'REPORT' \
             && %{CONTENT_TYPE} =~ m#^(?:text|application)/xml(?:;|$)# \
-            && %{REQUEST_URI} =~ m#/$#"
+            && %{req_novary:HX-Request} == 'true'"
 
     FilterProtocol SVN_LOG_HTML "change=yes;byteranges=no"
     FilterChain SVN_LOG_HTML
@@ -190,6 +190,17 @@ being silently treated as this app's own. Every request that isn't
 *exactly* the History link's own declared Content-Type, real svn-client
 REPORT traffic included, passes through unmodified.
 
+`SVN_LOG_HTML`'s own `FilterProvider` condition checks the `HX-Request`
+header (via `req_novary`, so this dispatch-only check doesn't add
+`HX-Request` to the response's `Vary` header) rather than the request URI's
+shape, because History requests now target both directories *and*
+individual files (see "File history" below) -- a directory-only signal like
+"URI ends in `/`" can no longer distinguish this app's own REPORT traffic
+from a real `svn` client's REPORT traffic against a file (both would lack a
+trailing slash), whereas `HX-Request: true` is sent on every request htmx
+issues and never by a real `svn` client. `REQUEST_METHOD`/`CONTENT_TYPE`
+stay as defense-in-depth alongside it.
+
 This feature is wired into the `wa-page` template only; `SVN_INDEX_TEMPLATE`
 must be set to `wa-page` for the History link to appear (see above) -- the
 other three templates have no `log.mustache`/`log-item.mustache` files and
@@ -213,6 +224,57 @@ total amount of history reachable this way is effectively unbounded,
 without changing the bounded cost of any single request. Scrolling stops on
 its own, with no further requests, once a batch comes back smaller than its
 own limit (the repository's actual history has been exhausted).
+
+### File history
+
+Individual files, not just directories, can also show History -- two entry
+points, both built on the same `SVN_LOG_HTML`/`SVN_LOG_REPORT_BODY` filter
+pair above (no new REPORT-handling logic, just new places that link to it):
+
+- **A "History" icon** next to every file in the directory listing (see
+  `file.mustache`), opening the same `#svn-history-dialog` the page-level
+  "History" link uses, scoped to that one file.
+- **A `?history=<filename>` query parameter** on the directory's own index
+  page URL -- `filename` must be a *direct child* of the directory being
+  browsed (a single path segment, validated server-side; rejected if it
+  contains `/`, `%2f`/`%2F`, or is `.`/`..`/empty). When present, the page
+  loads with that file's history fetched and the dialog opened
+  automatically, via a declarative `hx-trigger="load"` on
+  `#svn-history-content` -- no extra request, no bootstrap script.
+  Revision pinning reuses the existing `?p=<rev>` param.
+
+Both require `SVN_LOG_HTML`'s `FilterProvider` condition above (the
+`HX-Request` check) -- a deployment that upgrades `svn-index.lua`/
+`svn-log.lua` without also updating that Apache snippet will still work for
+directory History, but file-history links (both the icon and the
+`?history=` param) will silently get raw XML back instead of rendered HTML.
+
+#### `/log.html` redirect
+
+`/log.html?base=<repo>&target=<repo-relative-path>&torev=<revision>`
+redirects (HTTP 302) to the corresponding directory's own index page with
+`?history=<filename>&p=<torev>` -- a stable, shareable/bookmarkable entry
+point into file history that doesn't require knowing the file's parent
+directory URL up front. `target` is the file's full repo-relative path
+(e.g. `/service-mig/xml/keydefmaps/torquetable.xlsx`); `torev` is optional.
+
+```
+LuaMapHandler "^/log\.html$" \
+        "/opt/subversion-webui/mod-lua/svn-index.lua" \
+        redirect_handler
+
+<Location "/log.html">
+    # Mount point of the <Location /svn> block above -- this app has no
+    # other way to learn it from a request that (deliberately) isn't
+    # inside that Location. Defaults to "/svn" when unset.
+    SetEnv SVN_LOCATION_PREFIX /svn
+</Location>
+```
+
+`redirect_handler` is a plain mod_lua content handler (registered via
+`LuaMapHandler`, not a filter), not `SVN_LOG_HTML`/`SVN_LOG_REPORT_BODY` --
+it only computes the redirect `Location`, entirely independent of the
+filter pair above.
 
 ### Apache httpd transfer
 

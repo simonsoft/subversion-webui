@@ -519,11 +519,20 @@ function output_filter(r)
 
     local templates = load_log_template_set(template_type)
 
+    -- Trusted as-is, unlike svn-index.lua's own request_href (which
+    -- unconditionally force-appends "/" because its output_filter ONLY
+    -- ever runs against directory-listing XML). This filter also serves
+    -- file targets (the per-file history icon and "?history=" deep link,
+    -- both built in svn-index.lua) -- force-appending here would turn
+    -- ".../file.txt" into the non-existent ".../file.txt/", corrupting
+    -- revision_href (render_log_item) and build_more_href below. Every
+    -- caller of this filter is responsible for sending the correctly
+    -- shaped URL itself: directories with their own trailing "/", files
+    -- without. own_relative_path below (its own ":gsub("/$", "")") already
+    -- strips any trailing slash before comparing against changed-path
+    -- text either way, so this doesn't change own_change/descendant_change
+    -- classification at all.
     local request_href = url_path(tostring(r.unparsed_uri or r.uri or ""))
-
-    if request_href ~= "" and not request_href:match("/$") then
-        request_href = request_href .. "/"
-    end
 
     -- The repo-root URL svn-index.lua appended onto the History link as
     -- "&repo_root=..." -- this filter has no other way to know where the

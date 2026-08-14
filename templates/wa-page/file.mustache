@@ -1,1 +1,1 @@
-<wa-tree-item class="file"><a href="{{{hx_href}}}"><wa-icon name="file" variant="regular"></wa-icon> {{{name}}}</a></wa-tree-item>
+<wa-tree-item class="file"><a href="{{{hx_href}}}"><wa-icon name="file" variant="regular"></wa-icon> {{{name}}}</a>{{#history_href}}<a class="file-history-action" href="{{{history_href}}}" hx-action="{{{history_href}}}" hx-method="REPORT" hx-target="#svn-history-content" hx-swap="innerHTML" hx-trigger="click" title="History" aria-label="History for {{{name}}}"><wa-icon name="clock-rotate-left"></wa-icon></a>{{/history_href}}</wa-tree-item>

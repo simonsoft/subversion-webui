@@ -832,6 +832,23 @@ wa-tree-item a {
     color: inherit;
     text-decoration: none;
 }
+
+/* Per-file "History" icon (see file.mustache) -- a second, independent
+   <a href hx-action hx-method="REPORT" hx-trigger="click"> alongside the
+   file's own download link, same pattern as page-header.mustache's own
+   "History" link, just scoped to this one file instead of the browsed
+   directory. Muted until hovered/focused so it doesn't compete visually
+   with the file's own name -- ".wa-color-text-quiet" isn't reachable here
+   (this file has no such class name available inline), so the same muted
+   tone is hand-matched via opacity instead. */
+.file-history-action {
+    margin-left: var(--wa-space-2xs);
+    opacity: 0.55;
+}
+.file-history-action:hover,
+.file-history-action:focus-visible {
+    opacity: 1;
+}
 </style>
 {{{page-head-end}}}
 </head>
@@ -882,7 +899,7 @@ wa-tree-item a {
 <wa-switch id="svn-history-folder-toggle" class="wa-font-size-s">Folder only</wa-switch>
 <wa-button id="svn-history-expand-toggle" appearance="plain" size="s">Expand all</wa-button>
 </div>
-<div id="svn-history-content"></div>
+<div id="svn-history-content"{{#history_query_href}} hx-action="{{{history_query_href}}}" hx-method="REPORT" hx-trigger="load"{{/history_query_href}}></div>
 </wa-dialog>
 </wa-page>
 </body>

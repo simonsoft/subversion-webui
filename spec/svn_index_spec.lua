@@ -10,6 +10,12 @@ end
 
 local ROOT = spec_dir() .. "../"
 
+-- Provided by mod_lua's own runtime (a plain module-level constant, "OK"
+-- being the only one redirect_handler needs) -- absent here, since this
+-- harness never runs inside real Apache. Written via _G, same reasoning as
+-- run_filter's own "_G.bucket" writes below.
+_G.apache2 = _G.apache2 or { OK = 0 }
+
 dofile(ROOT .. "mod-lua/svn-index.lua")
 
 -- Mocks mod_lua's own built-in r:regex() (used by SVN_INDEX_HIDE_DIR --
@@ -440,12 +446,12 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find("<wa-page>", 1, true))
+        assert.truthy(html:find('<wa-page class="wa-font-size-s">', 1, true))
         assert.truthy(html:find("webawesome.css", 1, true))
-        assert.truthy(html:find('<header slot="header">', 1, true))
-        assert.truthy(html:find('<footer slot="footer" id="svn-footer">', 1, true))
+        assert.truthy(html:find('<header slot="header" class="wa-split wa-gap-s wa-font-size-m">', 1, true))
+        assert.truthy(html:find('<footer slot="footer" id="svn-footer" class="wa-font-size-xs">', 1, true))
         assert.truthy(html:find(
-            '<wa-tree-item class="file"><a href="/svn/demo1/README.md"><wa-icon name="file" variant="regular"></wa-icon> README.md</a></wa-tree-item>',
+            '<wa-tree-item class="file"><a href="/svn/demo1/README.md"><wa-icon name="file" variant="regular"></wa-icon> README.md</a>',
             1, true
         ))
     end)
@@ -1613,5 +1619,235 @@ describe("svn-index output_filter", function()
 
         assert.truthy(html:find('<li class="dir-custom">CUSTOM-DIR:', 1, true))
         assert.falsy(html:find("DEFAULT-DIR:", 1, true))
+    end)
+
+    it("renders a per-file history_href when repo_root is known, anchored to this file's own href", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(
+            '<a class="file-history-action" href="/svn/demo1/README.md?repo_root=/svn/" hx-action="/svn/demo1/README.md?repo_root=/svn/" hx-method="REPORT" hx-target="#svn-history-content" hx-swap="innerHTML" hx-trigger="click" title="History" aria-label="History for README.md">',
+            1, true
+        ))
+    end)
+
+    it("does not double the revision pin on a file's history_href (mod_dav_svn's own href already carries it)", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="5" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md?p=5" />
+</index>
+</svn>]]
+        }, "/svn/demo1/?p=5", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('href="/svn/demo1/README.md?p=5&amp;repo_root=/svn/"', 1, true))
+        assert.falsy(html:find("p=5?p=5", 1, true))
+        assert.falsy(html:find("p=5&amp;p=5", 1, true))
+    end)
+
+    it("omits a file's history_href entirely when repo_root can't be derived (no base, e.g. Collection of Repositories)", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="0" path="/">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.falsy(html:find('class="file-history-action"', 1, true))
+    end)
+
+    it("renders a declarative hx-trigger=\"load\" on #svn-history-content for a valid ?history=<filename> deep link", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, "/svn/demo1/?history=file.txt", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(
+            '<div id="svn-history-content" hx-action="/svn/demo1/file.txt?repo_root=/svn/" hx-method="REPORT" hx-trigger="load"></div>',
+            1, true
+        ))
+    end)
+
+    it("carries an active revision pin into the ?history= deep link's own hx-action", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="9" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md?p=9" />
+</index>
+</svn>]]
+        }, "/svn/demo1/?history=file.txt&p=9", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('hx-action="/svn/demo1/file.txt?p=9&amp;repo_root=/svn/"', 1, true))
+    end)
+
+    it("renders #svn-history-content with no load-trigger attributes when ?history= is absent", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<div id="svn-history-content"></div>', 1, true))
+    end)
+
+    -- "?history=" is a real security boundary (path traversal / smuggling a
+    -- multi-segment path via a downstream REPORT href), not just a UX
+    -- nicety -- each of these must leave #svn-history-content exactly as
+    -- if the param were absent.
+    for _, case in ipairs({
+        { name = "an embedded literal slash", value = "sub/file.txt" },
+        { name = "a percent-encoded slash (case-insensitive)", value = "sub%2Ffile.txt" },
+        { name = "a percent-encoded slash, uppercase hex", value = "sub%2FFILE.txt" },
+        { name = "\"..\"", value = ".." },
+        { name = "\".\"", value = "." },
+        { name = "an empty value", value = "" }
+    }) do
+        it("rejects ?history= containing " .. case.name .. ", treating it as absent", function()
+            local html = run_filter({
+                [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+            }, "/svn/demo1/?history=" .. case.value, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+            assert.truthy(html:find('<div id="svn-history-content"></div>', 1, true))
+        end)
+    end
+end)
+
+describe("svn-index redirect_handler", function()
+    local function run_redirect(uri, subprocess_env, method)
+        local r = {
+            method = method or "GET",
+            uri = uri:match("^([^?]*)"),
+            unparsed_uri = uri,
+            args = uri:match("%?(.*)$"),
+            subprocess_env = subprocess_env or {},
+            headers_in = {},
+            headers_out = {},
+            logs = {}
+        }
+
+        local function logger(level)
+            return function(self, msg)
+                table.insert(self.logs, { level = level, msg = msg })
+            end
+        end
+
+        r.info = logger("info")
+        r.debug = logger("debug")
+        r.warn = logger("warn")
+        r.err = logger("err")
+        r.puts = function(self, text) self.body = (self.body or "") .. text end
+
+        redirect_handler(r)
+
+        return r
+    end
+
+    it("redirects a multi-segment file target to its parent directory with ?history=<filename>", function()
+        local r = run_redirect("/log.html?base=zeekr&target=%2Fservice-mig%2Fxml%2Fkeydefmaps%2Ftorquetable.xlsx")
+
+        assert.are.equal(302, r.status)
+        assert.are.equal(
+            "/svn/zeekr/service-mig/xml/keydefmaps/?history=torquetable.xlsx",
+            r.headers_out["Location"]
+        )
+    end)
+
+    it("carries torev through as ?p=<rev> on the redirect", function()
+        local r = run_redirect("/log.html?base=zeekr&target=%2Fservice-mig%2Fxml%2Fkeydefmaps%2Ftorquetable.xlsx&torev=144")
+
+        assert.are.equal(
+            "/svn/zeekr/service-mig/xml/keydefmaps/?history=torquetable.xlsx&p=144",
+            r.headers_out["Location"]
+        )
+    end)
+
+    it("omits ?p= entirely when torev is absent", function()
+        local r = run_redirect("/log.html?base=zeekr&target=%2Ffile.txt")
+
+        assert.falsy(r.headers_out["Location"]:find("p=", 1, true))
+    end)
+
+    it("redirects a repo-root-level (single-segment) file target with parent_path \"/\"", function()
+        local r = run_redirect("/log.html?base=zeekr&target=%2Ffile.txt")
+
+        assert.are.equal("/svn/zeekr/?history=file.txt", r.headers_out["Location"])
+    end)
+
+    it("redirects a directory-shaped target (trailing slash) with no ?history= param at all", function()
+        local r = run_redirect("/log.html?base=zeekr&target=%2Fservice-mig%2Fxml%2F")
+
+        assert.are.equal("/svn/zeekr/service-mig/xml/", r.headers_out["Location"])
+        assert.falsy(r.headers_out["Location"]:find("history", 1, true))
+    end)
+
+    it("percent-encodes a target with spaces/special characters after decoding and re-splitting", function()
+        local r = run_redirect("/log.html?base=zeekr&target=%2Fmy%20dir%2Fmy%20file.txt")
+
+        assert.are.equal("/svn/zeekr/my%20dir/?history=my%20file.txt", r.headers_out["Location"])
+    end)
+
+    it("splits on a literal (non-percent-encoded) slash in target too", function()
+        local r = run_redirect("/log.html?base=zeekr&target=/trunk/file.txt")
+
+        assert.are.equal("/svn/zeekr/trunk/?history=file.txt", r.headers_out["Location"])
+    end)
+
+    it("honors SVN_LOCATION_PREFIX when set, instead of the \"/svn\" default", function()
+        local r = run_redirect(
+            "/log.html?base=zeekr&target=%2Ffile.txt",
+            { SVN_LOCATION_PREFIX = "/repos" }
+        )
+
+        assert.are.equal("/repos/zeekr/?history=file.txt", r.headers_out["Location"])
+    end)
+
+    it("responds 400 when base is missing", function()
+        local r = run_redirect("/log.html?target=%2Ffile.txt")
+
+        assert.are.equal(400, r.status)
+        assert.falsy(r.headers_out["Location"])
+    end)
+
+    it("responds 400 when target is missing", function()
+        local r = run_redirect("/log.html?base=zeekr")
+
+        assert.are.equal(400, r.status)
+        assert.falsy(r.headers_out["Location"])
+    end)
+
+    it("responds 400 when base contains a path-traversal-capable slash", function()
+        local r = run_redirect("/log.html?base=zeekr%2F..&target=%2Ffile.txt")
+
+        assert.are.equal(400, r.status)
+        assert.falsy(r.headers_out["Location"])
+    end)
+
+    it("responds 400 when target decodes to a filename of \"..\"", function()
+        local r = run_redirect("/log.html?base=zeekr&target=%2Ftrunk%2F..")
+
+        assert.are.equal(400, r.status)
+        assert.falsy(r.headers_out["Location"])
+    end)
+
+    it("responds 405 for a non-GET request", function()
+        local r = run_redirect("/log.html?base=zeekr&target=%2Ffile.txt", nil, "POST")
+
+        assert.are.equal(405, r.status)
+        assert.falsy(r.headers_out["Location"])
     end)
 end)
