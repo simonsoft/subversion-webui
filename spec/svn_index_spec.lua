@@ -1631,7 +1631,7 @@ describe("svn-index output_filter", function()
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find(
-            '<a class="file-history-action" href="/svn/demo1/README.md?repo_root=/svn/" hx-action="/svn/demo1/README.md?repo_root=/svn/" hx-method="REPORT" hx-target="#svn-history-content" hx-swap="innerHTML" hx-trigger="click" title="History" aria-label="History for README.md">',
+            '<a class="file-history-action" href="/svn/demo1/README.md?repo_root=/svn/" hx-action="/svn/demo1/README.md?repo_root=/svn/" hx-method="REPORT" hx-target="#svn-history-content" hx-swap="innerHTML" hx-trigger="click" hx-on:click="event.stopPropagation()" title="History" aria-label="History for README.md">',
             1, true
         ))
     end)
