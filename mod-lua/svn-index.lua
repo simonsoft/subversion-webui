@@ -393,37 +393,35 @@ local ENTRY_CONTEXT_BUILDERS = {
     -- query_file_params (SVN_INDEX_QUERY_FILE) is applied only to file
     -- entries' own links (confirmed with the user) -- dir/updir/repo never
     -- receive it.
-    file = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, revision_suffix)
+    file = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, history_query_suffix)
         local href = attr.href or "#"
         local hx_href = append_query(request_href .. href, query_file_params)
 
-        -- History link for this file: a REPORT against this resource,
-        -- anchored with the same repo_root output_filter's own top-level
-        -- history_href_raw uses, targeting this entry's own href instead
-        -- of the browsed directory itself. NOT ".. revision_suffix" here,
-        -- unlike that top-level construction -- mod_dav_svn's own XML
-        -- "href" attribute already includes "?p=REV" itself when pinned
-        -- (the same reason hx_href above never appends revision_suffix
-        -- either -- see this file's own top-of-ENTRY_CONTEXT_BUILDERS
-        -- comment); appending it again here would double the pin
-        -- ("?p=5?p=5"). attr.href is already correctly percent-encoded by
-        -- mod_dav_svn and never carries a trailing slash for a file --
-        -- exactly the shape svn-log.lua's own output_filter now expects
-        -- (see its own comment on request_href).
-        local history_href_raw = request_href .. href
-
-        if repo_root then
-            history_href_raw = append_query(history_href_raw, "repo_root=" .. repo_root)
-        end
+        -- href_no_query: mod_dav_svn's own XML "href" attribute already
+        -- includes "?p=REV" itself when pinned (the same reason hx_href
+        -- above never appends its own pin either -- see this file's own
+        -- top-of-ENTRY_CONTEXT_BUILDERS comment) -- stripped here so
+        -- file.mustache's own history link can safely append
+        -- history_query_suffix (which already carries the SAME pin, via
+        -- revision_pinned, from output_filter's own top scope) without
+        -- doubling it ("?p=5?p=5"). attr.href is already correctly
+        -- percent-encoded by mod_dav_svn and never carries a trailing
+        -- slash for a file -- exactly the shape svn-log.lua's own
+        -- output_filter now expects (see its own comment on request_href).
+        local href_no_query = href:match("^([^?]*)")
 
         return {
             name = escape_html(attr.name or attr.href or ""),
             href = escape_html(href),
             hx_href = escape_html(hx_href),
-            -- nil (renders nothing) when repo_root is unknown -- same
+            request_href = escape_html(request_href),
+            href_no_query = escape_html(href_no_query),
+            history_query_suffix = history_query_suffix,
+            -- Gates file.mustache's own "{{#repo_root}}" -- nil (link
+            -- renders nothing) when repo_root is unknown, same
             -- degrade-gracefully pattern svn-log.lua's own changed-path
             -- links already use.
-            history_href = repo_root and escape_html(history_href_raw) or nil
+            repo_root = repo_root and escape_html(repo_root) or nil
         }
     end,
 
@@ -512,7 +510,7 @@ local ENTRY_CONTEXT_BUILDERS = {
 -- same context shape as "dir".
 ENTRY_CONTEXT_BUILDERS.repo = ENTRY_CONTEXT_BUILDERS.dir
 
-local function render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, revision_suffix)
+local function render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, history_query_suffix)
     local build_context = ENTRY_CONTEXT_BUILDERS[element]
     local entry_template = templates.entries[element]
 
@@ -520,7 +518,7 @@ local function render_entry(element, attr, request_href, templates, query_file_p
         return nil
     end
 
-    return lustache:render(entry_template, build_context(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, revision_suffix))
+    return lustache:render(entry_template, build_context(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, history_query_suffix))
 end
 
 function output_filter(r)
@@ -545,13 +543,25 @@ function output_filter(r)
     -- "<index>" is parsed (see the StartElement handler below: "<index>" is
     -- always parsed before any entry, so index.base/index.path are already
     -- known there), and reused both by template_context() (the page-level
-    -- header/footer/history_href) and by render_entry() (each file entry's
-    -- own history_href, and "?history=" query-param handling) -- a single
-    -- computation rather than recomputing breadcrumbs twice.
+    -- header/footer) and by render_entry() (each file entry's own history
+    -- link, and "?history=" query-param handling) -- a single computation
+    -- rather than recomputing breadcrumbs twice.
     local repo_root = nil
     local breadcrumbs = nil
     local segment_count = nil
     local repo_parent_path = nil
+
+    -- A generic query-string suffix ("" when neither applies) -- not
+    -- specific to history at all -- built from this request's own revision
+    -- pin and repo_root, both known once repo_root itself is (see the
+    -- "index" StartElement branch below). Reused identically by
+    -- page-header.mustache's top-level History link, each file entry's own
+    -- history icon (ENTRY_CONTEXT_BUILDERS.file), and the "?history=" deep
+    -- link's own auto-load href (template_context(), consumed by
+    -- "#svn-history-content" in page.mustache) -- those three templates
+    -- each own their own literal URL-path assembly around this shared
+    -- suffix, rather than Lua building three separate bespoke href strings.
+    local history_query_suffix = ""
 
     local svn = {
         version = "",
@@ -734,42 +744,14 @@ function output_filter(r)
     local function template_context()
         local has_base = index.base ~= ""
 
-        -- breadcrumbs/segment_count/repo_parent_path/repo_root are computed
-        -- once, in the StartElement handler's "index" branch below (as soon
-        -- as index.base/index.path are known), and reused here rather than
-        -- recomputed -- render_entry() (each file entry's own history_href)
-        -- needs the same repo_root too, and index.base/index.path never
-        -- change after that point regardless of how many times
+        -- breadcrumbs/segment_count/repo_parent_path/repo_root/
+        -- history_query_suffix are computed once, in the StartElement
+        -- handler's "index" branch below (as soon as index.base/index.path
+        -- are known), and reused here rather than recomputed --
+        -- render_entry() (each file entry's own history link) needs
+        -- repo_root/history_query_suffix too, and index.base/index.path
+        -- never change after that point regardless of how many times
         -- template_context() itself is called (preamble, postamble).
-
-        -- Built raw (unescaped) first, then escape_html'd exactly once at
-        -- the very end -- matching every other href in this file -- rather
-        -- than escaping the base href and concatenating a raw repo_root
-        -- onto it afterward, which would leave repo_root's own value
-        -- unescaped.
-        local history_href_raw = request_href .. revision_suffix
-
-        if repo_root then
-            history_href_raw = append_query(history_href_raw, "repo_root=" .. repo_root)
-        end
-
-        -- "?history=<filename>" deep link (see the "history_target" read
-        -- near the top of output_filter): same construction as
-        -- history_href_raw above, but targeting a direct-child file
-        -- instead of the browsed directory itself -- lets
-        -- page.mustache render a declarative "hx-trigger=\"load\"" on
-        -- "#svn-history-content" so the file's history fetches and the
-        -- dialog opens automatically, with no bootstrap script. nil
-        -- (renders nothing) whenever history_target is absent/invalid or
-        -- repo_root is unknown -- same degrade-gracefully pattern
-        -- history_href itself already follows.
-        local history_query_href = nil
-
-        if history_target and repo_root then
-            local history_query_href_raw = request_href .. history_target .. revision_suffix
-            history_query_href_raw = append_query(history_query_href_raw, "repo_root=" .. repo_root)
-            history_query_href = escape_html(history_query_href_raw)
-        end
 
         local context = {
             base = index.base,
@@ -790,27 +772,39 @@ function output_filter(r)
             -- the revision badge conditionally, and never show a "?p="
             -- artifact while at HEAD.
             revision_pinned = revision_pinned and escape_html(revision_pinned) or nil,
-            -- The "History" link's target (see page.mustache): a REPORT
-            -- request against this same directory. Distinguished from
-            -- ordinary svn-client REPORT traffic against the same URL space
-            -- by Content-Type, not by anything in the URL (see svn-log.lua's
-            -- input_filter's own is_form_encoded_content_type check) -- so
-            -- this is just request_href plus the same revision-pin suffix
-            -- every other link here carries forward.
-            --
-            -- Unlike "Start" (a fixed, request-independent destination) or
-            -- "Up" (a relative href that re-resolves against wherever the
-            -- browser currently is, per the comment above
-            -- compute_breadcrumbs), this is both absolute AND
-            -- request-specific -- so, also unlike either of those, it goes
-            -- stale after an htmx-driven navigation that doesn't reload the
-            -- page. page.mustache's header cluster carries an id
+            -- Raw ingredients for the "History" link (page-header.mustache)
+            -- and the "?history=" deep link (page.mustache's
+            -- "#svn-history-content"): a REPORT request against this same
+            -- directory (or a direct-child file, for the deep link),
+            -- distinguished from ordinary svn-client REPORT traffic by
+            -- Content-Type, not by anything in the URL (see svn-log.lua's
+            -- input_filter's own is_form_encoded_content_type check).
+            -- Templates own the literal URL-shape assembly themselves
+            -- (e.g. "{{{request_href}}}{{{history_query_suffix}}}") rather
+            -- than consuming one Lua-pre-built href string -- lets a site
+            -- change that shape (extra params, a different structure
+            -- entirely) by editing just the template, no Lua change
+            -- needed. request_href is both absolute AND request-specific
+            -- -- unlike "Start" (a fixed, request-independent destination)
+            -- or "Up" (a relative href that re-resolves against wherever
+            -- the browser currently is, per the comment above
+            -- compute_breadcrumbs) -- so it goes stale after an
+            -- htmx-driven navigation that doesn't reload the page.
+            -- page.mustache's header cluster carries an id
             -- ("#svn-header-left") specifically so the breadcrumb/dir.mustache
             -- navigation links can pull a freshly-rendered one out of their
             -- own full-page response via hx-select-oob, the same way they
             -- already do for "#svn-breadcrumb"/"#svn-footer".
-            history_href = escape_html(history_href_raw),
-            history_query_href = history_query_href,
+            request_href = escape_html(request_href),
+            repo_root = repo_root and escape_html(repo_root) or nil,
+            history_query_suffix = history_query_suffix,
+            -- Validated (see validate_path_segment) and escaped here --
+            -- consumed by page.mustache purely as a truthy gate
+            -- ("{{#history_target}}") plus its own literal value inside
+            -- the deep link's href, so it needs the same HTML-attribute
+            -- escaping every other href-adjacent field here gets, not just
+            -- the traversal-safety validation it already has.
+            history_target = history_target and escape_html(history_target) or nil,
             -- nav starts at the repo root (breadcrumbs[1] is that crumb --
             -- lustache can't reach it directly as {{breadcrumbs.1.hx_href}},
             -- since breadcrumbs is an integer-indexed array, not
@@ -930,6 +924,17 @@ function output_filter(r)
                     -- a repository name would corrupt it. Extremely
                     -- unlikely in practice, not worth solving now.
                     repo_root = has_base and breadcrumbs[1].hx_href:match("^([^?]*)") or nil
+
+                    -- append_query already does exactly the "?  vs &" join
+                    -- decision correctly when called against an empty
+                    -- starting string -- no bespoke helper needed for this.
+                    if revision_pinned then
+                        history_query_suffix = append_query(history_query_suffix, "p=" .. revision_pinned)
+                    end
+                    if repo_root then
+                        history_query_suffix = append_query(history_query_suffix, "repo_root=" .. repo_root)
+                    end
+                    history_query_suffix = escape_html(history_query_suffix)
                 end
 
                 r:debug(string.format(
@@ -953,7 +958,7 @@ function output_filter(r)
                 element = "repo"
             end
 
-            local html = render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, revision_suffix)
+            local html = render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, history_query_suffix)
 
             if html then
                 rendered_count = rendered_count + 1

@@ -1097,14 +1097,14 @@ describe("svn-index output_filter", function()
         ))
     end)
 
-    it("appends repo_root to history_href, layering after an existing \"?p=REV\" pin with \"&amp;\"", function()
+    it("appends repo_root to the History link's href, layering after an existing \"?p=REV\" pin with \"&amp;\"", function()
         -- svn-log.lua's own output_filter has no way to know where the
         -- repo root sits in the URL space (only the directory-listing XML
         -- this file parses carries <index base="..." path="...">) -- it
-        -- reads this back via r.args to anchor changed-path links. Built
-        -- raw (both request_href+revision_suffix and the repo_root
-        -- addition) and escape_html'd exactly once at the end, like every
-        -- other href in this file -- hence "&amp;", not "&".
+        -- reads this back via r.args to anchor changed-path links.
+        -- history_query_suffix (built via append_query, escape_html'd
+        -- once) is what page-header.mustache appends onto its own
+        -- request_href -- hence "&amp;", not "&".
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="10" path="/trunk/" base="myrepo">
@@ -1414,8 +1414,9 @@ describe("svn-index output_filter", function()
         -- swapped to a different directory -- the footer shows the current
         -- repository/path/revision, the same kind of "reflects wherever
         -- main currently is" content the breadcrumb already is, and the
-        -- header cluster's own "History" link (history_href, see
-        -- template_context) is both absolute and request-specific --
+        -- header cluster's own "History" link (built from request_href/
+        -- history_query_suffix, see template_context) is both absolute and
+        -- request-specific --
         -- unlike "Start" (fixed) or "Up" (a relative href that re-resolves
         -- against wherever the browser currently is), it goes stale after
         -- exactly this kind of non-reloading navigation unless refreshed
