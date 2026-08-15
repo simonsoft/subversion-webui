@@ -244,17 +244,16 @@ local function append_query(href, extra_query)
     return href .. (href:find("?", 1, true) and "&" or "?") .. extra_query
 end
 
--- Validates a query-string value names a plain, single path segment, with
--- no traversal potential -- used both for "?history=<filename>" (a direct
--- child of the browsed directory) and for "/log.html"'s own "?base="
--- redirect param (redirect_handler, further below): both are
--- attacker-controlled and get concatenated directly into a URL. This is a
--- real security boundary, not just a UX nicety: rejects an embedded
--- literal "/" (a multi-segment path), a percent-encoded "%2f"/"%2F" (would
--- otherwise decode to a "/" once concatenated downstream, smuggling a
--- multi-segment path past a literal-"/"-only check), and "."/".."/empty
--- (self/parent-directory references). Returns the value unchanged when
--- valid, nil otherwise (treated the same as the param being absent).
+-- Validates the "?history=<filename>" query param names a plain, single
+-- path segment -- a direct child of the browsed directory, nothing else.
+-- This is a real security boundary (path traversal via this param,
+-- attacker-controlled and concatenated directly into a URL), not just a
+-- UX nicety: rejects an embedded literal "/" (a multi-segment path), a
+-- percent-encoded "%2f"/"%2F" (would otherwise decode to a "/" once
+-- concatenated downstream, smuggling a multi-segment path past a
+-- literal-"/"-only check), and "."/".."/empty (self/parent-directory
+-- references). Returns the value unchanged when valid, nil otherwise
+-- (treated the same as the param being absent).
 local function validate_path_segment(value)
     if not value or value == ""
         or value == "." or value == ".."
@@ -597,9 +596,9 @@ function output_filter(r)
 
     -- "?history=<filename>" deep link: opens the History dialog
     -- automatically, scoped to a direct-child file of the directory being
-    -- browsed (see /log.html's own redirect_handler, which is how a user
-    -- typically arrives at a URL shaped like this). Already
-    -- percent-encoded as received (query values are never decoded here,
+    -- browsed (see README.md's "File history" section for how a site can
+    -- redirect a "/log.html?base=&target=&torev=" URL into one of these).
+    -- Already percent-encoded as received (query values are never decoded here,
     -- consistent with every other param this file reads) -- concatenated
     -- directly onto request_href the same way an XML "href" attribute
     -- already is elsewhere in this file.
@@ -1073,120 +1072,4 @@ function output_filter(r)
         svn.version,
         os.clock() - started_at
     ))
-end
-
--- ---------------------------------------------------------------------
--- redirect_handler: a plain mod_lua content handler (registered via
--- LuaMapHandler, NOT a filter -- a different, simpler protocol: one-shot
--- r:puts()/return, no coroutine.yield/bucket streaming) for
--- "/log.html?base=<repo>&target=<repo-relative-path>&torev=<revision>".
--- Redirects (a real HTTP 302) to the corresponding directory's own index
--- page with "?history=<filename>&p=<torev>" -- the deep-link query param
--- output_filter (above) already understands -- so "/log.html" stays a
--- stable, shareable/bookmarkable entry point without being a second page.
--- ---------------------------------------------------------------------
-
--- Duplicated from svn-log.lua (no shared require-able module exists in
--- this repo): validates a query-string value is a plain non-negative
--- integer, since it's attacker-controlled and gets concatenated directly
--- into a redirect Location below.
-local function validate_nonneg_integer(str)
-    if not str then
-        return nil
-    end
-
-    local n = tonumber(str)
-
-    if not n or n ~= math.floor(n) or n < 0 then
-        return nil
-    end
-
-    return string.format("%d", n)
-end
-
--- Duplicated from svn-log.lua's own percent_encode_path (see its comment
--- there for the full byte-by-byte-is-UTF-8-safe rationale). Needed here
--- because "target" is decoded (see percent_decode below) before being
--- split into parent_path/filename, so both halves must be re-encoded
--- before they can go into a new URL -- unlike svn-index.lua's own
--- mod_dav_svn-sourced hrefs elsewhere in this file, which arrive already
--- percent-encoded and are never decoded at all.
-local function percent_encode_path(path)
-    return (tostring(path or ""):gsub("[^%w%-%._~/]", function(ch)
-        return string.format("%%%02X", ch:byte())
-    end))
-end
-
--- "target" arrives percent-encoded (an ordinary query-string value), but
--- needs decoding first so it can be split on its real "/" separators --
--- splitting the still-encoded string would miss any "/" a client chose to
--- send as a literal "%2F" instead (both equally valid ways to encode a "/"
--- inside a URI query component). Re-encoded again afterward (see
--- percent_encode_path above) once split into parent_path/filename. "+" is
--- deliberately left as a literal "+", not decoded to a space: unlike
--- application/x-www-form-urlencoded bodies, a URI's own query component
--- never gives "+" that meaning (RFC 3986), and nothing else in this app
--- treats query values as form-encoded either.
-local function percent_decode(str)
-    return (tostring(str or ""):gsub("%%(%x%x)", function(hex)
-        return string.char(tonumber(hex, 16))
-    end))
-end
-
-function redirect_handler(r)
-    if r.method ~= "GET" then
-        r.status = 405
-        r.content_type = "text/plain"
-        r:puts("Method not allowed")
-        return apache2.OK
-    end
-
-    local base = validate_path_segment(parse_query_param(r.args, "base"))
-    local target = parse_query_param(r.args, "target")
-    local torev = validate_nonneg_integer(parse_query_param(r.args, "torev"))
-
-    if not base or not target or target == "" then
-        r.status = 400
-        r.content_type = "text/plain"
-        r:puts("Missing or invalid \"base\" and/or \"target\" query parameters")
-        return apache2.OK
-    end
-
-    local decoded_target = percent_decode(target)
-
-    -- Split at the LAST "/": everything through it is the parent
-    -- directory path, everything after it is the filename. No "/" at all
-    -- means target is a single, repo-root-level segment (parent_path
-    -- defaults to "/").
-    local parent_path, filename = decoded_target:match("^(.*/)([^/]*)$")
-
-    if not parent_path then
-        parent_path, filename = "/", decoded_target
-    end
-
-    local location_prefix = (r.subprocess_env and r.subprocess_env.SVN_LOCATION_PREFIX) or "/svn"
-    local location = location_prefix .. "/" .. base .. percent_encode_path(parent_path)
-
-    if filename == "" then
-        -- target itself named a directory (trailing "/", or the repo
-        -- root) -- directory history is already reachable via the
-        -- existing page-level "History" link, so redirect there with no
-        -- "?history=" param rather than erroring.
-    elseif filename == "." or filename == ".." then
-        r.status = 400
-        r.content_type = "text/plain"
-        r:puts("Invalid \"target\" query parameter")
-        return apache2.OK
-    else
-        location = append_query(location, "history=" .. percent_encode_path(filename))
-    end
-
-    if torev then
-        location = append_query(location, "p=" .. torev)
-    end
-
-    r.status = 302
-    r.headers_out["Location"] = location
-
-    return apache2.OK
 end

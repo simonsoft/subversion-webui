@@ -249,32 +249,171 @@ Both require `SVN_LOG_HTML`'s `FilterProvider` condition above (the
 directory History, but file-history links (both the icon and the
 `?history=` param) will silently get raw XML back instead of rendered HTML.
 
-#### `/log.html` redirect
+#### Sample: a `/log.html` redirect into file history
 
-`/log.html?base=<repo>&target=<repo-relative-path>&torev=<revision>`
-redirects (HTTP 302) to the corresponding directory's own index page with
-`?history=<filename>&p=<torev>` -- a stable, shareable/bookmarkable entry
-point into file history that doesn't require knowing the file's parent
-directory URL up front. `target` is the file's full repo-relative path
-(e.g. `/service-mig/xml/keydefmaps/torquetable.xlsx`); `torev` is optional.
+`?history=<filename>` (above) needs the file's *parent directory's own URL*
+up front -- fine for a link generated from inside the app itself, less
+convenient as a stable, shareable URL when all you have is a repo name and a
+file's full repo-relative path (`base`/`target`, in the sense the rest of
+this README uses those words).
 
-```
+This repo doesn't ship a handler for that shape -- it's a fairly
+site-specific choice (URL, param names, how `base` maps to a mount point)
+not worth carrying as tested, maintained code for every deployment. The
+sample below is a starting point: a mod_lua content handler (registered via
+`LuaMapHandler`, a different, simpler mechanism than the
+`LuaInputFilter`/`LuaOutputFilter` pairs used elsewhere in this README -- a
+one-shot `r:puts()`/`return`, no `coroutine.yield`/bucket streaming) that
+redirects `/log.html?base=<repo>&target=<repo-relative-path>&torev=<revision>`
+(HTTP 302) to the corresponding directory's own index page with
+`?history=<filename>&p=<torev>`. Copy it into your own `.lua` file, adjust
+to taste, and wire it up:
+
+```apache
 LuaMapHandler "^/log\.html$" \
-        "/opt/subversion-webui/mod-lua/svn-index.lua" \
+        "/opt/subversion-webui/mod-lua/log-redirect-sample.lua" \
         redirect_handler
 
 <Location "/log.html">
-    # Mount point of the <Location /svn> block above -- this app has no
-    # other way to learn it from a request that (deliberately) isn't
-    # inside that Location. Defaults to "/svn" when unset.
+    # Mount point of the <Location /svn> block above -- this handler has no
+    # other way to learn it from a request that (deliberately) isn't inside
+    # that Location. Defaults to "/svn" when unset.
     SetEnv SVN_LOCATION_PREFIX /svn
 </Location>
 ```
 
-`redirect_handler` is a plain mod_lua content handler (registered via
-`LuaMapHandler`, not a filter), not `SVN_LOG_HTML`/`SVN_LOG_REPORT_BODY` --
-it only computes the redirect `Location`, entirely independent of the
-filter pair above.
+```lua
+-- log-redirect-sample.lua -- SAMPLE, not installed by this repo. Adjust
+-- the param names/URL shape/validation to your own site's needs.
+
+local function parse_query_param(str, key)
+    if not str then
+        return nil
+    end
+
+    local query = (str:match("%?(.*)$") or str):match("^([^#]*)")
+
+    for pair in query:gmatch("[^&]+") do
+        local k, v = pair:match("^([^=]+)=(.*)$")
+        if k == key then
+            return v
+        end
+    end
+
+    return nil
+end
+
+local function append_query(href, extra_query)
+    if not extra_query or extra_query == "" then
+        return href
+    end
+
+    return href .. (href:find("?", 1, true) and "&" or "?") .. extra_query
+end
+
+-- "base" is attacker-controlled and gets concatenated directly into the
+-- redirect Location -- reject anything but a plain single path segment
+-- (no "/", no encoded "%2f"/"%2F", no "."/"..") to rule out smuggling an
+-- extra path segment or a traversal.
+local function validate_path_segment(value)
+    if not value or value == ""
+        or value == "." or value == ".."
+        or value:find("/", 1, true)
+        or value:lower():find("%2f", 1, true) then
+        return nil
+    end
+
+    return value
+end
+
+local function validate_nonneg_integer(str)
+    if not str then
+        return nil
+    end
+
+    local n = tonumber(str)
+
+    if not n or n ~= math.floor(n) or n < 0 then
+        return nil
+    end
+
+    return string.format("%d", n)
+end
+
+-- Same rationale as svn-log.lua's own percent_encode_path (see above):
+-- byte-by-byte encoding is UTF-8-safe, "/" is kept unencoded as a path
+-- separator.
+local function percent_encode_path(path)
+    return (tostring(path or ""):gsub("[^%w%-%._~/]", function(ch)
+        return string.format("%%%02X", ch:byte())
+    end))
+end
+
+-- "target" arrives percent-encoded; decode it first so it can be split on
+-- its real "/" separators (a client may have sent one as a literal "%2F"
+-- instead), then re-encode each half afterward.
+local function percent_decode(str)
+    return (tostring(str or ""):gsub("%%(%x%x)", function(hex)
+        return string.char(tonumber(hex, 16))
+    end))
+end
+
+function redirect_handler(r)
+    if r.method ~= "GET" then
+        r.status = 405
+        r.content_type = "text/plain"
+        r:puts("Method not allowed")
+        return apache2.OK
+    end
+
+    local base = validate_path_segment(parse_query_param(r.args, "base"))
+    local target = parse_query_param(r.args, "target")
+    local torev = validate_nonneg_integer(parse_query_param(r.args, "torev"))
+
+    if not base or not target or target == "" then
+        r.status = 400
+        r.content_type = "text/plain"
+        r:puts("Missing or invalid \"base\" and/or \"target\" query parameters")
+        return apache2.OK
+    end
+
+    local decoded_target = percent_decode(target)
+
+    -- Split at the LAST "/": everything through it is the parent
+    -- directory path, everything after it is the filename. No "/" at all
+    -- means target is a single, repo-root-level segment.
+    local parent_path, filename = decoded_target:match("^(.*/)([^/]*)$")
+
+    if not parent_path then
+        parent_path, filename = "/", decoded_target
+    end
+
+    local location_prefix = (r.subprocess_env and r.subprocess_env.SVN_LOCATION_PREFIX) or "/svn"
+    local location = location_prefix .. "/" .. base .. percent_encode_path(parent_path)
+
+    if filename == "" then
+        -- target itself named a directory -- directory history is already
+        -- reachable via the page-level "History" link, so redirect there
+        -- with no "?history=" param rather than erroring.
+    elseif filename == "." or filename == ".." then
+        r.status = 400
+        r.content_type = "text/plain"
+        r:puts("Invalid \"target\" query parameter")
+        return apache2.OK
+    else
+        location = append_query(location, "history=" .. percent_encode_path(filename))
+    end
+
+    if torev then
+        location = append_query(location, "p=" .. torev)
+    end
+
+    r.status = 302
+    r.headers_out["Location"] = location
+
+    return apache2.OK
+end
+```
 
 ### Apache httpd transfer
 
