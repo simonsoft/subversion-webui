@@ -260,160 +260,61 @@ this README uses those words).
 This repo doesn't ship a handler for that shape -- it's a fairly
 site-specific choice (URL, param names, how `base` maps to a mount point)
 not worth carrying as tested, maintained code for every deployment. The
-sample below is a starting point: a mod_lua content handler (registered via
-`LuaMapHandler`, a different, simpler mechanism than the
-`LuaInputFilter`/`LuaOutputFilter` pairs used elsewhere in this README -- a
-one-shot `r:puts()`/`return`, no `coroutine.yield`/bucket streaming) that
-redirects `/log.html?base=<repo>&target=<repo-relative-path>&torev=<revision>`
-(HTTP 302) to the corresponding directory's own index page with
-`?history=<filename>&p=<torev>`. Copy it into your own `.lua` file, adjust
-to taste, and wire it up:
+sample below is a starting point, using `mod_rewrite` (no Lua, no extra
+file) rather than a Lua content handler: it redirects (HTTP 302)
+`/log.html?base=<repo>&target=<repo-relative-path>&torev=<revision>` to the
+corresponding directory's own index page with `?history=<filename>&p=<torev>`.
+Copy it into your Apache config and adjust to taste:
 
 ```apache
-LuaMapHandler "^/log\.html$" \
-        "/opt/subversion-webui/mod-lua/log-redirect-sample.lua" \
-        redirect_handler
+RewriteEngine On
 
-<Location "/log.html">
-    # Mount point of the <Location /svn> block above -- this handler has no
-    # other way to learn it from a request that (deliberately) isn't inside
-    # that Location. Defaults to "/svn" when unset.
-    SetEnv SVN_LOCATION_PREFIX /svn
-</Location>
+# Rejects a "base" containing an embedded "/" or "%2f"/"%2F" -- otherwise
+# an attacker could inject extra path structure (or a traversal) into the
+# redirect target. Falls through to a plain 403 rather than redirecting.
+RewriteCond %{QUERY_STRING} (?:^|&)base=[^&]*(?:/|%2[Ff])
+RewriteRule ^/log\.html$ - [F]
+
+# torev present and a plain non-negative integer: redirect with "&p=".
+RewriteCond %{QUERY_STRING} (?:^|&)base=([^&]+)
+RewriteCond %{QUERY_STRING} (?:^|&)target=(.*)/([^/&]*)
+RewriteCond %{QUERY_STRING} (?:^|&)torev=([0-9]+)
+RewriteRule ^/log\.html$ /svn/%1%2/?history=%3&p=%4 [R=302,L,NE]
+
+# torev absent (or present but not a plain non-negative integer, which is
+# silently dropped here rather than rejected): redirect without "&p=".
+RewriteCond %{QUERY_STRING} (?:^|&)base=([^&]+)
+RewriteCond %{QUERY_STRING} (?:^|&)target=(.*)/([^/&]*)
+RewriteRule ^/log\.html$ /svn/%1%2/?history=%3 [R=302,L,NE]
 ```
 
-```lua
--- log-redirect-sample.lua -- SAMPLE, not installed by this repo. Adjust
--- the param names/URL shape/validation to your own site's needs.
+("`/svn`" is hardcoded here as the `<Location /svn>` mount point -- adjust
+both rules if yours differs; there's no equivalent of the Lua sample's
+`SVN_LOCATION_PREFIX` env var to make this configurable without a Lua
+handler.)
 
-local function parse_query_param(str, key)
-    if not str then
-        return nil
-    end
+Caveats worth knowing before relying on this, none of which apply to a Lua
+`LuaMapHandler`-based content handler (the same registration mechanism
+`LuaInputFilter`/`LuaOutputFilter` above use, just for a plain request/
+response instead of a filter -- see mod_lua's own docs for
+`LuaMapHandler`), if you'd rather have them covered:
 
-    local query = (str:match("%?(.*)$") or str):match("^([^#]*)")
-
-    for pair in query:gmatch("[^&]+") do
-        local k, v = pair:match("^([^=]+)=(.*)$")
-        if k == key then
-            return v
-        end
-    end
-
-    return nil
-end
-
-local function append_query(href, extra_query)
-    if not extra_query or extra_query == "" then
-        return href
-    end
-
-    return href .. (href:find("?", 1, true) and "&" or "?") .. extra_query
-end
-
--- "base" is attacker-controlled and gets concatenated directly into the
--- redirect Location -- reject anything but a plain single path segment
--- (no "/", no encoded "%2f"/"%2F", no "."/"..") to rule out smuggling an
--- extra path segment or a traversal.
-local function validate_path_segment(value)
-    if not value or value == ""
-        or value == "." or value == ".."
-        or value:find("/", 1, true)
-        or value:lower():find("%2f", 1, true) then
-        return nil
-    end
-
-    return value
-end
-
-local function validate_nonneg_integer(str)
-    if not str then
-        return nil
-    end
-
-    local n = tonumber(str)
-
-    if not n or n ~= math.floor(n) or n < 0 then
-        return nil
-    end
-
-    return string.format("%d", n)
-end
-
--- Same rationale as svn-log.lua's own percent_encode_path (see above):
--- byte-by-byte encoding is UTF-8-safe, "/" is kept unencoded as a path
--- separator.
-local function percent_encode_path(path)
-    return (tostring(path or ""):gsub("[^%w%-%._~/]", function(ch)
-        return string.format("%%%02X", ch:byte())
-    end))
-end
-
--- "target" arrives percent-encoded; decode it first so it can be split on
--- its real "/" separators (a client may have sent one as a literal "%2F"
--- instead), then re-encode each half afterward.
-local function percent_decode(str)
-    return (tostring(str or ""):gsub("%%(%x%x)", function(hex)
-        return string.char(tonumber(hex, 16))
-    end))
-end
-
-function redirect_handler(r)
-    if r.method ~= "GET" then
-        r.status = 405
-        r.content_type = "text/plain"
-        r:puts("Method not allowed")
-        return apache2.OK
-    end
-
-    local base = validate_path_segment(parse_query_param(r.args, "base"))
-    local target = parse_query_param(r.args, "target")
-    local torev = validate_nonneg_integer(parse_query_param(r.args, "torev"))
-
-    if not base or not target or target == "" then
-        r.status = 400
-        r.content_type = "text/plain"
-        r:puts("Missing or invalid \"base\" and/or \"target\" query parameters")
-        return apache2.OK
-    end
-
-    local decoded_target = percent_decode(target)
-
-    -- Split at the LAST "/": everything through it is the parent
-    -- directory path, everything after it is the filename. No "/" at all
-    -- means target is a single, repo-root-level segment.
-    local parent_path, filename = decoded_target:match("^(.*/)([^/]*)$")
-
-    if not parent_path then
-        parent_path, filename = "/", decoded_target
-    end
-
-    local location_prefix = (r.subprocess_env and r.subprocess_env.SVN_LOCATION_PREFIX) or "/svn"
-    local location = location_prefix .. "/" .. base .. percent_encode_path(parent_path)
-
-    if filename == "" then
-        -- target itself named a directory -- directory history is already
-        -- reachable via the page-level "History" link, so redirect there
-        -- with no "?history=" param rather than erroring.
-    elseif filename == "." or filename == ".." then
-        r.status = 400
-        r.content_type = "text/plain"
-        r:puts("Invalid \"target\" query parameter")
-        return apache2.OK
-    else
-        location = append_query(location, "history=" .. percent_encode_path(filename))
-    end
-
-    if torev then
-        location = append_query(location, "p=" .. torev)
-    end
-
-    r.status = 302
-    r.headers_out["Location"] = location
-
-    return apache2.OK
-end
-```
+- **`target`'s path separators must be literal `/`, not percent-encoded
+  `%2F`.** `mod_rewrite`'s regex can find the *last* separator whichever
+  form is used, but can't decode a captured `%2F` back into a real `/`
+  before it's substituted into the new URL's path -- a `%2F`-encoded
+  `target` would end up with a literally percent-encoded slash in the
+  `Location` path, which `mod_dav_svn`/this app won't resolve as a
+  directory boundary. Most URL-building code leaves `/` unescaped in a
+  query value (it isn't in RFC 3986's reserved-and-must-escape set for that
+  position), so this is usually not an issue in practice -- just don't rely
+  on `%2F` here the way the earlier examples in this README do.
+- **No traversal (`..`) guard on `target` itself** (only on `base`, above)
+  -- if `target` isn't already trusted/generated by your own tooling,
+  consider adding a similar rejecting `RewriteCond`/`RewriteRule [F]` pair
+  for it, or use a Lua handler instead.
+- **A malformed `torev` is silently dropped**, not rejected -- the request
+  still redirects, just without a revision pin, rather than a 400.
 
 ### Apache httpd transfer
 
