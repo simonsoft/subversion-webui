@@ -899,7 +899,7 @@ wa-tree-item a {
 <wa-switch id="svn-history-folder-toggle" class="wa-font-size-s">Folder only</wa-switch>
 <wa-button id="svn-history-expand-toggle" appearance="plain" size="s">Expand all</wa-button>
 </div>
-<div id="svn-history-content"{{#history_target}}{{#repo_root}} hx-action="{{{request_href}}}{{{history_target}}}{{{history_query_suffix}}}" hx-method="REPORT" hx-trigger="load"{{/repo_root}}{{/history_target}}></div>
+<div id="svn-history-content"{{#history_active}} hx-action="{{{request_href}}}{{{history_target}}}{{{history_query_suffix}}}" hx-method="REPORT" hx-trigger="load"{{/history_active}}></div>
 </wa-dialog>
 </wa-page>
 </body>

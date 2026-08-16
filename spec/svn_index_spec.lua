@@ -1699,14 +1699,15 @@ describe("svn-index output_filter", function()
     -- "?history=" is a real security boundary (path traversal / smuggling a
     -- multi-segment path via a downstream REPORT href), not just a UX
     -- nicety -- each of these must leave #svn-history-content exactly as
-    -- if the param were absent.
+    -- if the param were absent. An empty value is deliberately NOT in this
+    -- list -- see the "self" cases below, where it (like a bare
+    -- "?history") is a meaningful signal, not rejected input.
     for _, case in ipairs({
         { name = "an embedded literal slash", value = "sub/file.txt" },
         { name = "a percent-encoded slash (case-insensitive)", value = "sub%2Ffile.txt" },
         { name = "a percent-encoded slash, uppercase hex", value = "sub%2FFILE.txt" },
         { name = "\"..\"", value = ".." },
-        { name = "\".\"", value = "." },
-        { name = "an empty value", value = "" }
+        { name = "\".\"", value = "." }
     }) do
         it("rejects ?history= containing " .. case.name .. ", treating it as absent", function()
             local html = run_filter({
@@ -1720,4 +1721,48 @@ describe("svn-index output_filter", function()
             assert.truthy(html:find('<div id="svn-history-content"></div>', 1, true))
         end)
     end
+
+    -- "?history" (bare) / "?history=" (empty value): auto-open History for
+    -- the browsed directory itself, not a child file.
+    for _, case in ipairs({
+        { name = "a bare ?history flag", suffix = "history" },
+        { name = "?history= with an empty value", suffix = "history=" }
+    }) do
+        it("auto-loads the browsed directory's own history for " .. case.name, function()
+            local html = run_filter({
+                [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+            }, "/svn/demo1/?" .. case.suffix, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+            assert.truthy(html:find(
+                '<div id="svn-history-content" hx-action="/svn/demo1/?repo_root=/svn/" hx-method="REPORT" hx-trigger="load"></div>',
+                1, true
+            ))
+        end)
+    end
+
+    it("carries an active revision pin into the bare ?history self case's own hx-action", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="9" path="/trunk/" base="myrepo">
+</index>
+</svn>]]
+        }, "/svn/demo1/?history&p=9", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('hx-action="/svn/demo1/?p=9&amp;repo_root=/svn/"', 1, true))
+    end)
+
+    it("leaves a bare ?history inactive (no auto-load attributes) when repo_root can't be derived", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="0" path="/">
+</index>
+</svn>]]
+        }, "/svn/demo1/?history", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<div id="svn-history-content"></div>', 1, true))
+    end)
 end)

@@ -234,20 +234,25 @@ pair above (no new REPORT-handling logic, just new places that link to it):
 - **A "History" icon** next to every file in the directory listing (see
   `file.mustache`), opening the same `#svn-history-dialog` the page-level
   "History" link uses, scoped to that one file.
-- **A `?history=<filename>` query parameter** on the directory's own index
-  page URL -- `filename` must be a *direct child* of the directory being
-  browsed (a single path segment, validated server-side; rejected if it
-  contains `/`, `%2f`/`%2F`, or is `.`/`..`/empty). When present, the page
-  loads with that file's history fetched and the dialog opened
-  automatically, via a declarative `hx-trigger="load"` on
-  `#svn-history-content` -- no extra request, no bootstrap script.
-  Revision pinning reuses the existing `?p=<rev>` param.
+- **A `?history` (or `?history=<filename>`) query parameter** on the
+  directory's own index page URL. Bare (`?history`, or `?history=` with an
+  empty value) auto-opens History for the *browsed directory itself* -- the
+  same target the page-level "History" link's own click already opens, just
+  triggered automatically on page load instead. Given a value
+  (`?history=<filename>`), `filename` must instead be a *direct child* of
+  the directory being browsed (a single path segment, validated
+  server-side; rejected if it contains `/`, `%2f`/`%2F`, or is `.`/`..`/
+  empty), and History opens for that file. Either way, the page loads with
+  history already fetched and the dialog opened automatically, via a
+  declarative `hx-trigger="load"` on `#svn-history-content` -- no extra
+  request, no bootstrap script. Revision pinning reuses the existing
+  `?p=<rev>` param.
 
-Both require `SVN_LOG_HTML`'s `FilterProvider` condition above (the
-`HX-Request` check) -- a deployment that upgrades `svn-index.lua`/
-`svn-log.lua` without also updating that Apache snippet will still work for
-directory History, but file-history links (both the icon and the
-`?history=` param) will silently get raw XML back instead of rendered HTML.
+All three (the icon, and both `?history` forms) require `SVN_LOG_HTML`'s
+`FilterProvider` condition above (the `HX-Request` check) -- a deployment
+that upgrades `svn-index.lua`/`svn-log.lua` without also updating that
+Apache snippet will still work for a plain directory browse, but History
+links/deep-links will silently get raw XML back instead of rendered HTML.
 
 #### Sample: a `/log.html` redirect into file history
 
@@ -292,6 +297,11 @@ RewriteRule ^/log\.html$ /svn/%1%2/?history=%3 [R=302,L,NE]
 both rules if yours differs; there's no equivalent of the Lua sample's
 `SVN_LOCATION_PREFIX` env var to make this configurable without a Lua
 handler.)
+
+A directory-shaped `target` (trailing `/`) naturally produces an empty
+`?history=` value here (nothing after the last `/`) -- which, per the
+bare-`?history` behavior above, auto-opens History for that directory
+itself rather than doing nothing, with no extra rule needed for it.
 
 Caveats worth knowing before relying on this, none of which apply to a Lua
 `LuaMapHandler`-based content handler (the same registration mechanism

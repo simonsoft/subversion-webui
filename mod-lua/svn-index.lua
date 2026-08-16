@@ -212,6 +212,15 @@ end
 -- string this filter builds itself) -- using one hand-rolled mechanism
 -- uniformly, rather than mixing that in for just the one case it covers,
 -- keeps this simpler and testable without a real Apache request object.
+--
+-- Returns "" (not nil) for a bare key -- present with no "=" at all (e.g.
+-- "?history" rather than "?history=" or "?history=x") -- the common
+-- boolean-flag URL convention. Purely additive: every existing "key=value"
+-- call site is unaffected, since a bare token that happens to match some
+-- *other* key's name was never matched by the "k == key" check above it
+-- either. Generic, not specific to any one param -- any future flag-style
+-- query param can reuse this the same way "?history" (see output_filter)
+-- does.
 local function parse_query_param(str, key)
     if not str then
         return nil
@@ -227,6 +236,9 @@ local function parse_query_param(str, key)
         local k, v = pair:match("^([^=]+)=(.*)$")
         if k == key then
             return v
+        end
+        if pair == key then
+            return ""
         end
     end
 
@@ -563,6 +575,14 @@ function output_filter(r)
     -- suffix, rather than Lua building three separate bespoke href strings.
     local history_query_suffix = ""
 
+    -- Gates whether "#svn-history-content" (page.mustache) auto-loads at
+    -- all -- nil until finalized in the "index" StartElement branch below
+    -- (once repo_root is known), where it becomes truthy only if history
+    -- was actually requested (see history_wanted, near the "?history"
+    -- read below) AND repo_root could be derived, mirroring the same
+    -- "known once repo_root is" pattern history_query_suffix follows.
+    local history_active = nil
+
     local svn = {
         version = "",
         href = "http://subversion.apache.org/"
@@ -604,15 +624,32 @@ function output_filter(r)
     local revision_pinned = parse_query_param(r.args, "p")
     local revision_suffix = revision_pinned and ("?p=" .. revision_pinned) or ""
 
-    -- "?history=<filename>" deep link: opens the History dialog
-    -- automatically, scoped to a direct-child file of the directory being
-    -- browsed (see README.md's "File history" section for how a site can
-    -- redirect a "/log.html?base=&target=&torev=" URL into one of these).
-    -- Already percent-encoded as received (query values are never decoded here,
-    -- consistent with every other param this file reads) -- concatenated
-    -- directly onto request_href the same way an XML "href" attribute
-    -- already is elsewhere in this file.
-    local history_target = validate_path_segment(parse_query_param(r.args, "history"))
+    -- "?history" deep link: opens the History dialog automatically,
+    -- scoped either to the directory being browsed itself ("?history"
+    -- bare, or "?history=" with an empty value -- parse_query_param
+    -- returns "" for both) or to a validated direct-child file
+    -- ("?history=<filename>") -- see README.md's "File history" section
+    -- for how a site can redirect a "/log.html?base=&target=&torev=" URL
+    -- into one of these. history_wanted/history_active (the latter
+    -- finalized once repo_root is known -- see the "index" StartElement
+    -- branch below) gate whether "#svn-history-content" (page.mustache)
+    -- auto-loads at all; history_target is always a plain string when
+    -- active -- "" for the directory itself, "<filename>" for a child --
+    -- concatenated directly onto request_href the same way an XML "href"
+    -- attribute already is elsewhere in this file (already
+    -- percent-encoded as received; query values are never decoded here,
+    -- consistent with every other param this file reads).
+    local history_param = parse_query_param(r.args, "history")
+    local history_target = nil
+    local history_wanted = false
+
+    if history_param == "" then
+        history_target = ""
+        history_wanted = true
+    elseif history_param then
+        history_target = validate_path_segment(history_param)
+        history_wanted = history_target ~= nil
+    end
 
     -- SVN_INDEX_QUERY_FILE: despite the name, this is the literal extra
     -- query-string fragment itself (e.g. "view=details&this=that"), not a
@@ -798,12 +835,21 @@ function output_filter(r)
             request_href = escape_html(request_href),
             repo_root = repo_root and escape_html(repo_root) or nil,
             history_query_suffix = history_query_suffix,
-            -- Validated (see validate_path_segment) and escaped here --
-            -- consumed by page.mustache purely as a truthy gate
-            -- ("{{#history_target}}") plus its own literal value inside
-            -- the deep link's href, so it needs the same HTML-attribute
-            -- escaping every other href-adjacent field here gets, not just
-            -- the traversal-safety validation it already has.
+            -- Gates "#svn-history-content"'s own auto-load attributes in
+            -- page.mustache ("{{#history_active}}") -- truthy only once
+            -- history was actually requested (see history_wanted, near
+            -- the "?history" read above) AND repo_root could be derived.
+            history_active = history_active,
+            -- Always a plain string when history_active is truthy -- ""
+            -- for the browsed directory itself, "<filename>" for a
+            -- validated direct-child file -- escaped here (see
+            -- validate_path_segment for the traversal-safety validation
+            -- itself) so page.mustache can interpolate it directly into
+            -- the deep link's href with no truthiness check of its own
+            -- (this codebase doesn't otherwise rely on an empty string's
+            -- own truthiness as a mustache section value, which is why
+            -- history_active exists as a separate field rather than
+            -- gating on history_target itself).
             history_target = history_target and escape_html(history_target) or nil,
             -- nav starts at the repo root (breadcrumbs[1] is that crumb --
             -- lustache can't reach it directly as {{breadcrumbs.1.hx_href}},
@@ -935,6 +981,8 @@ function output_filter(r)
                         history_query_suffix = append_query(history_query_suffix, "repo_root=" .. repo_root)
                     end
                     history_query_suffix = escape_html(history_query_suffix)
+
+                    history_active = (history_wanted and repo_root ~= nil) or nil
                 end
 
                 r:debug(string.format(
