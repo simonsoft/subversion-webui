@@ -363,7 +363,7 @@ header[slot="header"] {
        "--svn-header-bg" above -- so a site can set
        `:root { --svn-header-padding-v: ...; }` from page-head-end.mustache
        without touching this file. */
-    padding-inline: var(--wa-space-m);
+    padding-inline: var(--wa-space-l);
     padding-block: var(--svn-header-padding-v, var(--wa-space-s));
     /* Web Awesome's own base stylesheet gives semantic elements like
        <header> an opaque default background (confirmed via a real browser
@@ -385,7 +385,7 @@ header[slot="header"] a {
 }
 
 nav[slot="subheader"] {
-    padding-inline: var(--wa-space-m);
+    padding-inline: var(--wa-space-l);
     padding-block: var(--svn-subheader-padding-v, var(--wa-space-m));
     border-block-end: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
 }
