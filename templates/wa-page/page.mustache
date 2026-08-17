@@ -458,6 +458,20 @@ div.svn-main {
     display: none;
 }
 
+/* "Folder only" only has any visible effect for a folder's own history --
+   every entry in a FILE's history is already an own-change (see
+   render_log_item's own comment in svn-log.lua: a file has no
+   descendants, so descendant_change can never be set), meaning the rule
+   above would never hide anything for one regardless of the switch's own
+   state. Hidden entirely rather than left inert, using the same
+   ":has()"-reads-a-descendant-affects-a-sibling technique as the rule
+   above -- ".svn-log-file" is svn-log.lua's own preamble marking this
+   swapped-in response as file-scoped (see its own comment on
+   request_href/is_file). */
+#svn-history-dialog:has(.svn-log-file) #svn-history-folder-toggle {
+    display: none;
+}
+
 /* One <wa-details class="log-item"> per History entry (see
    log-item.mustache) -- independent expand/collapse (no shared "name"
    attribute), consistent vertical rhythm across entries via flex+gap
@@ -833,6 +847,39 @@ wa-tree-item a {
     text-decoration: none;
 }
 
+/* wa-tree-item's own unnamed (default) slot -- where a file row's two
+   direct children (the name link, ".file-actions" below) land -- is
+   itself a flex container, exposed for exactly this kind of external
+   styling as "::part(label)" (confirmed against Web Awesome's own
+   tree-item source). It doesn't grow to fill the row by default (only
+   as wide as its own content) -- "flex: 1" makes it fill the row's full
+   available width instead, and "justify-content: space-between" then
+   pins ".file-actions" to a consistent position at the row's right edge
+   regardless of how long the filename is, the equivalent for a file row
+   of what ".log-revision-slot" (above) does for log entries: something
+   always lining up at the same horizontal position instead of drifting
+   with variable-length content next to it. "min-width: 0" is the
+   standard fix for a flex item that would otherwise refuse to shrink
+   below its own content's natural width -- without it, a long filename
+   could push ".file-actions" out past the row's own right edge instead
+   of the filename eliding/wrapping. Scoped to "wa-tree-item.file" only
+   (not dir/repo/updir, which have no ".file-actions" group at all). */
+wa-tree-item.file::part(label) {
+    flex: 1;
+    min-width: 0;
+    justify-content: space-between;
+}
+
+/* Groups this file row's own per-file action icons -- today just
+   "History" (see file.mustache), a home for any more added later --
+   kept visually apart from the file's own name/link via the
+   space-between above rather than an inline margin next to the name. */
+.file-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--wa-space-2xs);
+}
+
 /* Per-file "History" icon (see file.mustache) -- a second, independent
    <a href hx-action hx-method="REPORT" hx-trigger="click"> alongside the
    file's own download link, same pattern as page-header.mustache's own
@@ -842,7 +889,6 @@ wa-tree-item a {
    (this file has no such class name available inline), so the same muted
    tone is hand-matched via opacity instead. */
 .file-history-action {
-    margin-left: var(--wa-space-2xs);
     opacity: 0.55;
 }
 .file-history-action:hover,

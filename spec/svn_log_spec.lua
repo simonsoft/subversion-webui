@@ -887,4 +887,35 @@ describe("svn-log output_filter", function()
         assert.truthy(html:find('<wa-details class="log-item log-item-own-change">', 1, true))
         assert.falsy(html:find('log-item-descendant-change', 1, true))
     end)
+
+    it("marks the preamble svn-log-file for a file target, so page.mustache can hide the meaningless Folder-only toggle", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>10</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/file.txt")
+
+        assert.truthy(html:find('<div class="svn-log svn-log-file">', 1, true))
+    end)
+
+    it("does not mark the preamble svn-log-file for a directory target", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>10</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/")
+
+        assert.truthy(html:find('<div class="svn-log">', 1, true))
+        assert.falsy(html:find('svn-log-file', 1, true))
+    end)
 end)
