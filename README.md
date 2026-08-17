@@ -105,6 +105,22 @@ overridable via a `.custom.mustache` sibling). Unlike `page-head-end`, these
 three are optional per template type — only `wa-page` ships them; the other
 skins simply don't define that region, and it renders as empty.
 
+`wa-page` also ships seven further named slots as empty placeholder files,
+the same "optional, empty by default, override via `.custom.mustache`"
+pattern as `page-head-end`: `page-skip-to-content.mustache`,
+`page-banner.mustache`, `page-navigation-header.mustache`,
+`page-navigation-footer.mustache`, `page-main-header.mustache`,
+`page-main-footer.mustache`, and `page-aside.mustache` — corresponding to
+wa-page's `skip-to-content`, `banner`, `navigation-header`,
+`navigation-footer`, `main-header`, `main-footer`, and `aside` slots. Fill
+one in (or add its `.custom.mustache` sibling) to add banner content, a
+sticky aside, or custom nav-drawer/main-content header and footer regions
+without touching `page.mustache`. Two other wa-page slots, `menu` and
+`navigation-toggle`/`navigation-toggle-icon`, aren't exposed this way:
+`menu` replaces the built-in `navigation` region entirely rather than
+adding to it, and this skin already provides a custom nav toggle via the
+`data-toggle-nav` attribute on the icon in `page-header.mustache`.
+
 For example, `wa-page`'s header background color is exposed as the
 `--svn-header-bg` CSS custom property (defaulting to Web Awesome's own
 brand color) — override it by adding this to

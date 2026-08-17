@@ -169,6 +169,13 @@ local function load_template_set(template_type, strip_comments)
         page_header = read_template_optional(dir, "page-header"),
         page_subheader = read_template_optional(dir, "page-subheader"),
         page_footer = read_template_optional(dir, "page-footer"),
+        page_skip_to_content = read_template_optional(dir, "page-skip-to-content"),
+        page_banner = read_template_optional(dir, "page-banner"),
+        page_navigation_header = read_template_optional(dir, "page-navigation-header"),
+        page_navigation_footer = read_template_optional(dir, "page-navigation-footer"),
+        page_main_header = read_template_optional(dir, "page-main-header"),
+        page_main_footer = read_template_optional(dir, "page-main-footer"),
+        page_aside = read_template_optional(dir, "page-aside"),
         entries = {
             updir = read_template(dir, "updir"),
             file = read_template(dir, "file"),
@@ -872,6 +879,27 @@ function output_filter(r)
         end
         if templates.page_footer then
             context["page-footer"] = lustache:render(templates.page_footer, context)
+        end
+        if templates.page_skip_to_content then
+            context["page-skip-to-content"] = lustache:render(templates.page_skip_to_content, context)
+        end
+        if templates.page_banner then
+            context["page-banner"] = lustache:render(templates.page_banner, context)
+        end
+        if templates.page_navigation_header then
+            context["page-navigation-header"] = lustache:render(templates.page_navigation_header, context)
+        end
+        if templates.page_navigation_footer then
+            context["page-navigation-footer"] = lustache:render(templates.page_navigation_footer, context)
+        end
+        if templates.page_main_header then
+            context["page-main-header"] = lustache:render(templates.page_main_header, context)
+        end
+        if templates.page_main_footer then
+            context["page-main-footer"] = lustache:render(templates.page_main_footer, context)
+        end
+        if templates.page_aside then
+            context["page-aside"] = lustache:render(templates.page_aside, context)
         end
 
         return context

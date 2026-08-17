@@ -918,8 +918,11 @@ wa-tree-item.file::part(label) {
 </head>
 <body>
 <wa-page class="wa-font-size-s">
+{{{page-skip-to-content}}}
+{{{page-banner}}}
 {{{page-header}}}
 {{{page-subheader}}}
+{{{page-navigation-header}}}
 <!-- Neither dir.mustache's <span hx-get> nor file/repo.mustache's plain
      <a href> ever activates via wa-tree's own selecting-click-anywhere-in-
      the-row or keyboard Enter/Space: wa-tree's keydown handler drives
@@ -946,10 +949,14 @@ wa-tree-item.file::part(label) {
 <wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">
 </wa-tree>
 </nav>
+{{{page-navigation-footer}}}
+{{{page-main-header}}}
 <div class="svn-main">
 <wa-tree class="svn-index" id="svn-index" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">
 {{{svn_index}}}</wa-tree>
 </div>
+{{{page-main-footer}}}
+{{{page-aside}}}
 {{{page-footer}}}
 <!-- Unslotted, so it lands in wa-page's default slot alongside ".svn-main"
      -- deliberately a real descendant of <wa-page>, not a sibling after it,
