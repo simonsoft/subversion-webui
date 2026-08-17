@@ -356,14 +356,11 @@ wa-page::part(header) {
 header[slot="header"] {
     --wa-link-decoration-default: none;
     /*--wa-color-text-link: var(--wa-color-text-normal);*/
-    /* Horizontal padding is pinned to the same token as
-       "nav[slot='subheader']" below so header and subheader content stay
-       aligned on the left/right edges. Vertical padding is its own
-       overridable custom property -- same fallback-only convention as
-       "--svn-header-bg" above -- so a site can set
-       `:root { --svn-header-padding-v: ...; }` from page-head-end.mustache
-       without touching this file. */
-    padding-inline: var(--wa-space-l);
+    /* Vertical padding is its own overridable custom property -- same
+       fallback-only convention as "--svn-header-bg" above -- so a site can
+       set `:root { --svn-header-padding-v: ...; }` from
+       page-head-end.mustache without touching this file. */
+    padding-inline: var(--wa-space-m);
     padding-block: var(--svn-header-padding-v, var(--wa-space-s));
     /* Web Awesome's own base stylesheet gives semantic elements like
        <header> an opaque default background (confirmed via a real browser
