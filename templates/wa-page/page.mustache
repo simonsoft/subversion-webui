@@ -847,6 +847,20 @@ wa-tree-item a {
     text-decoration: none;
 }
 
+/* Hovering anywhere in a file row underlines its own name link, matching
+   what a click anywhere in that same dead space already does (see the
+   comment above): resolves to a synthesized click on this exact link (via
+   wa-selection-change's own ":scope > a[href]" query). Excluded whenever
+   ".file-actions" (the History icon's own group, further down) is itself
+   being hovered -- that area does NOT act as the file link (its own icon
+   calls stopPropagation precisely to prevent that, see file.mustache),
+   so its hover state shouldn't imply otherwise. ":has()" reads a
+   descendant's own hover state from the ancestor selector, the same
+   technique the "Folder only" rules elsewhere in this file already use. */
+wa-tree-item.file:hover:not(:has(.file-actions:hover)) > a {
+    text-decoration: underline;
+}
+
 /* wa-tree-item's own unnamed (default) slot -- where a file row's two
    direct children (the name link, ".file-actions" below) land -- is
    itself a flex container, exposed for exactly this kind of external
@@ -870,15 +884,13 @@ wa-tree-item.file::part(label) {
     justify-content: space-between;
 }
 
-/* Groups this file row's own per-file action icons -- today just
-   "History" (see file.mustache), a home for any more added later --
-   kept visually apart from the file's own name/link via the
-   space-between above rather than an inline margin next to the name. */
-.file-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--wa-space-2xs);
-}
+/* ".file-actions" (file.mustache) groups this file row's own per-file
+   action icons -- today just "History", a home for any more added later
+   -- kept visually apart from the file's own name/link via the
+   space-between above rather than an inline margin next to the name.
+   Its own flex-row-with-gap layout is the existing "wa-cluster wa-gap-2xs"
+   utility classes (see file.mustache), not bespoke CSS here -- no rule
+   of its own needed for that. */
 
 /* Per-file "History" icon (see file.mustache) -- a second, independent
    <a href hx-action hx-method="REPORT" hx-trigger="click"> alongside the
