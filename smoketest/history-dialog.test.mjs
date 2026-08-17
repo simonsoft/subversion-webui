@@ -91,12 +91,20 @@ async function buildHarness(renderedLogHtml) {
         source, '<div class="wa-cluster wa-gap-s" slot="header-actions">', "</div>", "header-actions cluster"
     );
 
+    // Only the id itself matters here -- page.mustache's real tag also
+    // carries a mustache conditional (`{{#history_active}} hx-action=...
+    // {{/history_active}}`) for the live htmx REPORT fetch, which this
+    // static, statically-pre-opened harness deliberately doesn't exercise
+    // (see the dialogOpenTag comment above). So this only confirms the id
+    // still opens the tag -- as a regression check that page.mustache
+    // hasn't restructured this element -- and the harness always gets a
+    // bare, valid tag rather than page.mustache's unrendered mustache
+    // syntax verbatim.
     const contentDivLine = extractLineContaining(source, 'id="svn-history-content"', "#svn-history-content");
-    const contentDivOpenTagMatch = contentDivLine.match(/^<div id="svn-history-content">/);
-    if (!contentDivOpenTagMatch) {
-        throw new Error('could not find a literal \'<div id="svn-history-content">\' opening tag in page.mustache.');
+    if (!contentDivLine.startsWith('<div id="svn-history-content"')) {
+        throw new Error('could not find a \'<div id="svn-history-content"\' opening tag in page.mustache.');
     }
-    const contentDivOpenTag = contentDivOpenTagMatch[0];
+    const contentDivOpenTag = '<div id="svn-history-content">';
 
     const dialogTagNameMatch = dialogOpenTag.match(/^<(\w[\w-]*)/);
     if (!dialogTagNameMatch) {
@@ -430,7 +438,11 @@ try {
             hasCopyFrom: html.includes("copy-from") && html.includes("old-name.txt"),
             hasIcons: ["plus", "pen", "trash"].every((n) => html.includes(`name="${n}"`)),
             hasNoArrowIcon: !html.includes("arrow-right"),
-            hasSmallRevisionBadge: html.includes('<span class="revision-badge revision-badge-small">90</span>'),
+            // Substring, not the full tag: log-item.mustache's real span
+            // also carries "wa-font-size-s" (matching its sibling
+            // ".copy-from" span's own class list), which an exact-tag
+            // match here would spuriously fail on.
+            hasSmallRevisionBadge: html.includes('class="revision-badge revision-badge-small') && html.includes(">90</span>"),
             hasNoAtSign: !html.includes("@90"),
         };
     });
