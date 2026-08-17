@@ -519,11 +519,20 @@ function output_filter(r)
 
     local templates = load_log_template_set(template_type)
 
+    -- Trusted as-is, unlike svn-index.lua's own request_href (which
+    -- unconditionally force-appends "/" because its output_filter ONLY
+    -- ever runs against directory-listing XML). This filter also serves
+    -- file targets (the per-file history icon and "?history=" deep link,
+    -- both built in svn-index.lua) -- force-appending here would turn
+    -- ".../file.txt" into the non-existent ".../file.txt/", corrupting
+    -- revision_href (render_log_item) and build_more_href below. Every
+    -- caller of this filter is responsible for sending the correctly
+    -- shaped URL itself: directories with their own trailing "/", files
+    -- without. own_relative_path below (its own ":gsub("/$", "")") already
+    -- strips any trailing slash before comparing against changed-path
+    -- text either way, so this doesn't change own_change/descendant_change
+    -- classification at all.
     local request_href = url_path(tostring(r.unparsed_uri or r.uri or ""))
-
-    if request_href ~= "" and not request_href:match("/$") then
-        request_href = request_href .. "/"
-    end
 
     -- The repo-root URL svn-index.lua appended onto the History link as
     -- "&repo_root=..." -- this filter has no other way to know where the
@@ -591,13 +600,20 @@ function output_filter(r)
         own_relative_path = own_relative_path
     }
 
-    -- The preamble/postamble are static markup with no data of their own
-    -- to render (unlike svn-index.lua's, which needs <index>'s rev/path/
-    -- base attributes) -- the log fragment now swaps into a permanent
-    -- dialog shell (see page.mustache's "#svn-history-dialog"), which supplies
-    -- its own label/close affordance, so there's no "back to listing" link
-    -- here needing a computed href either.
-    local preamble_html = templates.preamble
+    -- The preamble carries exactly one piece of data: whether this
+    -- request's own target is a file or a directory (request_href never
+    -- carries a trailing slash for a file, always does for a directory --
+    -- see this filter's own comment on request_href, and the contract
+    -- svn-index.lua's callers now follow to produce it). Rendered via
+    -- lustache (unlike the postamble below, which stays a raw string --
+    -- its own svn_log_more insertion happens via a *separate*
+    -- lustache:render call further down, not here) so log.mustache's own
+    -- "{{#is_file}}" can mark ".svn-log" accordingly -- lets
+    -- page.mustache hide the "Folder only" toggle via CSS for file
+    -- history, where it would have no visible effect (every entry is
+    -- already an own-change for a file -- see render_log_item's own
+    -- own_change/descendant_change comment).
+    local preamble_html = lustache:render(templates.preamble, { is_file = not request_href:match("/$") })
     local postamble_html = templates.postamble
     local preamble_sent = false
 

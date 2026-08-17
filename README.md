@@ -148,7 +148,7 @@ LuaOutputFilter SVN_LOG_HTML \
     FilterProvider SVN_LOG_HTML SVN_LOG_HTML \
         "%{REQUEST_METHOD} == 'REPORT' \
             && %{CONTENT_TYPE} =~ m#^(?:text|application)/xml(?:;|$)# \
-            && %{REQUEST_URI} =~ m#/$#"
+            && %{req_novary:HX-Request} == 'true'"
 
     FilterProtocol SVN_LOG_HTML "change=yes;byteranges=no"
     FilterChain SVN_LOG_HTML
@@ -190,6 +190,17 @@ being silently treated as this app's own. Every request that isn't
 *exactly* the History link's own declared Content-Type, real svn-client
 REPORT traffic included, passes through unmodified.
 
+`SVN_LOG_HTML`'s own `FilterProvider` condition checks the `HX-Request`
+header (via `req_novary`, so this dispatch-only check doesn't add
+`HX-Request` to the response's `Vary` header) rather than the request URI's
+shape, because History requests now target both directories *and*
+individual files (see "File history" below) -- a directory-only signal like
+"URI ends in `/`" can no longer distinguish this app's own REPORT traffic
+from a real `svn` client's REPORT traffic against a file (both would lack a
+trailing slash), whereas `HX-Request: true` is sent on every request htmx
+issues and never by a real `svn` client. `REQUEST_METHOD`/`CONTENT_TYPE`
+stay as defense-in-depth alongside it.
+
 This feature is wired into the `wa-page` template only; `SVN_INDEX_TEMPLATE`
 must be set to `wa-page` for the History link to appear (see above) -- the
 other three templates have no `log.mustache`/`log-item.mustache` files and
@@ -213,6 +224,137 @@ total amount of history reachable this way is effectively unbounded,
 without changing the bounded cost of any single request. Scrolling stops on
 its own, with no further requests, once a batch comes back smaller than its
 own limit (the repository's actual history has been exhausted).
+
+### File history
+
+Individual files, not just directories, can also show History -- two entry
+points, both built on the same `SVN_LOG_HTML`/`SVN_LOG_REPORT_BODY` filter
+pair above (no new REPORT-handling logic, just new places that link to it):
+
+- **A "History" icon** next to every file in the directory listing (see
+  `file.mustache`), opening the same `#svn-history-dialog` the page-level
+  "History" link uses, scoped to that one file.
+- **A `?history` (or `?history=<filename>`) query parameter** on the
+  directory's own index page URL. Bare (`?history`, or `?history=` with an
+  empty value) auto-opens History for the *browsed directory itself* -- the
+  same target the page-level "History" link's own click already opens, just
+  triggered automatically on page load instead. Given a value
+  (`?history=<filename>`), `filename` must instead be a *direct child* of
+  the directory being browsed (a single path segment, validated
+  server-side; rejected if it contains `/`, `%2f`/`%2F`, or is `.`/`..`/
+  empty), and History opens for that file. Either way, the page loads with
+  history already fetched and the dialog opened automatically, via a
+  declarative `hx-trigger="load"` on `#svn-history-content` -- no extra
+  request, no bootstrap script. Revision pinning reuses the existing
+  `?p=<rev>` param.
+
+All three (the icon, and both `?history` forms) require `SVN_LOG_HTML`'s
+`FilterProvider` condition above (the `HX-Request` check) -- a deployment
+that upgrades `svn-index.lua`/`svn-log.lua` without also updating that
+Apache snippet will still work for a plain directory browse, but History
+links/deep-links will silently get raw XML back instead of rendered HTML.
+
+#### Sample: a `/log.html` redirect into file history
+
+`?history=<filename>` (above) needs the file's *parent directory's own URL*
+up front -- fine for a link generated from inside the app itself, less
+convenient as a stable, shareable URL when all you have is a repo name and a
+file's full repo-relative path (`base`/`target`, in the sense the rest of
+this README uses those words).
+
+This repo doesn't ship a handler for that shape -- it's a fairly
+site-specific choice (URL, param names, how `base` maps to a mount point)
+not worth carrying as tested, maintained code for every deployment. The
+sample below is a starting point, using `mod_rewrite` (no Lua, no extra
+file) rather than a Lua content handler: it redirects (HTTP 302)
+`/log.html?base=<repo>&target=<repo-relative-path>&torev=<revision>` to the
+corresponding directory's own index page with `?history=<filename>&p=<torev>`.
+Copy it into your Apache config and adjust to taste:
+
+```apache
+RewriteEngine On
+
+# int:escape/int:unescape are httpd's own built-in RewriteMap functions
+# (ap_escape_uri/ap_unescape_url under the hood -- no separate module,
+# nothing to install) -- must be declared at server/virtual-host level,
+# same as RewriteEngine, not inside a <Location> block.
+RewriteMap escape int:escape
+RewriteMap unescape int:unescape
+
+# Rejects a "base" containing an embedded "/" or "%2f"/"%2F" -- otherwise
+# an attacker could inject extra path structure (or a traversal) into the
+# redirect target. Falls through to a plain 403 rather than redirecting.
+RewriteCond %{QUERY_STRING} (?:^|&)base=[^&]*(?:/|%2[Ff])
+RewriteRule ^/log\.html$ - [F]
+
+# Decodes "target" fully -- including any "%2F"-encoded path separators,
+# the shape every "target" example elsewhere in this README uses -- into
+# an env var. int:unescape is ap_unescape_url (the same function backing
+# r:parseargs()), so "%2F" becomes a real "/" the same way any other
+# "%XX" sequence becomes its real character.
+RewriteCond %{QUERY_STRING} (?:^|&)target=([^&]*)
+RewriteRule ^/log\.html$ - [E=LOG_TARGET:${unescape:%1}]
+
+# Rejects a decoded target containing a "/../", "../", or "/.." traversal
+# segment.
+RewriteCond %{ENV:LOG_TARGET} (^|/)\.\.(/|$)
+RewriteRule ^/log\.html$ - [F]
+
+# Splits the now fully-decoded target at its LAST "/": everything through
+# it is the parent directory path, everything after it is the filename.
+# LOG_TARGET_SPLIT marks that this succeeded -- required by the final
+# rules below so a "target" that's missing entirely, or present but with
+# no "/" in it at all, produces no redirect at all (matching a missing
+# "target"), rather than one built from stale/empty LOG_PARENT/
+# LOG_FILENAME values left over from nothing actually having matched.
+RewriteCond %{ENV:LOG_TARGET} ^(.*)/([^/]*)$
+RewriteRule ^/log\.html$ - [E=LOG_PARENT:%1,E=LOG_FILENAME:%2,E=LOG_TARGET_SPLIT:1]
+
+# torev present and a plain non-negative integer: redirect with "&p=".
+# ${escape:...} re-encodes anything that still needs it (a space in the
+# filename, say) -- confirmed against ap_escape_uri's own source comment
+# that, on Unix, it deliberately leaves "/" alone as a path separator, so
+# this doesn't turn LOG_PARENT's own real "/" characters back into "%2F".
+RewriteCond %{ENV:LOG_TARGET_SPLIT} ^1$
+RewriteCond %{QUERY_STRING} (?:^|&)base=([^&]+)
+RewriteCond %{QUERY_STRING} (?:^|&)torev=([0-9]+)
+RewriteRule ^/log\.html$ /svn/%1${escape:%{ENV:LOG_PARENT}}/?history=${escape:%{ENV:LOG_FILENAME}}&p=%2 [R=302,L,NE]
+
+# torev absent (or present but not a plain non-negative integer, which is
+# silently dropped here rather than rejected): redirect without "&p=".
+RewriteCond %{ENV:LOG_TARGET_SPLIT} ^1$
+RewriteCond %{QUERY_STRING} (?:^|&)base=([^&]+)
+RewriteRule ^/log\.html$ /svn/%1${escape:%{ENV:LOG_PARENT}}/?history=${escape:%{ENV:LOG_FILENAME}} [R=302,L,NE]
+```
+
+("`/svn`" is hardcoded here as the `<Location /svn>` mount point -- adjust
+both rules if yours differs; there's no equivalent of the Lua sample's
+`SVN_LOCATION_PREFIX` env var to make this configurable without a Lua
+handler.)
+
+A directory-shaped `target` (trailing `/`) naturally produces an empty
+`?history=` value here (nothing after the last `/`) -- which, per the
+bare-`?history` behavior above, auto-opens History for that directory
+itself rather than doing nothing, with no extra rule needed for it.
+
+Caveats worth knowing before relying on this, none of which apply to a Lua
+`LuaMapHandler`-based content handler (the same registration mechanism
+`LuaInputFilter`/`LuaOutputFilter` above use, just for a plain request/
+response instead of a filter -- see mod_lua's own docs for
+`LuaMapHandler`), if you'd rather have them covered:
+
+- **The `${mapname:key}` lookups inside `[E=...]` flag values (the
+  `LOG_TARGET`/`LOG_PARENT`/`LOG_FILENAME` rules above) aren't something
+  this repo could verify against a real server.** Apache's own docs
+  confirm `[E=VAR:VAL]` supports `%N`/`$N` backreferences in `VAL`, but
+  don't explicitly document a `${...}` map lookup inside `VAL` the way
+  this relies on -- architecturally it's the same interpolation pass
+  `mod_rewrite` already applies to every other right-hand-side string, so
+  it's expected to work, but test this against your own Apache before
+  relying on it in production, the same way you'd test any Apache config
+  this repo can't cover with `busted`/`smoketest`.
+- **A malformed `torev` is silently dropped**, not rejected -- the request
+  still redirects, just without a revision pin, rather than a 400.
 
 ### Apache httpd transfer
 

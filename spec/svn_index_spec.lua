@@ -440,12 +440,12 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find("<wa-page>", 1, true))
+        assert.truthy(html:find('<wa-page class="wa-font-size-s">', 1, true))
         assert.truthy(html:find("webawesome.css", 1, true))
-        assert.truthy(html:find('<header slot="header">', 1, true))
-        assert.truthy(html:find('<footer slot="footer" id="svn-footer">', 1, true))
+        assert.truthy(html:find('<header slot="header" class="wa-split wa-gap-s wa-font-size-m">', 1, true))
+        assert.truthy(html:find('<footer slot="footer" id="svn-footer" class="wa-font-size-xs">', 1, true))
         assert.truthy(html:find(
-            '<wa-tree-item class="file"><a href="/svn/demo1/README.md"><wa-icon name="file" variant="regular"></wa-icon> README.md</a></wa-tree-item>',
+            '<wa-tree-item class="file"><a href="/svn/demo1/README.md"><wa-icon name="file" variant="regular"></wa-icon> README.md</a>',
             1, true
         ))
     end)
@@ -1097,14 +1097,14 @@ describe("svn-index output_filter", function()
         ))
     end)
 
-    it("appends repo_root to history_href, layering after an existing \"?p=REV\" pin with \"&amp;\"", function()
+    it("appends repo_root to the History link's href, layering after an existing \"?p=REV\" pin with \"&amp;\"", function()
         -- svn-log.lua's own output_filter has no way to know where the
         -- repo root sits in the URL space (only the directory-listing XML
         -- this file parses carries <index base="..." path="...">) -- it
-        -- reads this back via r.args to anchor changed-path links. Built
-        -- raw (both request_href+revision_suffix and the repo_root
-        -- addition) and escape_html'd exactly once at the end, like every
-        -- other href in this file -- hence "&amp;", not "&".
+        -- reads this back via r.args to anchor changed-path links.
+        -- history_query_suffix (built via append_query, escape_html'd
+        -- once) is what page-header.mustache appends onto its own
+        -- request_href -- hence "&amp;", not "&".
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="10" path="/trunk/" base="myrepo">
@@ -1414,8 +1414,9 @@ describe("svn-index output_filter", function()
         -- swapped to a different directory -- the footer shows the current
         -- repository/path/revision, the same kind of "reflects wherever
         -- main currently is" content the breadcrumb already is, and the
-        -- header cluster's own "History" link (history_href, see
-        -- template_context) is both absolute and request-specific --
+        -- header cluster's own "History" link (built from request_href/
+        -- history_query_suffix, see template_context) is both absolute and
+        -- request-specific --
         -- unlike "Start" (fixed) or "Up" (a relative href that re-resolves
         -- against wherever the browser currently is), it goes stale after
         -- exactly this kind of non-reloading navigation unless refreshed
@@ -1613,5 +1614,155 @@ describe("svn-index output_filter", function()
 
         assert.truthy(html:find('<li class="dir-custom">CUSTOM-DIR:', 1, true))
         assert.falsy(html:find("DEFAULT-DIR:", 1, true))
+    end)
+
+    it("renders a per-file history_href when repo_root is known, anchored to this file's own href", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(
+            '<a class="file-history-action" href="/svn/demo1/README.md?repo_root=/svn/" hx-action="/svn/demo1/README.md?repo_root=/svn/" hx-method="REPORT" hx-target="#svn-history-content" hx-swap="innerHTML" hx-trigger="click" hx-on:click="event.stopPropagation()" title="History" aria-label="History for README.md">',
+            1, true
+        ))
+    end)
+
+    it("does not double the revision pin on a file's history_href (mod_dav_svn's own href already carries it)", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="5" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md?p=5" />
+</index>
+</svn>]]
+        }, "/svn/demo1/?p=5", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('href="/svn/demo1/README.md?p=5&amp;repo_root=/svn/"', 1, true))
+        assert.falsy(html:find("p=5?p=5", 1, true))
+        assert.falsy(html:find("p=5&amp;p=5", 1, true))
+    end)
+
+    it("omits a file's history_href entirely when repo_root can't be derived (no base, e.g. Collection of Repositories)", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="0" path="/">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.falsy(html:find('class="file-history-action"', 1, true))
+    end)
+
+    it("renders a declarative hx-trigger=\"load\" on #svn-history-content for a valid ?history=<filename> deep link", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, "/svn/demo1/?history=file.txt", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find(
+            '<div id="svn-history-content" hx-action="/svn/demo1/file.txt?repo_root=/svn/" hx-method="REPORT" hx-trigger="load"></div>',
+            1, true
+        ))
+    end)
+
+    it("carries an active revision pin into the ?history= deep link's own hx-action", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="9" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md?p=9" />
+</index>
+</svn>]]
+        }, "/svn/demo1/?history=file.txt&p=9", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('hx-action="/svn/demo1/file.txt?p=9&amp;repo_root=/svn/"', 1, true))
+    end)
+
+    it("renders #svn-history-content with no load-trigger attributes when ?history= is absent", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<div id="svn-history-content"></div>', 1, true))
+    end)
+
+    -- "?history=" is a real security boundary (path traversal / smuggling a
+    -- multi-segment path via a downstream REPORT href), not just a UX
+    -- nicety -- each of these must leave #svn-history-content exactly as
+    -- if the param were absent. An empty value is deliberately NOT in this
+    -- list -- see the "self" cases below, where it (like a bare
+    -- "?history") is a meaningful signal, not rejected input.
+    for _, case in ipairs({
+        { name = "an embedded literal slash", value = "sub/file.txt" },
+        { name = "a percent-encoded slash (case-insensitive)", value = "sub%2Ffile.txt" },
+        { name = "a percent-encoded slash, uppercase hex", value = "sub%2FFILE.txt" },
+        { name = "\"..\"", value = ".." },
+        { name = "\".\"", value = "." }
+    }) do
+        it("rejects ?history= containing " .. case.name .. ", treating it as absent", function()
+            local html = run_filter({
+                [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+            }, "/svn/demo1/?history=" .. case.value, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+            assert.truthy(html:find('<div id="svn-history-content"></div>', 1, true))
+        end)
+    end
+
+    -- "?history" (bare) / "?history=" (empty value): auto-open History for
+    -- the browsed directory itself, not a child file.
+    for _, case in ipairs({
+        { name = "a bare ?history flag", suffix = "history" },
+        { name = "?history= with an empty value", suffix = "history=" }
+    }) do
+        it("auto-loads the browsed directory's own history for " .. case.name, function()
+            local html = run_filter({
+                [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+            }, "/svn/demo1/?" .. case.suffix, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+            assert.truthy(html:find(
+                '<div id="svn-history-content" hx-action="/svn/demo1/?repo_root=/svn/" hx-method="REPORT" hx-trigger="load"></div>',
+                1, true
+            ))
+        end)
+    end
+
+    it("carries an active revision pin into the bare ?history self case's own hx-action", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="9" path="/trunk/" base="myrepo">
+</index>
+</svn>]]
+        }, "/svn/demo1/?history&p=9", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('hx-action="/svn/demo1/?p=9&amp;repo_root=/svn/"', 1, true))
+    end)
+
+    it("leaves a bare ?history inactive (no auto-load attributes) when repo_root can't be derived", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="0" path="/">
+</index>
+</svn>]]
+        }, "/svn/demo1/?history", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<div id="svn-history-content"></div>', 1, true))
     end)
 end)
