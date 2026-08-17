@@ -430,7 +430,6 @@ local ENTRY_CONTEXT_BUILDERS = {
     file = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, index_path, repo_root, history_query_suffix)
         local href = attr.href or "#"
         local hx_href = append_query(request_href .. href, query_file_params)
-        local raw_name = attr.name
 
         -- href_no_query: mod_dav_svn's own XML "href" attribute already
         -- includes "?p=REV" itself when pinned (the same reason hx_href
@@ -446,13 +445,13 @@ local ENTRY_CONTEXT_BUILDERS = {
         local href_no_query = href:match("^([^?]*)")
 
         return {
-            name = escape_html(raw_name),
+            name = escape_html(attr.name),
             href = escape_html(href),
             hx_href = escape_html(hx_href),
             request_href = escape_html(request_href),
             href_no_query = escape_html(href_no_query),
             history_query_suffix = history_query_suffix,
-            path_id = build_path_id(index_path, raw_name),
+            path_id = build_path_id(index_path, attr.name),
             -- Gates file.mustache's own "{{#repo_root}}" -- nil (link
             -- renders nothing) when repo_root is unknown, same
             -- degrade-gracefully pattern svn-log.lua's own changed-path
