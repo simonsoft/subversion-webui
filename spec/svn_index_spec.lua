@@ -1794,4 +1794,44 @@ describe("svn-index output_filter", function()
         assert.falsy(html:find('id="lock- ', 1, true))
     end)
 
+    it("computes index_path_query as the browsed directory's own repo-relative path, fully percent-encoded (including \"/\") for query-string use, without a trailing slash", function()
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/graphics/140 Maintenance and Service/" base="demo3">
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        local debug_msg = nil
+        for _, entry in ipairs(r.logs) do
+            if entry.level == "debug" and entry.msg:find("index_path_query=", 1, true) then
+                debug_msg = entry.msg
+            end
+        end
+
+        assert.truthy(debug_msg)
+        assert.truthy(debug_msg:find(
+            "index_path_query=%2Fgraphics%2F140%20Maintenance%20and%20Service",
+            1, true
+        ))
+    end)
+
+    it("computes an empty index_path_query at the repo root (path \"/\")", function()
+        local _, r = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        local debug_msg = nil
+        for _, entry in ipairs(r.logs) do
+            if entry.level == "debug" and entry.msg:find("index_path_query=", 1, true) then
+                debug_msg = entry.msg
+            end
+        end
+
+        assert.truthy(debug_msg)
+        assert.truthy(debug_msg:find("index_path_query=$"))
+    end)
 end)

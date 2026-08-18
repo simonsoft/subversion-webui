@@ -214,6 +214,17 @@ local function build_path_id(index_path, name)
     return percent_encode_path(base .. "/" .. (name or ""))
 end
 
+-- Percent-encodes byte-for-byte like percent_encode_path above, but with
+-- NO exception for "/" -- the encoding a query-string value needs (e.g.
+-- JS's encodeURIComponent), as opposed to a URL path segment, where a
+-- literal "/" would be misread as introducing another segment/delimiter
+-- rather than being opaque data.
+local function percent_encode_query(value)
+    return (tostring(value or ""):gsub("[^%w%-%._~]", function(ch)
+        return string.format("%%%02X", ch:byte())
+    end))
+end
+
 -- Strips a full URL (e.g. htmx's "HX-Current-URL" request header, which
 -- mirrors the browser's own location.href) down to just its path, for
 -- comparing against this filter's own path-only hrefs -- drops the
@@ -587,6 +598,14 @@ function output_filter(r)
     local segment_count = nil
     local repo_parent_path = nil
 
+    -- The browsed directory's own repo-relative path, WITHOUT a trailing
+    -- slash, fully percent-encoded for use as a query-string value (see
+    -- percent_encode_query -- unlike path_id/build_path_id, "/" is encoded
+    -- here too, since this is meant to be embedded as one opaque query
+    -- parameter value, not a URL path). Computed once, alongside
+    -- breadcrumbs/repo_root above.
+    local index_path_query = nil
+
     -- A generic query-string suffix ("" when neither applies) -- not
     -- specific to history at all -- built from this request's own revision
     -- pin and repo_root, both known once repo_root itself is (see the
@@ -858,6 +877,11 @@ function output_filter(r)
             -- already do for "#svn-breadcrumb"/"#svn-footer".
             request_href = escape_html(request_href),
             repo_root = repo_root and escape_html(repo_root) or nil,
+            -- The browsed directory's own path, encoded for use as a
+            -- query-string value -- see its declaration above. Already
+            -- percent-encoded (safe as-is) -- render with {{{...}}}, not
+            -- {{...}}.
+            index_path_query = index_path_query,
             history_query_suffix = history_query_suffix,
             -- Gates "#svn-history-content"'s own auto-load attributes in
             -- page.mustache ("{{#history_active}}") -- truthy only once
@@ -995,6 +1019,8 @@ function output_filter(r)
                     -- unlikely in practice, not worth solving now.
                     repo_root = has_base and breadcrumbs[1].hx_href:match("^([^?]*)") or nil
 
+                    index_path_query = percent_encode_query((index.path or ""):gsub("/+$", ""))
+
                     -- append_query already does exactly the "?  vs &" join
                     -- decision correctly when called against an empty
                     -- starting string -- no bespoke helper needed for this.
@@ -1010,10 +1036,11 @@ function output_filter(r)
                 end
 
                 r:debug(string.format(
-                    "SVN index metadata: rev=%s path=%s base=%s",
+                    "SVN index metadata: rev=%s path=%s base=%s index_path_query=%s",
                     index.rev,
                     index.path,
-                    index.base
+                    index.base,
+                    tostring(index_path_query)
                 ))
 
                 return
