@@ -63,7 +63,6 @@ jobs:
   build-zip:
     name: Build deployment zip
     needs: [lua-tests]
-    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout

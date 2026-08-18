@@ -231,7 +231,14 @@ const port = server.address().port;
 
 let browser;
 try {
-    browser = await puppeteer.launch({ headless: true });
+    browser = await puppeteer.launch({
+        headless: true,
+        // GitHub-hosted Ubuntu runners restrict unprivileged user namespaces
+        // (AppArmor), which Chromium's own sandbox needs -- CI is a trusted,
+        // ephemeral environment, so --no-sandbox there is safe; local dev
+        // keeps Chromium's full sandbox.
+        args: process.env.CI ? ["--no-sandbox", "--disable-setuid-sandbox"] : [],
+    });
     const page = await browser.newPage();
     await page.setViewport({ width: 1000, height: 900 });
 
