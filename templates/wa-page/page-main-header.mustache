@@ -1,0 +1,24 @@
+<div id="svn-main-header" slot="main-header" hidden hx-get="repos.html" hx-trigger="load, svn-main-header-refresh" hx-target="this" hx-swap="innerHTML" hx-on::config:request="event.detail.ctx.request.action = location.pathname + 'repos.html' + location.search" hx-on::before:swap="if (event.detail.ctx.response.status >= 400) { event.preventDefault(); this.hidden = true; this.replaceChildren(); }" hx-on::error="this.hidden = true; this.replaceChildren()" hx-on::after:swap="this.hidden = !this.textContent.trim()"></div>
+<style>
+#svn-main-header {
+    padding: var(--svn-main-header-padding, var(--wa-space-m));
+}
+#svn-main-header[hidden] {
+    display: none;
+}
+</style>
+<script>
+// Mirrors page.mustache's own nav-resync listener: htmx dispatches this on
+// document, unconditionally, exactly when svn-index.lua's HX-Push-Url
+// response header (only ever sent for a real main-content-swap navigation,
+// never nav's own lazy-expansion fetches) lands a history.pushState -- i.e.
+// precisely once per genuine "browsed into a different folder" event.
+// Re-dispatched here as a plain, non-namespaced event (rather than reused
+// directly in an hx-trigger="htmx:after:history:push from:document" above)
+// since hx-trigger's own modifier syntax already uses colons for "from:"/
+// "delay:"/etc., and htmx's docs don't confirm how that combines with an
+// event name that itself contains colons.
+document.addEventListener("htmx:after:history:push", () => {
+    document.getElementById("svn-main-header")?.dispatchEvent(new Event("svn-main-header-refresh"));
+});
+</script>
