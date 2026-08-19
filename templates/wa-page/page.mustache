@@ -590,10 +590,14 @@ wa-page[view='desktop'] .log-summary {
    which already reflects the dialog's "--width: 90vw" plus any padding
    along the way); the min/max rem bounds keep it legible on a dialog
    only just past the mobile breakpoint, and cap how wide it grows on a
-   very large one -- 32rem, sized against a real email address (~28
-   characters, ~218px of text alone), so a realistic author value can
-   actually fit rather than always ellipsis-truncating regardless of how
-   much space the dialog has to spare. flex-shrink:1 and min-width:0
+   very large one -- 34rem, sized against a real email address (~28
+   characters, ~267px of text alone measured in Linux Chromium's default
+   sans-serif fallback, the widest of the browser/OS combinations
+   checked -- macOS's system-ui resolves narrower, so 32rem was enough
+   there but fell 11px short of fitting on Linux's wider rendering),
+   so a realistic author value can actually fit rather than always
+   ellipsis-truncating regardless of how much space the dialog has to
+   spare. flex-shrink:1 and min-width:0
    share any space deficit with ".log-message-preview" below (also
    shrinkable) via normal flex distribution, rather than concentrating it
    entirely on one column -- ".log-author strong" below is the actual
@@ -604,7 +608,7 @@ wa-page[view='desktop'] .log-summary {
    viewport-relative and uncapped, so a wide window can leave more row
    space than either column's preferred size needs, and without
    something claiming it that surplus just becomes empty space between
-   the two columns. max-width repeats the clamp()'s own 32rem cap as a
+   the two columns. max-width repeats the clamp()'s own 34rem cap as a
    separate property because flex-grow can push a flex item past its
    flex-basis (all clamp() actually constrains) with nothing else
    stopping it -- clamp()'s max argument bounds the *starting* size, not
@@ -612,8 +616,8 @@ wa-page[view='desktop'] .log-summary {
 wa-page[view='desktop'] .log-summary-meta {
     flex-grow: 1;
     flex-shrink: 1;
-    flex-basis: clamp(20rem, 32%, 32rem);
-    max-width: 32rem;
+    flex-basis: clamp(20rem, 32%, 34rem);
+    max-width: 34rem;
     min-width: 0;
     flex-wrap: nowrap;
 }
