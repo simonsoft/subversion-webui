@@ -865,13 +865,14 @@ try {
     // available space, so raising it (to 32rem) should let a realistic
     // email fit without ellipsis once the window is wide enough, not just
     // shrink less aggressively.
-    const emailFitsWide = await page.evaluate(() => {
+    const emailFitWidths = await page.evaluate(() => {
         const strong = [...document.querySelectorAll(".log-author strong")].find((el) => el.textContent.includes("@"));
-        return strong.scrollWidth <= strong.clientWidth + 1;
+        return { scrollWidth: strong.scrollWidth, clientWidth: strong.clientWidth, font: getComputedStyle(strong).fontFamily };
     });
     record(
         "desktop: a real-length email author fits without ellipsis at a wide (1800px) viewport",
-        emailFitsWide
+        emailFitWidths.scrollWidth <= emailFitWidths.clientWidth + 1,
+        JSON.stringify(emailFitWidths)
     );
 
     // Regression check: the dialog's own "--width: 90vw" (see
