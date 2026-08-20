@@ -231,7 +231,14 @@ const port = server.address().port;
 
 let browser;
 try {
-    browser = await puppeteer.launch({ headless: true });
+    browser = await puppeteer.launch({
+        headless: true,
+        // GitHub-hosted Ubuntu runners restrict unprivileged user namespaces
+        // (AppArmor), which Chromium's own sandbox needs -- CI is a trusted,
+        // ephemeral environment, so --no-sandbox there is safe; local dev
+        // keeps Chromium's full sandbox.
+        args: process.env.CI ? ["--no-sandbox", "--disable-setuid-sandbox"] : [],
+    });
     const page = await browser.newPage();
     await page.setViewport({ width: 1000, height: 900 });
 
@@ -858,13 +865,14 @@ try {
     // available space, so raising it (to 32rem) should let a realistic
     // email fit without ellipsis once the window is wide enough, not just
     // shrink less aggressively.
-    const emailFitsWide = await page.evaluate(() => {
+    const emailFitWidths = await page.evaluate(() => {
         const strong = [...document.querySelectorAll(".log-author strong")].find((el) => el.textContent.includes("@"));
-        return strong.scrollWidth <= strong.clientWidth + 1;
+        return { scrollWidth: strong.scrollWidth, clientWidth: strong.clientWidth, font: getComputedStyle(strong).fontFamily };
     });
     record(
         "desktop: a real-length email author fits without ellipsis at a wide (1800px) viewport",
-        emailFitsWide
+        emailFitWidths.scrollWidth <= emailFitWidths.clientWidth + 1,
+        JSON.stringify(emailFitWidths)
     );
 
     // Regression check: the dialog's own "--width: 90vw" (see
