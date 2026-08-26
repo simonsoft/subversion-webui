@@ -1,4 +1,4 @@
-<div id="svn-main-header" slot="main-header" hidden hx-get="repos.html" hx-trigger="load, svn-main-header-refresh" hx-target="this" hx-swap="innerHTML" hx-on::config:request="event.detail.ctx.request.action = location.pathname + 'repos.html' + location.search" hx-on::before:swap="if (event.detail.ctx.response.status >= 400) { event.preventDefault(); this.hidden = true; this.replaceChildren(); }" hx-on::error="this.hidden = true; this.replaceChildren()" hx-on::after:swap="this.hidden = !this.textContent.trim()"></div>
+<div id="svn-main-header" slot="main-header" hidden hx-get="repos.html" hx-trigger="load, svn-main-header-refresh" hx-target="this" hx-swap="innerHTML" hx-on::config:request="event.detail.ctx.request.action = location.pathname + 'repos.html' + location.search" hx-on::before:swap="if (event.detail.ctx.response.status >= 400) { event.preventDefault(); this.hidden = true; this.replaceChildren(); }" hx-on::error="this.hidden = true; this.replaceChildren()" hx-on::after:swap="this.querySelectorAll('style').forEach(el => el.remove()); this.hidden = !this.textContent.trim()"></div>
 <style>
 #svn-main-header {
     display: block;
@@ -10,6 +10,13 @@
 }
 </style>
 <script>
+// hx-on::after:swap above strips any <style> tags from the fetched content
+// before deciding visibility: unlike a normal htmx swap target, a <style>
+// element takes effect globally the moment it's connected to the document,
+// not just within this div -- an unscoped rule from an otherwise-untrusted
+// repos.html (e.g. "body { display: none; }") could break the rest of the
+// page, not just this region.
+//
 // Mirrors page.mustache's own nav-resync listener: htmx dispatches this on
 // document, unconditionally, exactly when svn-index.lua's HX-Push-Url
 // response header (only ever sent for a real main-content-swap navigation,
