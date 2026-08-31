@@ -199,6 +199,39 @@ local function escape_html(value)
                  :gsub("'", "&#39;"))
 end
 
+-- Percent-encodes a raw repo-relative path byte-for-byte (unreserved set
+-- plus "/" kept literal), so the result is whitespace-free and safe as an
+-- HTML id/attribute value -- see build_path_id below. Duplicated from
+-- svn-log.lua's own percent_encode_path rather than shared: this codebase
+-- has no shared lua module, and escape_html above is already duplicated
+-- the same way between the two files.
+local function percent_encode_path(path)
+    return (tostring(path or ""):gsub("[^%w%-%._~/]", function(ch)
+        return string.format("%%%02X", ch:byte())
+    end))
+end
+
+-- The stable, path-derived identifier every listing row exposes as
+-- "path_id" -- a generic handle any per-row feature (e.g. a lock-status
+-- badge) can key off later, independent of what that feature actually is.
+-- Not itself feature-specific: a feature's own template decides its own id
+-- prefix/markup on top of this value.
+local function build_path_id(index_path, name)
+    local base = (index_path or ""):gsub("/+$", "")
+    return percent_encode_path(base .. "/" .. (name or ""))
+end
+
+-- Percent-encodes byte-for-byte like percent_encode_path above, but with
+-- NO exception for "/" -- the encoding a query-string value needs (e.g.
+-- JS's encodeURIComponent), as opposed to a URL path segment, where a
+-- literal "/" would be misread as introducing another segment/delimiter
+-- rather than being opaque data.
+local function percent_encode_query(value)
+    return (tostring(value or ""):gsub("[^%w%-%._~]", function(ch)
+        return string.format("%%%02X", ch:byte())
+    end))
+end
+
 -- Strips a full URL (e.g. htmx's "HX-Current-URL" request header, which
 -- mirrors the browser's own location.href) down to just its path, for
 -- comparing against this filter's own path-only hrefs -- drops the
@@ -412,7 +445,7 @@ local ENTRY_CONTEXT_BUILDERS = {
     -- query_file_params (SVN_INDEX_QUERY_FILE) is applied only to file
     -- entries' own links (confirmed with the user) -- dir/updir/repo never
     -- receive it.
-    file = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, history_query_suffix)
+    file = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, index_path, repo_root, history_query_suffix)
         local href = attr.href or "#"
         local hx_href = append_query(request_href .. href, query_file_params)
 
@@ -430,12 +463,13 @@ local ENTRY_CONTEXT_BUILDERS = {
         local href_no_query = href:match("^([^?]*)")
 
         return {
-            name = escape_html(attr.name or attr.href or ""),
+            name = escape_html(attr.name),
             href = escape_html(href),
             hx_href = escape_html(hx_href),
             request_href = escape_html(request_href),
             href_no_query = escape_html(href_no_query),
             history_query_suffix = history_query_suffix,
+            path_id = build_path_id(index_path, attr.name),
             -- Gates file.mustache's own "{{#repo_root}}" -- nil (link
             -- renders nothing) when repo_root is unknown, same
             -- degrade-gracefully pattern svn-log.lua's own changed-path
@@ -459,7 +493,7 @@ local ENTRY_CONTEXT_BUILDERS = {
     -- computed (but unused) there too: repo.mustache deliberately never
     -- references it, so a repo name matching the pattern has no visible
     -- effect.
-    dir = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern)
+    dir = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, index_path)
         local name = (attr.name or attr.href or ""):gsub("/$", "")
         local href = attr.href or "#"
 
@@ -517,7 +551,8 @@ local ENTRY_CONTEXT_BUILDERS = {
             is_target_any = is_target_any,
             is_target_leaf = is_target_leaf,
             is_target_ancestor = is_target_ancestor,
-            navhidden = navhidden
+            navhidden = navhidden,
+            path_id = build_path_id(index_path, name)
         }
     end
 }
@@ -529,7 +564,7 @@ local ENTRY_CONTEXT_BUILDERS = {
 -- same context shape as "dir".
 ENTRY_CONTEXT_BUILDERS.repo = ENTRY_CONTEXT_BUILDERS.dir
 
-local function render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, history_query_suffix)
+local function render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, index_path, repo_root, history_query_suffix)
     local build_context = ENTRY_CONTEXT_BUILDERS[element]
     local entry_template = templates.entries[element]
 
@@ -537,7 +572,7 @@ local function render_entry(element, attr, request_href, templates, query_file_p
         return nil
     end
 
-    return lustache:render(entry_template, build_context(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, history_query_suffix))
+    return lustache:render(entry_template, build_context(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, index_path, repo_root, history_query_suffix))
 end
 
 function output_filter(r)
@@ -569,6 +604,14 @@ function output_filter(r)
     local breadcrumbs = nil
     local segment_count = nil
     local repo_parent_path = nil
+
+    -- The browsed directory's own repo-relative path, WITHOUT a trailing
+    -- slash, fully percent-encoded for use as a query-string value (see
+    -- percent_encode_query -- unlike path_id/build_path_id, "/" is encoded
+    -- here too, since this is meant to be embedded as one opaque query
+    -- parameter value, not a URL path). Computed once, alongside
+    -- breadcrumbs/repo_root above.
+    local index_path_query = nil
 
     -- A generic query-string suffix ("" when neither applies) -- not
     -- specific to history at all -- built from this request's own revision
@@ -841,6 +884,11 @@ function output_filter(r)
             -- already do for "#svn-breadcrumb"/"#svn-footer".
             request_href = escape_html(request_href),
             repo_root = repo_root and escape_html(repo_root) or nil,
+            -- The browsed directory's own path, encoded for use as a
+            -- query-string value -- see its declaration above. Already
+            -- percent-encoded (safe as-is) -- render with {{{...}}}, not
+            -- {{...}}.
+            index_path_query = index_path_query,
             history_query_suffix = history_query_suffix,
             -- Gates "#svn-history-content"'s own auto-load attributes in
             -- page.mustache ("{{#history_active}}") -- truthy only once
@@ -999,6 +1047,8 @@ function output_filter(r)
                     -- unlikely in practice, not worth solving now.
                     repo_root = has_base and breadcrumbs[1].hx_href:match("^([^?]*)") or nil
 
+                    index_path_query = percent_encode_query((index.path or ""):gsub("/+$", ""))
+
                     -- append_query already does exactly the "?  vs &" join
                     -- decision correctly when called against an empty
                     -- starting string -- no bespoke helper needed for this.
@@ -1014,10 +1064,11 @@ function output_filter(r)
                 end
 
                 r:debug(string.format(
-                    "SVN index metadata: rev=%s path=%s base=%s",
+                    "SVN index metadata: rev=%s path=%s base=%s index_path_query=%s",
                     index.rev,
                     index.path,
-                    index.base
+                    index.base,
+                    tostring(index_path_query)
                 ))
 
                 return
@@ -1034,7 +1085,7 @@ function output_filter(r)
                 element = "repo"
             end
 
-            local html = render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, repo_root, history_query_suffix)
+            local html = render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, index.path, repo_root, history_query_suffix)
 
             if html then
                 rendered_count = rendered_count + 1
