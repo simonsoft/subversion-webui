@@ -545,8 +545,8 @@ describe("svn-index output_filter", function()
         ))
         -- Absolute, not "../../../" -- see the note above compute_breadcrumbs
         -- for why repo_parent_path can't be relative like "Up" is.
-        assert.truthy(html:find('<a href="/svn/"><wa-icon name="house">', 1, true))
-        assert.truthy(html:find('<a href="../"><wa-icon name="turn-up">', 1, true))
+        assert.truthy(html:find('<a href="/svn/"><wa-icon name="house" label="Start">', 1, true))
+        assert.truthy(html:find('<a href="../"><wa-icon name="turn-up" label="Up">', 1, true))
     end)
 
     it("hides the \"Up\" link and collapses the breadcrumb to a single, icon-less, unlinked crumb on the Collection of Repositories listing", function()
@@ -558,7 +558,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.falsy(html:find('<wa-icon name="turn-up">', 1, true))
+        assert.falsy(html:find('<wa-icon name="turn-up" label="Up">', 1, true))
         assert.truthy(html:find('<wa-breadcrumb-item>Collection of Repositories</wa-breadcrumb-item>', 1, true))
     end)
 
@@ -1256,8 +1256,8 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, "/svn/myrepo/trunk/arbortext/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<a href="../?p=10"><wa-icon name="turn-up">', 1, true))
-        assert.truthy(html:find('<a href="/svn/"><wa-icon name="house">', 1, true))
+        assert.truthy(html:find('<a href="../?p=10"><wa-icon name="turn-up" label="Up">', 1, true))
+        assert.truthy(html:find('<a href="/svn/"><wa-icon name="house" label="Start">', 1, true))
     end)
 
     it("\"Up\" drops the revision pin at the repo root, since it exits to the Collection-of-Repositories listing there, which has no revision concept at all", function()
@@ -1269,7 +1269,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, "/svn/myrepo/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<a href="../"><wa-icon name="turn-up">', 1, true))
+        assert.truthy(html:find('<a href="../"><wa-icon name="turn-up" label="Up">', 1, true))
         assert.falsy(html:find('<a href="../?p=10">', 1, true))
     end)
 
@@ -1282,7 +1282,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, "/svn/myrepo/", { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<a href="/svn/"><wa-icon name="house">', 1, true))
+        assert.truthy(html:find('<a href="/svn/"><wa-icon name="house" label="Start">', 1, true))
     end)
 
     it("\"Start\" on the Collection-of-Repositories listing itself is this same absolute URL, not a relative self-link", function()
@@ -1299,7 +1299,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, "/svn/", { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<a href="/svn/"><wa-icon name="house">', 1, true))
+        assert.truthy(html:find('<a href="/svn/"><wa-icon name="house" label="Start">', 1, true))
     end)
 
     it("never marks an entry on-path for main's own content-swap request, even with a matching HX-Current-URL", function()
