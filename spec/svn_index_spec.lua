@@ -532,11 +532,11 @@ describe("svn-index output_filter", function()
         -- BOTH htmx's own fetch AND the anchor's native default navigation,
         -- racing each other into a real full-page reload).
         assert.truthy(html:find(
-            '<wa-breadcrumb-item hx-get="/svn/myrepo/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click"><wa-icon name="database"></wa-icon> myrepo</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item hx-get="/svn/myrepo/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click"><wa-icon name="database"></wa-icon> myrepo</wa-breadcrumb-item>',
             1, true
         ))
         assert.truthy(html:find(
-            '<wa-breadcrumb-item hx-get="/svn/myrepo/trunk/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click"><wa-icon name="folder" variant="regular"></wa-icon> trunk</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item hx-get="/svn/myrepo/trunk/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click"><wa-icon name="folder" variant="regular"></wa-icon> trunk</wa-breadcrumb-item>',
             1, true
         ))
         assert.truthy(html:find(
@@ -605,7 +605,7 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click[this.parentElement.selected]">',
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[this.parentElement.selected]">',
             1, true
         ))
     end)
@@ -1421,11 +1421,20 @@ describe("svn-index output_filter", function()
         -- against wherever the browser currently is), it goes stale after
         -- exactly this kind of non-reloading navigation unless refreshed
         -- the same way.
+        -- "#svn-header-right" ships empty by default (reserved for a
+        -- site's own icons/logo, see page-header.mustache), so including it
+        -- here is a no-op out of the box -- but it's the same sibling
+        -- cluster as "#svn-header-left", and a site customizing it via
+        -- page-header.custom.mustache is just as likely to put
+        -- request-specific content there (a path-scoped search link, say),
+        -- so it's included pre-emptively rather than leaving every such
+        -- customization to independently rediscover this same staleness
+        -- problem.
         -- Rather than a server-side distinction (like HX-Push-Url's
         -- "wa-tree#svn-index" HX-Target check above), this is scoped
         -- entirely client-side: only dir.mustache's label itself (the
         -- element with hx-target="#svn-index") carries
-        -- hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left", so only
+        -- hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right", so only
         -- *its own* requests ever pull the fetched page's
         -- breadcrumb/footer/header along -- nav's own in-place lazy-load
         -- fetch is a different element entirely (no hx-select-oob at all)
@@ -1452,7 +1461,7 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<footer slot="footer" id="svn-footer" class="wa-font-size-xs">', 1, true))
         assert.truthy(html:find('<div class="wa-cluster" id="svn-header-left">', 1, true))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left" hx-trigger="click[this.parentElement.selected]">',
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[this.parentElement.selected]">',
             1, true
         ))
     end)
