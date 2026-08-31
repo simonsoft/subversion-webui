@@ -640,7 +640,7 @@ describe("svn-index output_filter", function()
     end)
 
     it("removes the lazy attribute after its own swap lands, via a page-level htmx:after:swap listener", function()
-        -- htmx 4.0.0-beta6 dispatches fully colon-namespaced lifecycle
+        -- htmx 4.0.0 dispatches fully colon-namespaced lifecycle
         -- events ("htmx:after:swap", not the "htmx:afterSwap"/"afterSwap"
         -- naming used by earlier htmx versions), and this build's hx-on
         -- shorthand doesn't map onto that -- confirmed by driving a real
