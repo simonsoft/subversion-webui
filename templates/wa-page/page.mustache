@@ -311,12 +311,19 @@ document.addEventListener("wa-hide", (event) => {
 <style>
 wa-page {
     --menu-width: 25rem;
-    --aside-width: 15rem;
+    /* clamp() floor matches the old flat 15rem, so ordinary desktop/laptop
+       widths are unaffected; past ~1600px viewport width the vw term
+       overtakes the floor and the aside grows toward the 30rem cap,
+       acting more like a margin on very wide screens. */
+    --aside-width: clamp(15rem, 15vw, 30rem);
 }
 
 wa-page[view='desktop'] {
     [slot*='navigation'] {
         border-inline-end: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
+    }
+    [slot='aside'] {
+        border-inline-start: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
     }
 }
 wa-page[view='mobile'] {
