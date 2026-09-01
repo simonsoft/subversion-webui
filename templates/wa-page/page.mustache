@@ -330,13 +330,6 @@ wa-page[view='mobile'] {
     --menu-width: auto;
     --aside-width: auto;
 
-    header[slot="header"] {
-        flex-wrap: nowrap;
-        overflow-x: auto;
-    }
-    header[slot="header"] .wa-cluster {
-        flex-wrap: nowrap;
-    }
     header[slot="header"] a span {
         display: none;
     }
@@ -389,6 +382,21 @@ header[slot="header"] {
        (this element's own "color" is inherited from there, see the comment
        above that rule). */
     background: transparent;
+    /* wa-split/wa-cluster default to flex-wrap: wrap with no overflow
+       handling, so once combined content (hamburger + Start/Up/History +
+       whatever a site adds to #svn-header-right, which is explicitly meant
+       to be extensible) exceeds the available width, it used to wrap onto
+       a second line inside this bar. nowrap + a scrollbar keeps it to one
+       row on any screen size instead -- mobile additionally hides the link
+       labels below, in the wa-page[view='mobile'] block above, since a
+       phone-width row rarely has room for a scrollbar to be discoverable
+       either. */
+    flex-wrap: nowrap;
+    overflow-x: auto;
+}
+
+header[slot="header"] .wa-cluster {
+    flex-wrap: nowrap;
 }
 
 header[slot="header"] a {
