@@ -311,11 +311,11 @@ document.addEventListener("wa-hide", (event) => {
 <style>
 wa-page {
     --menu-width: 25rem;
-    /* clamp() floor matches the old flat 15rem, so ordinary desktop/laptop
-       widths are unaffected; past ~1600px viewport width the vw term
-       overtakes the floor and the aside grows toward the 30rem cap,
-       acting more like a margin on very wide screens. */
-    --aside-width: clamp(15rem, 15vw, 30rem);
+    /* Ramps from 0 at a 1400px viewport (the "(100vw - 1400px)" term is
+       negative below that, and clamp()'s floor absorbs it down to 0rem --
+       a continuous approach to zero, not a hard breakpoint snap) up to the
+       30rem cap on very wide screens, acting more like a margin there. */
+    --aside-width: clamp(0rem, (100vw - 1400px) * 0.4, 30rem);
 }
 
 wa-page[view='desktop'] {
