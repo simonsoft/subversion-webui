@@ -329,6 +329,17 @@ wa-page[view='desktop'] {
 wa-page[view='mobile'] {
     --menu-width: auto;
     --aside-width: auto;
+
+    header[slot="header"] {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+    header[slot="header"] .wa-cluster {
+        flex-wrap: nowrap;
+    }
+    header[slot="header"] a span {
+        display: none;
+    }
 }
 
 /* On small screens, wa-page renders its own hamburger navigation-toggle
