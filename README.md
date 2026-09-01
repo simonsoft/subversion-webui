@@ -372,6 +372,79 @@ response instead of a filter -- see mod_lua's own docs for
 - **A malformed `torev` is silently dropped**, not rejected -- the request
   still redirects, just without a revision pin, rather than a 400.
 
+### Lock status (wa-page skin only)
+
+`wa-page` shows a lock icon (owner/comment/date, in a native tooltip) next
+to every currently-locked file in the directory listing, fetched via
+`mod_dav_svn`'s own `get-locks-report` REPORT -- one request per directory
+view, covering every locked file directly under it in a single round trip,
+rather than a per-file check. This needs a second REPORT-handling filter
+pair on the same `<Location /svn>` block used by `SVN_XML_INDEX`/`SVN_LOG_*`
+above:
+
+```
+LuaInputFilter SVN_LOCKS_REPORT_BODY \
+        "/opt/subversion-webui/mod-lua/svn-locks.lua" \
+        input_filter
+
+LuaOutputFilter SVN_LOCKS_HTML \
+        "/opt/subversion-webui/mod-lua/svn-locks.lua" \
+        output_filter
+
+<Location /svn>
+
+    # ... existing SVNIndexXSLT / SVN_XML_INDEX / SVN_LOG_* filter config from above ...
+
+    SetInputFilter SVN_LOG_REPORT_BODY;SVN_LOCKS_REPORT_BODY
+
+    FilterDeclare SVN_LOCKS_HTML
+
+    FilterProvider SVN_LOCKS_HTML SVN_LOCKS_HTML \
+        "%{REQUEST_METHOD} == 'REPORT' \
+            && %{CONTENT_TYPE} =~ m#^(?:text|application)/xml(?:;|$)# \
+            && %{req_novary:HX-Request} == 'true' \
+            && %{req_novary:HX-Svn-Report} == 'locks'"
+
+    FilterProtocol SVN_LOCKS_HTML "change=yes;byteranges=no"
+    FilterChain SVN_LOCKS_HTML
+
+</Location>
+```
+
+`SetInputFilter` takes a semicolon-separated filter list -- both
+`SVN_LOG_REPORT_BODY` and `SVN_LOCKS_REPORT_BODY` run unconditionally on
+every request under this `Location`, same as `SVN_LOG_REPORT_BODY` alone
+already did (see "History" above). Since a plain "REPORT + form-encoded"
+check can no longer tell the two apart on its own, the triggering element
+now also sends an `HX-Svn-Report: locks` header (see `page.mustache`'s own
+`fetchLocks()`) that each filter's own `input_filter` checks for -- exactly
+one of the two ever positively claims a given request (`svn-log.lua`'s own
+gate now excludes `HX-Svn-Report == 'locks'`; `svn-locks.lua`'s requires it),
+so chain order between the two doesn't matter. `SVN_LOCKS_HTML`'s own
+`FilterProvider` condition adds the same `HX-Svn-Report` check on the output
+side, so it doesn't also try to process `SVN_LOG_HTML`'s own response (and
+vice versa) when both dynamic filters are chained onto this same `Location`.
+
+Unlike the History link, there is no dedicated on-page trigger element:
+`page.mustache`'s own inline script fetches lock status once on initial
+page load and again on every htmx-driven directory navigation (via the same
+`htmx:after:history:push` event nav's own `[selected]`-highlight resync
+already listens for), targeting each file's own placeholder
+(`file.mustache`'s `#lock-<path_id>`, `path_id` from `svn-index.lua`) via
+htmx out-of-band swaps. A file that isn't currently locked simply has no
+matching fragment in the response and stays untouched.
+
+This feature is wired into the `wa-page` template only, the same way
+History is -- the other three templates have no `lock-badge.mustache` file
+and never send the `HX-Svn-Report: locks` request in the first place.
+
+**Not independently verified against a live `mod_dav_svn` server in this
+repo.** `svn-log.lua`'s own `log-report` request/response shapes were
+confirmed against a real server (see its own comments); `get-locks-report`'s
+shape here instead mirrors the documented SVN DeltaV custom-report
+convention (`svn_lock_t`'s own fields: path, owner, comment, creation date).
+Test this against your own server before relying on it in production.
+
 ### Apache httpd transfer
 
 The transfer will be chunked unless returned in a single brigade. This is already the case with mod_dav_svn regardless of additional filter. However, if deflate or other compression filter is enabled, the compressed response might fit into the compression filter's buffer and then become a regular transfer with Content-Length header.

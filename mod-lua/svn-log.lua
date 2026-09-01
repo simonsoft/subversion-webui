@@ -240,10 +240,19 @@ end
 -- is not sufficient. A bare early return, before ever touching
 -- bucket/coroutine.yield, is mod_lua's own documented idiom for an input
 -- filter that should pass the original content through unmodified.
+--
+-- "HX-Svn-Report: locks" (see svn-locks.lua) marks a REPORT explicitly as
+-- someone else's synthetic traffic sharing this same Location/gate -- both
+-- filters' SetInputFilter directives run unconditionally on every request
+-- here (chain order is irrelevant either way, since only one of the two
+-- ever positively claims a given request): this filter claims anything
+-- form-encoded EXCEPT that marker, svn-locks.lua's own input_filter claims
+-- ONLY that marker.
 function input_filter(r)
     local content_type = r.headers_in and r.headers_in["Content-Type"]
+    local report_kind = r.headers_in and r.headers_in["HX-Svn-Report"]
 
-    if r.method ~= "REPORT" or not is_form_encoded_content_type(content_type) then
+    if r.method ~= "REPORT" or not is_form_encoded_content_type(content_type) or report_kind == "locks" then
         return
     end
 
