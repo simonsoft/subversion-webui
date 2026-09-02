@@ -923,10 +923,16 @@ wa-tree-item.file::part(label) {
 /* ".file-actions" (file.mustache) groups this file row's own per-file
    action icons -- today just "History", a home for any more added later
    -- kept visually apart from the file's own name/link via the
-   space-between above rather than an inline margin next to the name.
-   Its own flex-row-with-gap layout is the existing "wa-cluster wa-gap-2xs"
-   utility classes (see file.mustache), not bespoke CSS here -- no rule
-   of its own needed for that. */
+   space-between above rather than an inline margin next to the name. Its
+   own flex-row-with-gap layout is the existing "wa-cluster wa-gap-2xs"
+   utility classes (see file.mustache), which wrap by default -- harmless
+   while ".lock-indicator" was empty, but now that it has a fixed,
+   non-shrinking width (below), wrapping would drop the History icon onto
+   its own line under space pressure instead of letting the name (below)
+   truncate first. */
+.file-actions {
+    flex-wrap: nowrap;
+}
 
 /* Per-file "History" icon (see file.mustache) -- a second, independent
    <a href hx-action hx-method="REPORT" hx-trigger="click"> alongside the
@@ -942,6 +948,34 @@ wa-tree-item.file::part(label) {
 .file-history-action:hover,
 .file-history-action:focus-visible {
     opacity: 1;
+}
+
+/* ".lock-indicator" (file.mustache) is today an empty per-file hook span
+   for a not-yet-built lock-status feature that will hold a username + lock
+   comment. Pre-sized now so that content drops into an already-stable
+   layout instead of shifting the row around later: "flex-shrink: 0" keeps
+   the width fixed under space pressure (see ".file-actions" above), and
+   "overflow: hidden" is required alongside "white-space: nowrap" so
+   overflowing content clips instead of spilling into the History icon.
+   Width scales the same way ".log-message-preview" (above) does, just
+   scaled down for this narrower cluster. */
+.lock-indicator {
+    flex-shrink: 0;
+    width: clamp(8rem, 30vw, 30rem);
+    overflow: hidden;
+    white-space: nowrap;
+    text-align: left;
+}
+
+/* ".lock-indicator" no longer shrinks (above), so on a narrow screen the
+   row's name text is what would otherwise wrap onto a second line to
+   relieve space pressure. Truncate it with an ellipsis instead, keeping
+   the whole row single-line. */
+wa-tree-item.file > a,
+wa-tree-item.dir > span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 </style>
 {{{page-head-end}}}
