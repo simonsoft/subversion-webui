@@ -923,10 +923,20 @@ wa-tree-item.file::part(label) {
 /* ".file-actions" (file.mustache) groups this file row's own per-file
    action icons -- today just "History", a home for any more added later
    -- kept visually apart from the file's own name/link via the
-   space-between above rather than an inline margin next to the name.
-   Its own flex-row-with-gap layout is the existing "wa-cluster wa-gap-2xs"
-   utility classes (see file.mustache), not bespoke CSS here -- no rule
-   of its own needed for that. */
+   space-between above rather than an inline margin next to the name. Its
+   own flex-row-with-gap layout is the existing "wa-cluster wa-gap-2xs"
+   utility classes (see file.mustache). "wa-cluster" wraps its children
+   onto a second line by default when they don't fit -- harmless while
+   ".lock-indicator" (below) was empty and effectively zero-width, but now
+   that it has a real fixed width regardless of content, letting the
+   cluster wrap would drop the History icon onto its own line under space
+   pressure (looking like it jumps to the row's left edge) instead of
+   holding its position next to a truncating name (see the
+   "wa-tree-item.file > a" rule below, which is what actually gives ground
+   under pressure now). */
+.file-actions {
+    flex-wrap: nowrap;
+}
 
 /* Per-file "History" icon (see file.mustache) -- a second, independent
    <a href hx-action hx-method="REPORT" hx-trigger="click"> alongside the
