@@ -216,6 +216,25 @@ describe("svn-log input_filter", function()
         assert.truthy(body:find('<S:log-report', 1, true))
     end)
 
+    it("passes through untouched for an otherwise-matching REPORT marked HX-Svn-Report: locks (svn-locks.lua's own traffic)", function()
+        local body, _, yield_count = run_input_filter(
+            {}, "/svn/demo1/trunk/", nil, "REPORT",
+            { ["Content-Type"] = "application/x-www-form-urlencoded", ["HX-Svn-Report"] = "locks" }
+        )
+
+        assert.are.equal("", body)
+        assert.are.equal(0, yield_count)
+    end)
+
+    it("still treats a form-encoded REPORT as its own when HX-Svn-Report is absent or some other value", function()
+        local body = run_input_filter(
+            {}, "/svn/demo1/trunk/", nil, "REPORT",
+            { ["Content-Type"] = "application/x-www-form-urlencoded", ["HX-Svn-Report"] = "log" }
+        )
+
+        assert.truthy(body:find('<S:log-report', 1, true))
+    end)
+
     it("synthesizes a log-report body with the default limit, end-revision=0, and no start-revision (HEAD)", function()
         local body = run_input_filter({}, "/svn/demo1/trunk/")
 

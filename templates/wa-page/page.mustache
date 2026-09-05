@@ -218,6 +218,43 @@ document.addEventListener("htmx:after:history:push", (event) => {
     }
 });
 
+// Fetches lock status (owner/comment/date) for every file directly under
+// `path`, via the same synthetic-REPORT mechanism as the History link (see
+// svn-locks.lua) -- "HX-Svn-Report: locks" is what tells svn-log.lua's own
+// input_filter this REPORT isn't its own log-report traffic (see its own
+// gate). hx-swap="none": the response body is pure htmx out-of-band
+// lock-badge swaps (see lock-badge.mustache's own hx-swap-oob="true"),
+// targeting each file's own "#lock-<path_id>" placeholder (file.mustache) --
+// there is no primary swap target at all. A file that isn't currently
+// locked is simply never targeted by any fragment in the response, so its
+// placeholder stays empty; this is also why re-fetching on every navigation
+// is safe even for a directory with zero locks -- an unmatched previous
+// lock badge can never linger, since the directory listing's own main-swap
+// (dir.mustache/breadcrumb links) already re-renders every placeholder from
+// scratch before this fetch's response can possibly arrive.
+function fetchLocks(path) {
+    htmx.ajax("REPORT", path, { swap: "none", headers: { "HX-Svn-Report": "locks" } });
+}
+
+// Initial page load: no DOMContentLoaded needed -- this is a fire-and-forget
+// background request, and by the time its response arrives (a network round
+// trip later), the page is certainly already fully parsed.
+fetchLocks(location.pathname + location.search);
+
+// Re-fires on every htmx-driven "navigate to a new folder" -- reusing the
+// exact same event the [selected]-highlight resync above already relies on,
+// for the same reason it's the right hook here too: htmx dispatches it on
+// `document`, unconditionally, exactly when it performs history.pushState()
+// -- which only happens because svn-index.lua sets HX-Push-Url on a genuine
+// main-content-swap response, never on nav's own sidebar lazy-expansion
+// fetches. So this naturally never re-fetches locks for a nav-only
+// interaction that didn't actually change what's showing in "#svn-index".
+document.addEventListener("htmx:after:history:push", (event) => {
+    if (event.detail?.path) {
+        fetchLocks(event.detail.path);
+    }
+});
+
 // "Expand all"/"Collapse all" toggle for the History dialog's own entries
 // (see page.mustache's static "#svn-history-expand-toggle", inside
 // "#svn-history-dialog"'s own header-actions slot -- present in the DOM from
