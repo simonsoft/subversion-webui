@@ -98,12 +98,10 @@ before `</head>` — a place to add site-specific `<meta>`/`<link>`/`<script>`
 tags (analytics, extra CSS, etc.) via `page-head-end.mustache` or
 `page-head-end.custom.mustache`, without touching `page.mustache` itself.
 
-Each template type also ships a `page-title.mustache` — required, the same
-as `page-head-end`, not optional like `page-header`/`page-subheader`/
-`page-footer` below — rendered with the same context as `page.mustache` and
-inserted into `<title>`. Its default content
-(`{{#has_base}}{{base}} - Revision {{rev}}: {{/has_base}}{{path}}`) matches
-mod_dav_svn's own default title exactly, so an unmodified install's
+Each template type also ships a `page-title.mustache`, rendered with the
+same context as `page.mustache` and inserted into `<title>`. Its default
+content (`{{#has_base}}{{base}} - Revision {{rev}}: {{/has_base}}{{path}}`)
+matches mod_dav_svn's own default title exactly, so an unmodified install's
 `<title>` is unchanged. Override it (or add a `page-title.custom.mustache`
 sibling) to add a site-specific prefix/suffix, drop the revision, or
 otherwise customize it, e.g.:
