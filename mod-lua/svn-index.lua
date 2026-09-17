@@ -166,6 +166,7 @@ local function load_template_set(template_type, strip_comments)
         preamble = preamble,
         postamble = postamble,
         page_head_end = read_template(dir, "page-head-end"),
+        page_title = read_template(dir, "page-title"),
         page_header = read_template_optional(dir, "page-header"),
         page_subheader = read_template_optional(dir, "page-subheader"),
         page_footer = read_template_optional(dir, "page-footer"),
@@ -918,6 +919,7 @@ function output_filter(r)
         -- head content can reference any of the fields above (e.g. `path`
         -- or `base` in a page-specific <title>/<meta> override).
         context["page-head-end"] = lustache:render(templates.page_head_end, context)
+        context["page-title"] = lustache:render(templates.page_title, context)
 
         if templates.page_header then
             context["page-header"] = lustache:render(templates.page_header, context)

@@ -89,14 +89,30 @@ Every `.mustache` file under a `templates/<type>/` directory can be
 overridden without editing (or forking) the shipped file: if a
 `name.custom.mustache` sits alongside `name.mustache` in that same
 directory, it's loaded instead. This works for every template file
-(`page`, `dir`, `file`, `repo`, `updir`, `page-head-end`, and, for
-`wa-page`, `log`/`log-item`) in all four template types.
+(`page`, `dir`, `file`, `repo`, `updir`, `page-head-end`, `page-title`, and,
+for `wa-page`, `log`/`log-item`) in all four template types.
 
 Each template type also ships an empty `page-head-end.mustache`, rendered
 with the exact same variable context as `page.mustache` and inserted just
 before `</head>` — a place to add site-specific `<meta>`/`<link>`/`<script>`
 tags (analytics, extra CSS, etc.) via `page-head-end.mustache` or
 `page-head-end.custom.mustache`, without touching `page.mustache` itself.
+
+Each template type also ships a `page-title.mustache`, rendered with the
+same context as `page.mustache` and inserted into `<title>`. Its default
+content (`{{#has_base}}{{base}} - Revision {{rev}}: {{/has_base}}{{path}}`)
+matches mod_dav_svn's own default title exactly, so an unmodified install's
+`<title>` is unchanged. Override it (or add a `page-title.custom.mustache`
+sibling) to add a site-specific prefix/suffix, drop the revision, or
+otherwise customize it, e.g.:
+
+```
+Acme Corp {{#has_base}}{{base}} - {{/has_base}}{{path}}
+```
+
+This only affects the `<title>` shown in the browser tab — the on-page
+`<h1>` heading is a separate, unrelated piece of markup and always shows
+the revision.
 
 `wa-page` additionally splits its `<header>`, breadcrumb subheader, and
 `<footer>` out into their own `page-header.mustache`, `page-subheader.mustache`,
