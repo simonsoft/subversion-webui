@@ -357,8 +357,8 @@ end
 -- sourced from svn-index.lua's history_href); percent_encode_path makes
 -- the path safe inside an href; "?p=REV" pins it at whatever revision the
 -- path text is meaningful for -- the log entry's OWN revision for the
--- destination, but copyfrom_rev for a copy source (these differ -- see
--- render_log_item). SVN_INDEX_QUERY_FILE is layered on top, but only for
+-- destination (one before it for a deleted path), but copyfrom_rev for a
+-- copy source (these differ -- see render_log_item). SVN_INDEX_QUERY_FILE is layered on top, but only for
 -- file node-kind entries, mirroring svn-index.lua's own
 -- ENTRY_CONTEXT_BUILDERS.file scoping exactly.
 --
@@ -421,8 +421,19 @@ local function render_log_item(templates, item, context)
     local own_change, descendant_change = nil, nil
 
     for _, cp in ipairs(item.changed_paths) do
+        -- A deleted path no longer exists at the entry's own revision, so
+        -- pinning its link there 404s -- link to the revision just before
+        -- instead, the last one it still existed in. Unlinked (nil) when
+        -- the revision isn't a positive integer (nothing before r0).
+        local link_revision = item.revision
+
+        if cp.action == "D" then
+            local revision_num = tonumber(validate_nonneg_integer(item.revision))
+            link_revision = revision_num and revision_num > 0 and tostring(revision_num - 1) or nil
+        end
+
         local href = build_changed_path_href(
-            context.repo_root, cp.path, item.revision, cp.node_kind, context.query_file_params
+            context.repo_root, cp.path, link_revision, cp.node_kind, context.query_file_params
         )
 
         local entry = {

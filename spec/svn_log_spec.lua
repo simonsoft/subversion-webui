@@ -363,7 +363,7 @@ describe("svn-log output_filter", function()
 
         assert.truthy(html:find('<a class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/?p=41">41</a>', 1, true))
         assert.truthy(html:find('<wa-icon name="plus" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/bar.txt?p=41">/trunk/bar.txt</a></span>', 1, true))
-        assert.truthy(html:find('<wa-icon name="trash" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/old.txt?p=41">/trunk/old.txt</a></span>', 1, true))
+        assert.truthy(html:find('<wa-icon name="trash" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/old.txt?p=40">/trunk/old.txt</a></span>', 1, true))
 
         local _, rev42_pos = html:find('>42<', 1, true)
         local _, rev41_pos = html:find('>41<', 1, true)
@@ -499,6 +499,31 @@ describe("svn-log output_filter", function()
             '<li class="action-m wa-flank"><wa-icon name="pen" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/unrelated.txt?p=50">/trunk/unrelated.txt</a></span></li>',
             1, true
         ))
+    end)
+
+    it("links a deleted path at the revision before its deletion, while sibling changes keep the entry's own revision", function()
+        local html = run_output_filter({
+            [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>60</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-04-01T00:00:00.000000Z</S:date>
+<D:comment>Remove obsolete stuff</D:comment>
+<S:deleted-path node-kind="dir">/trunk/obsolete</S:deleted-path>
+<S:deleted-path node-kind="file">/trunk/old.txt</S:deleted-path>
+<S:replaced-path node-kind="file">/trunk/swapped.txt</S:replaced-path>
+<S:modified-path node-kind="file">/trunk/kept.txt</S:modified-path>
+</S:log-item>
+</S:log-report>]]
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find('<a href="/svn/demo1/trunk/obsolete?p=59">/trunk/obsolete</a>', 1, true))
+        assert.truthy(html:find('<a href="/svn/demo1/trunk/old.txt?p=59">/trunk/old.txt</a>', 1, true))
+        -- A replaced path exists (as its new node) at the entry's own
+        -- revision, so only an outright deletion shifts back.
+        assert.truthy(html:find('<a href="/svn/demo1/trunk/swapped.txt?p=60">/trunk/swapped.txt</a>', 1, true))
+        assert.truthy(html:find('<a href="/svn/demo1/trunk/kept.txt?p=60">/trunk/kept.txt</a>', 1, true))
+        assert.truthy(html:find('<a class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/?p=60">60</a>', 1, true))
     end)
 
     it("falls back to plain, unlinked changed-path text when repo_root is absent, while the revision badge still links", function()
