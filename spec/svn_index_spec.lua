@@ -725,24 +725,28 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find(':scope > wa-tree-item:not(.dir)', 1, true))
+        assert.truthy(html:find('if (!child.classList.contains("dir")) {', 1, true))
         assert.truthy(html:find(':scope > wa-tree-item.dir', 1, true))
         assert.truthy(html:find('event.target.isLeaf = dirChildren.length === 0', 1, true))
     end)
 
     it("marks nav's own newly-fetched dir entries lazy, both at the root and nested under an already-expanded item -- except ones already on the auto-expand path", function()
         -- dir.mustache never sets "lazy" itself (see the test above) -- nav
-        -- opts in after the fact instead, via a single unified check
-        -- covering both the root-level population (event.target is the
-        -- "svn-nav" tree itself) and a nested item's own children (once it
-        -- finishes loading), since both sit inside/at ".svn-nav". It marks
-        -- newly fetched .dir children lazy=true so each one gets its own
-        -- future expand capability in turn -- except a child whose own
-        -- hx-trigger is "load" (i.e. is itself on the auto-expand path,
-        -- server-rendered that way -- see "is_target_any" in
-        -- ENTRY_CONTEXT_BUILDERS.dir), which must be marked expanded=true
-        -- instead: confirmed via a real browser that marking it lazy=true
-        -- too visually collapses it, undoing its own auto-expansion.
+        -- opts in instead, via a single unified check covering both the
+        -- root-level population (the swap target is the "svn-nav" tree
+        -- itself) and a nested item's own children, since both sit
+        -- inside/at ".svn-nav". It marks newly fetched .dir children lazy
+        -- so each one gets its own future expand capability in turn --
+        -- except a child whose own hx-trigger is "load" (i.e. is itself on
+        -- the auto-expand path, server-rendered that way -- see
+        -- "is_target_any" in ENTRY_CONTEXT_BUILDERS.dir), which must be
+        -- marked expanded=true instead: confirmed via a real browser that
+        -- marking it lazy=true too visually collapses it, undoing its own
+        -- auto-expansion. "lazy" is set as an attribute on the response
+        -- fragment in "htmx:before:swap", before the entries are upgraded:
+        -- setting it on live items instead makes wa-tree re-initialize
+        -- every item in the tree once per entry, hanging the tab on large
+        -- folders (~2000 entries).
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -754,7 +758,10 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('if (event.target.closest?.(".svn-nav")) {', 1, true))
         assert.truthy(html:find('if (child.getAttribute("hx-trigger") === "load") {', 1, true))
         assert.truthy(html:find("child.expanded = true;", 1, true))
-        assert.truthy(html:find("child.lazy = true;", 1, true))
+        assert.truthy(html:find('addEventListener("htmx:before:swap"', 1, true))
+        assert.truthy(html:find('task.target?.closest?.(".svn-nav")', 1, true))
+        assert.truthy(html:find('child.setAttribute("lazy", "");', 1, true))
+        assert.falsy(html:find("child.lazy = true;", 1, true))
     end)
 
     it("stops a nested lazy-load from also re-triggering already-loaded ancestor tree items", function()

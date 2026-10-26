@@ -46,6 +46,52 @@ document.addEventListener("wa-lazy-load", (event) => {
 // child-list mutation ever happens, and "loading" (confirmed via aria-busy)
 // is left stuck forever. Setting the "loading" property directly ends it
 // regardless of whether any children actually got appended.
+//
+// Marking entries lazy (and dropping files, see below) is done here, on
+// the response fragment *before* it's inserted, not on the live items
+// afterwards: every post-render "lazy" change makes wa-tree-item fire
+// wa-lazy-change, and wa-tree answers each one by re-initializing *every*
+// item in the whole tree (WaTree.handleSlotChange -> initTreeItem, which
+// itself scans the whole tree twice via querySelector) -- cubic in the
+// folder's size, hanging the tab for minutes on a folder with ~2000
+// children. Fragment entries aren't upgraded yet, so a plain "lazy"
+// attribute is simply their initial state: wa-tree-item's
+// watch("lazy", { waitUntilFirstUpdate: true }) never fires for it.
+// Iterates the fragment's own children rather than querying it with
+// ":scope > ...": ":scope" never matches when the query root is a
+// DocumentFragment rather than an Element.
+document.addEventListener("htmx:before:swap", (event) => {
+    for (const task of event.detail.tasks) {
+        if (task.type !== "main" || !task.target?.closest?.(".svn-nav")) {
+            continue;
+        }
+
+        for (const child of [...task.fragment.children]) {
+            if (!child.matches("wa-tree-item")) {
+                continue;
+            }
+
+            if (!child.classList.contains("dir")) {
+                // wa-tree-item shows its expand chevron based on actually
+                // having child wa-tree-item elements, regardless of their
+                // own visibility -- but the nav tree only ever wants to
+                // browse folders (files/updir are hidden via CSS, see
+                // wa-tree.svn-nav .file/.updir above), so a folder
+                // containing only files (or nothing at all) would
+                // otherwise still show a chevron that reveals nothing
+                // when clicked.
+                child.remove();
+            } else if (child.getAttribute("hx-trigger") !== "load") {
+                // hx-trigger="load" is dir.mustache's own is_target_any
+                // marker (set server-side; see ENTRY_CONTEXT_BUILDERS.dir)
+                // -- those get "expanded" instead, in the
+                // "htmx:after:swap" listener below.
+                child.setAttribute("lazy", "");
+            }
+        }
+    }
+});
+
 document.addEventListener("htmx:after:swap", (event) => {
     // Covers a directory's own content finishing loading, whether that was
     // triggered by a real chevron click (lazy="true" -> wa-lazy-load), an
@@ -60,20 +106,11 @@ document.addEventListener("htmx:after:swap", (event) => {
     // occurs for them, and main's own tree doesn't carry the "svn-nav"
     // class anyway.
     if (event.target.closest?.(".svn-nav")) {
-        // wa-tree-item shows its expand chevron based on actually having
-        // child wa-tree-item elements, regardless of their own visibility
-        // -- but the nav tree only ever wants to browse folders
-        // (files/updir are hidden via CSS, see wa-tree.svn-nav
-        // .file/.updir above), so a folder containing only files (or
-        // nothing at all) would otherwise still show a chevron that
-        // reveals nothing when clicked.
-        event.target.querySelectorAll(":scope > wa-tree-item:not(.dir)").forEach((child) => child.remove());
-
         // hx-trigger="load" is dir.mustache's own is_target_any marker (set
         // server-side; see ENTRY_CONTEXT_BUILDERS.dir) -- reading it back
         // here, rather than templating a separate "expanded" attribute
-        // too, keeps that expressed in exactly one place. Either way this
-        // sets "expanded"/"lazy" as a real JS property, never relying on a
+        // too, keeps that expressed in exactly one place. This sets
+        // "expanded" as a real JS property, never relying on a
         // static HTML attribute alone: confirmed via a real browser that
         // an "expanded" attribute present in the server-rendered markup
         // itself can still end up visually collapsed somewhere in this
@@ -87,8 +124,6 @@ document.addEventListener("htmx:after:swap", (event) => {
         dirChildren.forEach((child) => {
             if (child.getAttribute("hx-trigger") === "load") {
                 child.expanded = true;
-            } else {
-                child.lazy = true;
             }
         });
 
