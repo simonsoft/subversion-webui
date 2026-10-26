@@ -1212,6 +1212,44 @@ describe("svn-index output_filter", function()
         assert.truthy(warning)
     end)
 
+    it("starts \"Show folders\" checked when the browsed path runs through a SVN_INDEX_HIDE_DIR-matched directory, itself included", function()
+        -- Nav walks the browsed path open on a direct page load, but a
+        -- navhidden directory on that path would stay hidden while the
+        -- switch is off -- so the page renders it already checked.
+        local function switch_for(path)
+            return run_filter({
+                [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="]] .. path .. [[" base="demo1">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+            }, "/svn/demo1" .. path,
+                { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_HIDE_DIR = "^\\." }
+            ):match('<wa%-switch class="wa%-font%-size%-s"[^>]*>Show folders</wa%-switch>')
+        end
+
+        -- An ancestor on the path matches.
+        assert.are.equal('<wa-switch class="wa-font-size-s" checked>Show folders</wa-switch>', switch_for("/trunk/.cms/config/"))
+        -- The browsed directory itself matches.
+        assert.are.equal('<wa-switch class="wa-font-size-s" checked>Show folders</wa-switch>', switch_for("/trunk/.cms/"))
+        -- Nothing on the path matches.
+        assert.are.equal('<wa-switch class="wa-font-size-s">Show folders</wa-switch>', switch_for("/trunk/config/"))
+        -- Repo root: no path segments at all.
+        assert.are.equal('<wa-switch class="wa-font-size-s">Show folders</wa-switch>', switch_for("/"))
+    end)
+
+    it("never starts \"Show folders\" checked when SVN_INDEX_HIDE_DIR is unset", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/.cms/" base="demo1">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, "/svn/demo1/trunk/.cms/", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('<wa-switch class="wa-font-size-s">Show folders</wa-switch>', 1, true))
+    end)
+
     it("never tags a \"repo\" entry (Collection of Repositories) \"navhidden\", even when its name matches SVN_INDEX_HIDE_DIR", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
