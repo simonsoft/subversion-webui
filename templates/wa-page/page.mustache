@@ -912,8 +912,12 @@ wa-tree.svn-nav .updir {
    hx-trigger, and each <wa-tree>'s own hx-on:wa-selection-change below,
    which synthesizes a real click on a selected leaf's plain <a> for
    file/repo entries), not off where in the row a click lands -- the label
-   itself just shouldn't look like a hyperlink. */
-wa-tree-item a {
+   itself just shouldn't look like a hyperlink. The breadcrumb's own links
+   (page-subheader.mustache) are real <a href> elements too, purely so
+   ctrl/middle-click and the browser's link context menu work, and keep
+   wa-breadcrumb-item's own look the same way. */
+wa-tree-item a,
+#svn-breadcrumb wa-breadcrumb-item a {
     color: inherit;
     text-decoration: none;
 }
@@ -1043,7 +1047,13 @@ wa-tree-item.dir > span {
      synthesized click on file/repo's anchor is real browser navigation,
      sometimes a file download, that no ajax swap could stand in for.
      Scoped to selection.forEach(...) rather than a single item, since
-     single-selection mode still reports an array. -->
+     single-selection mode still reports an array. A click landing directly
+     on file/repo's anchor never gets here at all: the anchor stops its own
+     click's propagation (see file.mustache/repo.mustache), so the browser
+     handles it natively and wa-tree never selects the row -- otherwise this
+     replay would fire a second, modifier-less click on top of the browser's
+     own, navigating the current tab on a ctrl-click (and Chrome then blocks
+     the new tab as a popup). -->
 <nav slot="navigation">
 <wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">
 </wa-tree>

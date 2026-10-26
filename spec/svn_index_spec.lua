@@ -444,8 +444,12 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("webawesome.css", 1, true))
         assert.truthy(html:find('<header slot="header" class="wa-split wa-gap-s wa-font-size-m">', 1, true))
         assert.truthy(html:find('<footer slot="footer" id="svn-footer" class="wa-font-size-xs">', 1, true))
+        -- hx-on:click stops the link's own click from reaching wa-tree's
+        -- row selection, whose wa-selection-change replay would otherwise
+        -- fire a second, modifier-less click on top of the browser's own --
+        -- breaking ctrl-click (see page.mustache's wa-tree comment).
         assert.truthy(html:find(
-            '<wa-tree-item class="file"><a href="/svn/demo1/README.md"><wa-icon name="file" variant="regular"></wa-icon> README.md</a>',
+            '<wa-tree-item class="file"><a href="/svn/demo1/README.md" hx-on:click="event.stopPropagation()"><wa-icon name="file" variant="regular"></wa-icon> README.md</a>',
             1, true
         ))
     end)
@@ -525,18 +529,22 @@ describe("svn-index output_filter", function()
 
         -- path has 2 segments ("trunk", "arbortext"): myrepo (is_repo) is
         -- the repo root, trunk and arbortext (both is_dir) descend from it;
-        -- arbortext (current) is unlinked, the other two carry hx-get for
-        -- htmx's own click-triggered swap (dir.mustache's own pattern --
-        -- no plain "href", deliberately: confirmed via a real browser that
-        -- combining a real href with hx-get on wa-breadcrumb-item fires
-        -- BOTH htmx's own fetch AND the anchor's native default navigation,
-        -- racing each other into a real full-page reload).
+        -- arbortext (current) is unlinked, the other two wrap their label in
+        -- a real <a href> that also carries hx-get for htmx's own
+        -- click-triggered swap. The <a> is a light-DOM child, never
+        -- wa-breadcrumb-item's own "href" (confirmed via a real browser that
+        -- combining that shadow-DOM href with hx-get on wa-breadcrumb-item
+        -- fires BOTH htmx's own fetch AND the anchor's native default
+        -- navigation, racing each other into a real full-page reload): on a
+        -- real <a href> htmx itself cancels a plain click's default and
+        -- skips ctrl/meta/shift-clicks, so those (plus middle-click and the
+        -- link context menu) stay the browser's own.
         assert.truthy(html:find(
-            '<wa-breadcrumb-item hx-get="/svn/myrepo/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click"><wa-icon name="database"></wa-icon> myrepo</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item><a href="/svn/myrepo/" hx-get="/svn/myrepo/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click"><wa-icon name="database"></wa-icon> myrepo</a></wa-breadcrumb-item>',
             1, true
         ))
         assert.truthy(html:find(
-            '<wa-breadcrumb-item hx-get="/svn/myrepo/trunk/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click"><wa-icon name="folder" variant="regular"></wa-icon> trunk</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item><a href="/svn/myrepo/trunk/" hx-get="/svn/myrepo/trunk/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click"><wa-icon name="folder" variant="regular"></wa-icon> trunk</a></wa-breadcrumb-item>',
             1, true
         ))
         assert.truthy(html:find(
@@ -626,8 +634,10 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        -- The immediate "class=\"repo\"...><a href=...>" transition (no
-        -- attributes in between) proves this specific entry carries no
+        -- The exact "class=\"repo\"...><a href=... hx-on:click=...>" markup
+        -- (no other attributes in between -- the stopPropagation only keeps
+        -- a click on the link itself out of wa-tree's row selection, same
+        -- as file.mustache) proves this specific entry carries no
         -- hx-get/lazy wiring -- a page-wide search for "hx-get"/"lazy" would
         -- false-fail here since the page's own nav root item and lazy-clear
         -- script always contain those strings regardless of fixture. The
@@ -636,7 +646,7 @@ describe("svn-index output_filter", function()
         -- hx-on:wa-selection-change instead (see page.mustache) -- not
         -- here, since Web Awesome's own wa-tree dispatches that event on
         -- itself, never on the individual wa-tree-item.
-        assert.truthy(html:find('<wa-tree-item class="repo"><a href="/svn/demo1/demo1/">', 1, true))
+        assert.truthy(html:find('<wa-tree-item class="repo"><a href="/svn/demo1/demo1/" hx-on:click="event.stopPropagation()">', 1, true))
     end)
 
     it("removes the lazy attribute after its own swap lands, via a page-level htmx:after:swap listener", function()
@@ -950,8 +960,8 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, "/svn/myrepo/trunk/arbortext/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<wa-breadcrumb-item hx-get="/svn/myrepo/?p=10"', 1, true))
-        assert.truthy(html:find('<wa-breadcrumb-item hx-get="/svn/myrepo/trunk/?p=10"', 1, true))
+        assert.truthy(html:find('<wa-breadcrumb-item><a href="/svn/myrepo/?p=10" hx-get="/svn/myrepo/?p=10"', 1, true))
+        assert.truthy(html:find('<wa-breadcrumb-item><a href="/svn/myrepo/trunk/?p=10" hx-get="/svn/myrepo/trunk/?p=10"', 1, true))
         assert.truthy(html:find('<wa-tree class="svn-nav" hx-get="/svn/myrepo/?p=10" hx-trigger="load"', 1, true))
     end)
 
@@ -1078,7 +1088,7 @@ describe("svn-index output_filter", function()
         -- other href in this file) before being placed in the template,
         -- same as any other HTML attribute value.
         assert.truthy(html:find(
-            '<a href="/svn/demo1/trunk/README.md?p=10&amp;view=details&amp;this=that">',
+            '<a href="/svn/demo1/trunk/README.md?p=10&amp;view=details&amp;this=that" hx-on:click="event.stopPropagation()">',
             1, true
         ))
         assert.truthy(html:find(
@@ -1099,7 +1109,7 @@ describe("svn-index output_filter", function()
         )
 
         assert.truthy(html:find(
-            '<a href="/svn/demo1/trunk/README.md?view=details&amp;this=that">',
+            '<a href="/svn/demo1/trunk/README.md?view=details&amp;this=that" hx-on:click="event.stopPropagation()">',
             1, true
         ))
     end)
