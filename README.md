@@ -406,7 +406,7 @@ luarocks install lrexlib-pcre2
 busted spec/
 ```
 
-### Browser smoke test (History dialog, optional)
+### Browser smoke tests (History dialog, nav tree; optional)
 
 The tests above run `output_filter` against the real `luaexpat`/`lustache`
 dependencies, but everything downstream of its own HTML string -- whether
@@ -417,6 +417,11 @@ preview actually clamps to the correct pixel height -- is outside what a
 pure-Lua `busted` test can verify at all. `smoketest/` is a separate,
 optional, Puppeteer-driven check that renders the real `svn-log.lua`
 output through a real browser to cover exactly that gap.
+
+`nav-large-folder.test.mjs` does the same for `svn-index.lua`: it serves
+whole pages rendered through the real `output_filter` (answering htmx's
+own nav fetches live) and expands a folder with 2000 subfolders in the nav
+tree, as a regression check that this stays fast.
 
 It is entirely independent of `busted spec/`: not run as part of it, adds
 no Node.js dependency to the rest of the repo, and isn't required for

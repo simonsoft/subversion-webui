@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Optional Puppeteer browser smoke test for the wa-page History dialog -- covers real custom-element and CSS-clamp behavior that spec/ (busted) cannot exercise.",
+  "description": "Optional Puppeteer browser smoke tests for the wa-page History dialog and nav tree -- covers real custom-element and CSS-clamp behavior that spec/ (busted) cannot exercise.",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "test": "node history-dialog.test.mjs"
+    "test": "node history-dialog.test.mjs && node nav-large-folder.test.mjs"
   },
   "devDependencies": {
     "puppeteer": "^25.5.0"
