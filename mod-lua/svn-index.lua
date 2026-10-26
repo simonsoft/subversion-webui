@@ -634,6 +634,13 @@ function output_filter(r)
     -- "known once repo_root is" pattern history_query_suffix follows.
     local history_active = nil
 
+    -- Whether page-subheader.mustache's "Show folders" switch starts out
+    -- checked -- nil until the "index" StartElement branch below, where it
+    -- becomes true only if the browsed path itself runs through a
+    -- SVN_INDEX_HIDE_DIR-matched directory (see hide_dir_pattern, further
+    -- down).
+    local show_folders = nil
+
     local svn = {
         version = "",
         href = "http://subversion.apache.org/"
@@ -896,6 +903,9 @@ function output_filter(r)
             -- history was actually requested (see history_wanted, near
             -- the "?history" read above) AND repo_root could be derived.
             history_active = history_active,
+            -- Starts page-subheader.mustache's "Show folders" switch out
+            -- checked -- see its declaration above.
+            show_folders = show_folders,
             -- Always a plain string when history_active is truthy -- ""
             -- for the browsed directory itself, "<filename>" for a
             -- validated direct-child file -- escaped here (see
@@ -1027,6 +1037,28 @@ function output_filter(r)
                 do
                     local has_base = index.base ~= ""
                     breadcrumbs, segment_count, repo_parent_path = compute_breadcrumbs(index.path, index.base, has_base, request_href, revision_suffix)
+
+                    -- Nav walks the browsed path open on its own (see
+                    -- is_target_any in ENTRY_CONTEXT_BUILDERS.dir), but a
+                    -- navhidden directory anywhere on that path -- the
+                    -- browsed directory itself included -- stays hidden
+                    -- while "Show folders" is off, leaving the walked-open
+                    -- path with nowhere to show. Starting the switch out
+                    -- checked covers exactly that case. Each segment is
+                    -- tested the same way ENTRY_CONTEXT_BUILDERS.dir tests
+                    -- an entry's own name (index.path, like attr.name, is
+                    -- mod_dav_svn's own decoded form). Only a full page
+                    -- load ever renders the switch itself: in-page
+                    -- navigation swaps "#svn-breadcrumb", never the whole
+                    -- subheader, so this never flips it under the user.
+                    if has_base and hide_dir_pattern then
+                        for segment in (index.path or ""):gmatch("[^/]+") do
+                            if r:regex(segment, hide_dir_pattern) ~= false then
+                                show_folders = true
+                                break
+                            end
+                        end
+                    end
                     -- repo_root: the repo root's own absolute,
                     -- query-string-free URL, passed through on
                     -- history_href so svn-log.lua's output_filter (which
