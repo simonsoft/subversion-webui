@@ -147,6 +147,40 @@ document.addEventListener("htmx:after:swap", (event) => {
     }
 });
 
+// wa-tree-item only shows its "loading" spinner when expanding a *lazy*
+// item -- but nav's on-path entries (dir.mustache's hx-trigger="load",
+// walked open on a direct page load) aren't lazy: each fetches its own
+// children as soon as it's inserted, with nothing shown meanwhile. So
+// "loading" is set here for every nav folder's own fetch, lazy or not
+// (for a lazy one wa-tree-item has already set it -- a no-op), and cleared
+// by the "htmx:after:swap" listener above. Set only once wa-tree-item is
+// defined and has rendered: on a first visit Web Awesome's autoloader may
+// still be loading it when the first on-path fetch starts, and its own
+// constructor/first render reset "loading" to false. navFolderFetches
+// tracks which fetches are still in flight, so that deferred set never
+// lands after the fetch has already finished (leaving a stuck spinner).
+const navFolderFetches = new WeakSet();
+document.addEventListener("htmx:before:request", (event) => {
+    const item = event.target;
+
+    if (!item.matches?.(".svn-nav wa-tree-item.dir")) {
+        return;
+    }
+
+    navFolderFetches.add(item);
+    customElements.whenDefined("wa-tree-item").then(() => item.updateComplete).then(() => {
+        if (navFolderFetches.has(item)) {
+            item.loading = true;
+        }
+    });
+});
+
+document.addEventListener("htmx:finally:request", (event) => {
+    if (navFolderFetches.delete(event.target)) {
+        event.target.loading = false;
+    }
+});
+
 // The History link's REPORT response (see svn-log.lua's output_filter)
 // swaps into "#svn-history-content", a permanently-present, initially-empty
 // div inside the static "#svn-history-dialog" -- opening the dialog here,
