@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Checks that file links and breadcrumb links behave like ordinary browser
+// Checks that file, folder and breadcrumb links behave like ordinary browser
 // links for ctrl-click and middle-click (new tab, current tab untouched),
 // while a plain click keeps its existing behavior. File links used to get
 // a second, script-synthesized click from wa-tree's row selection (see
@@ -118,8 +118,11 @@ try {
         );
         await new Promise((r) => setTimeout(r, SETTLE_MS));
         await page.evaluate(() => {
+            // Main's own folder rows are hidden until "Show folders" is on.
+            document.querySelector("#svn-subheader wa-switch").checked = true;
             window.__sameDocument = true;
         });
+        await new Promise((r) => setTimeout(r, 300));
 
         const requests = [];
         page.on("request", (req) => requests.push(req.url().replace(origin, "") + (req.headers()["hx-request"] ? " (htmx)" : "")));
@@ -155,10 +158,21 @@ try {
         await page.keyboard.up("Control");
     };
     const middleClick = (page, el) => el.click({ button: "middle" });
+    // Keyboard activation: of a tree link's own tree item (the link itself
+    // is tabindex="-1" -- focus is wa-tree's own, on the item), or of a
+    // breadcrumb's own link, which lives in wa-breadcrumb-item's shadow DOM
+    // (where Tab lands; the host itself isn't focusable).
+    const enterKey = async (page, el) => {
+        await el.evaluate((e) => (e.closest("wa-tree-item") || e.shadowRoot.querySelector("a[href]")).focus());
+        await page.keyboard.press("Enter");
+    };
 
     const FILE_LINK = "#svn-index wa-tree-item.file > a";
     // "trunk" -- a linked ancestor of the current "deeper" folder.
-    const CRUMB_LINK = "#svn-breadcrumb wa-breadcrumb-item:nth-of-type(2) > a";
+    const CRUMB_LINK = "#svn-breadcrumb wa-breadcrumb-item:nth-of-type(2)";
+    // "sub/", in main's listing of trunk/ and nested under trunk/ in nav.
+    const MAIN_FOLDER_LINK = "#svn-index wa-tree-item.dir > span > a";
+    const NAV_FOLDER_LINK = ".svn-nav wa-tree-item.dir wa-tree-item.dir > span > a";
 
     // One scenario: a missing link (e.g. no breadcrumb <a> at all) or any
     // other error records a FAIL rather than aborting the remaining ones.
@@ -202,6 +216,34 @@ try {
         "breadcrumb: middle-click opens the folder in a new tab and leaves the current tab alone",
         "/svn/demo1/trunk/sub/deeper/", CRUMB_LINK, middleClick,
         (r) => r.newTabUrl === "/svn/demo1/trunk/" && r.sameDocument && r.requests.length === 0 && r.breadcrumb.endsWith("deeper/")
+    );
+
+    await check(
+        "breadcrumb: keyboard Enter swaps in place via htmx",
+        "/svn/demo1/trunk/sub/deeper/", CRUMB_LINK, enterKey,
+        (r) => !r.newTabUrl && r.sameDocument && r.requests.join() === "/svn/demo1/trunk/ (htmx)" && r.breadcrumb === "demo1/ / trunk/"
+    );
+    for (const [where, link] of [["main", MAIN_FOLDER_LINK], ["nav", NAV_FOLDER_LINK]]) {
+        await check(
+            `${where} folder: plain click swaps main in place via htmx, with no full page load`,
+            "/svn/demo1/trunk/", link, plainClick,
+            (r) => !r.newTabUrl && r.sameDocument && r.requests.join() === "/svn/demo1/trunk/sub/ (htmx)" && r.breadcrumb === "demo1/ / trunk/ / sub/"
+        );
+        await check(
+            `${where} folder: ctrl-click opens the folder in a new tab and leaves the current tab alone`,
+            "/svn/demo1/trunk/", link, ctrlClick,
+            (r) => r.newTabUrl === "/svn/demo1/trunk/sub/" && r.sameDocument && r.requests.length === 0 && r.breadcrumb === "demo1/ / trunk/"
+        );
+        await check(
+            `${where} folder: middle-click opens the folder in a new tab and leaves the current tab alone`,
+            "/svn/demo1/trunk/", link, middleClick,
+            (r) => r.newTabUrl === "/svn/demo1/trunk/sub/" && r.sameDocument && r.requests.length === 0 && r.breadcrumb === "demo1/ / trunk/"
+        );
+    }
+    await check(
+        "nav folder: keyboard Enter on its tree item still swaps main in place",
+        "/svn/demo1/trunk/", NAV_FOLDER_LINK, enterKey,
+        (r) => !r.newTabUrl && r.sameDocument && r.requests.join() === "/svn/demo1/trunk/sub/ (htmx)" && r.breadcrumb === "demo1/ / trunk/ / sub/"
     );
 } finally {
     await browser?.close();

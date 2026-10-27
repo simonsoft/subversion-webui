@@ -912,12 +912,9 @@ wa-tree.svn-nav .updir {
    hx-trigger, and each <wa-tree>'s own hx-on:wa-selection-change below,
    which synthesizes a real click on a selected leaf's plain <a> for
    file/repo entries), not off where in the row a click lands -- the label
-   itself just shouldn't look like a hyperlink. The breadcrumb's own links
-   (page-subheader.mustache) are real <a href> elements too, purely so
-   ctrl/middle-click and the browser's link context menu work, and keep
-   wa-breadcrumb-item's own look the same way. */
-wa-tree-item a,
-#svn-breadcrumb wa-breadcrumb-item a {
+   itself just shouldn't look like a hyperlink, and the same goes for the
+   real <a href> each folder label now wraps. */
+wa-tree-item a {
     color: inherit;
     text-decoration: none;
 }
@@ -931,8 +928,10 @@ wa-tree-item a,
    calls stopPropagation precisely to prevent that, see file.mustache),
    so its hover state shouldn't imply otherwise. ":has()" reads a
    descendant's own hover state from the ancestor selector, the same
-   technique the "Folder only" rules elsewhere in this file already use. */
-wa-tree-item.file:hover:not(:has(.file-actions:hover)) > a {
+   technique the "Folder only" rules elsewhere in this file already use.
+   Applied to the name's own span, not the whole link, so the space between
+   the icon and the name isn't underlined along with it. */
+wa-tree-item.file:hover:not(:has(.file-actions:hover)) > a > .name {
     text-decoration: underline;
 }
 
@@ -1024,6 +1023,17 @@ wa-tree-item.dir > span {
 {{{page-skip-to-content}}}
 {{{page-banner}}}
 {{{page-header}}}
+<!-- Each linked breadcrumb (page-subheader.mustache) carries its own
+     "href", so wa-breadcrumb-item renders a real link in its shadow DOM in
+     place of its default <button> -- one Tab stop per crumb, Enter
+     activates it, and ctrl/meta/shift-click, middle-click and the link
+     context menu stay the browser's own. Only a plain click swaps "#svn-index"
+     in place: its hx-trigger filter skips modifier clicks, and its
+     hx-on:click cancels the link's own navigation for exactly the clicks
+     htmx handles. htmx's own anchor handling can't do either here -- it
+     only sees anchors at or above the element carrying hx-get, never one
+     inside its shadow DOM, which is why a bare href plus hx-get once fired
+     both the swap and a full page load. -->
 {{{page-subheader}}}
 {{{page-navigation-header}}}
 <!-- Neither dir.mustache's <span hx-get> nor file/repo.mustache's plain
@@ -1053,7 +1063,19 @@ wa-tree-item.dir > span {
      handles it natively and wa-tree never selects the row -- otherwise this
      replay would fire a second, modifier-less click on top of the browser's
      own, navigating the current tab on a ctrl-click (and Chrome then blocks
-     the new tab as a popup). -->
+     the new tab as a popup). dir.mustache's span wraps a real <a href> too,
+     for the same browser link affordances, but nested *inside* the span
+     rather than replacing it: htmx's own filtered-trigger path cancels a
+     click's default action on any anchor at or above the trigger element
+     before it even evaluates the filter, ctrl-clicks included. That anchor
+     stops only a modifier click's propagation (the browser opens the new
+     tab/window, and neither htmx nor wa-tree sees it); a plain click just
+     has its native navigation cancelled and carries on into wa-tree's
+     selection and this replay, exactly as before. All three entries' links
+     carry tabindex="-1" (keyboard focus stays wa-tree's own roving
+     tabindex, one Tab stop per tree, with arrow keys and Enter driving it)
+     and draggable="false" (so a drag across a name selects its text rather
+     than dragging the link). -->
 <nav slot="navigation">
 <wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">
 </wa-tree>
