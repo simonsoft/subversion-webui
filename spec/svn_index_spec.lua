@@ -448,12 +448,12 @@ describe("svn-index output_filter", function()
         -- row selection, whose wa-selection-change replay would otherwise
         -- fire a second, modifier-less click on top of the browser's own --
         -- breaking ctrl-click (see page.mustache's wa-tree comment).
-        -- tabindex="-1"/draggable="false" keep keyboard focus on wa-tree's
-        -- own roving tabindex and stop the name dragging as a link; the
-        -- name's own span lets the hover underline skip the space after
-        -- the icon.
+        -- tabindex="-1" keeps keyboard focus on wa-tree's own roving
+        -- tabindex; draggable="false" stops the name being dragged off as a
+        -- link (its text isn't selectable anyway: wa-tree-item's own row
+        -- styles set user-select: none).
         assert.truthy(html:find(
-            '<wa-tree-item class="file"><a href="/svn/demo1/README.md" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()"><wa-icon name="file" variant="regular"></wa-icon> <span class="name">README.md</span></a>',
+            '<wa-tree-item class="file"><a href="/svn/demo1/README.md" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()"><wa-icon name="file" variant="regular"></wa-icon> README.md</a>',
             1, true
         ))
     end)

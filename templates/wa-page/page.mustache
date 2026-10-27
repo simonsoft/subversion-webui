@@ -928,10 +928,8 @@ wa-tree-item a {
    calls stopPropagation precisely to prevent that, see file.mustache),
    so its hover state shouldn't imply otherwise. ":has()" reads a
    descendant's own hover state from the ancestor selector, the same
-   technique the "Folder only" rules elsewhere in this file already use.
-   Applied to the name's own span, not the whole link, so the space between
-   the icon and the name isn't underlined along with it. */
-wa-tree-item.file:hover:not(:has(.file-actions:hover)) > a > .name {
+   technique the "Folder only" rules elsewhere in this file already use. */
+wa-tree-item.file:hover:not(:has(.file-actions:hover)) > a {
     text-decoration: underline;
 }
 
@@ -1074,8 +1072,9 @@ wa-tree-item.dir > span {
      selection and this replay, exactly as before. All three entries' links
      carry tabindex="-1" (keyboard focus stays wa-tree's own roving
      tabindex, one Tab stop per tree, with arrow keys and Enter driving it)
-     and draggable="false" (so a drag across a name selects its text rather
-     than dragging the link). -->
+     and draggable="false" (a name can't be dragged off as a link, e.g. onto
+     the tab or bookmarks bar; its text stays unselectable either way, since
+     wa-tree-item's own row styles set user-select: none). -->
 <nav slot="navigation">
 <wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">
 </wa-tree>
