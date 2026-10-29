@@ -147,6 +147,40 @@ document.addEventListener("htmx:after:swap", (event) => {
     }
 });
 
+// wa-tree-item only shows its "loading" spinner when expanding a *lazy*
+// item -- but nav's on-path entries (dir.mustache's hx-trigger="load",
+// walked open on a direct page load) aren't lazy: each fetches its own
+// children as soon as it's inserted, with nothing shown meanwhile. So
+// "loading" is set here for every nav folder's own fetch, lazy or not
+// (for a lazy one wa-tree-item has already set it -- a no-op), and cleared
+// by the "htmx:after:swap" listener above. Set only once wa-tree-item is
+// defined and has rendered: on a first visit Web Awesome's autoloader may
+// still be loading it when the first on-path fetch starts, and its own
+// constructor/first render reset "loading" to false. navFolderFetches
+// tracks which fetches are still in flight, so that deferred set never
+// lands after the fetch has already finished (leaving a stuck spinner).
+const navFolderFetches = new WeakSet();
+document.addEventListener("htmx:before:request", (event) => {
+    const item = event.target;
+
+    if (!item.matches?.(".svn-nav wa-tree-item.dir")) {
+        return;
+    }
+
+    navFolderFetches.add(item);
+    customElements.whenDefined("wa-tree-item").then(() => item.updateComplete).then(() => {
+        if (navFolderFetches.has(item)) {
+            item.loading = true;
+        }
+    });
+});
+
+document.addEventListener("htmx:finally:request", (event) => {
+    if (navFolderFetches.delete(event.target)) {
+        event.target.loading = false;
+    }
+});
+
 // The History link's REPORT response (see svn-log.lua's output_filter)
 // swaps into "#svn-history-content", a permanently-present, initially-empty
 // div inside the static "#svn-history-dialog" -- opening the dialog here,
@@ -906,32 +940,6 @@ wa-tree.svn-nav .updir {
    everything this UI otherwise hides by default", nav and main alike. */
 #svn-subheader:has(wa-switch:not(:state(checked))) ~ nav[slot="navigation"] wa-tree.svn-nav .navhidden {
     display: none;
-}
-
-/* wa-tree-item only shows its own loading spinner when expanding a *lazy*
-   item -- but nav's on-path entries (dir.mustache's hx-trigger="load",
-   walked open on a direct page load) aren't lazy: each fetches its own
-   children as soon as it's inserted, with nothing shown meanwhile. htmx
-   itself puts "htmx-request" on the requesting element for exactly the
-   request's lifetime, so a ring is drawn in the expand button's place
-   meanwhile -- no JS, and nothing for wa-tree-item's own (non-attribute)
-   "loading" state to reset. Lazy expansions already show wa-tree-item's
-   spinner (aria-busy="true"), so they're excluded. */
-wa-tree.svn-nav wa-tree-item.dir.htmx-request:not([aria-busy="true"])::part(expand-button)::before {
-    content: "";
-    box-sizing: border-box;
-    width: 1em;
-    height: 1em;
-    border: 2px solid var(--wa-color-neutral-fill-normal);
-    border-top-color: var(--wa-color-brand-fill-loud);
-    border-radius: 50%;
-    animation: svn-nav-loading 1s linear infinite;
-}
-
-@keyframes svn-nav-loading {
-    to {
-        rotate: 1turn;
-    }
 }
 
 /* Navigation is driven off wa-selection-change (see dir.mustache's own
