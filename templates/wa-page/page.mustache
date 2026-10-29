@@ -922,14 +922,18 @@ wa-tree-item a {
 /* Hovering anywhere in a file row underlines its own name link, matching
    what a click anywhere in that same dead space already does (see the
    comment above): resolves to a synthesized click on this exact link (via
-   wa-selection-change's own ":scope > a[href]" query). Excluded whenever
-   ".file-actions" (the History icon's own group, further down) is itself
-   being hovered -- that area does NOT act as the file link (its own icon
-   calls stopPropagation precisely to prevent that, see file.mustache),
-   so its hover state shouldn't imply otherwise. ":has()" reads a
-   descendant's own hover state from the ancestor selector, the same
-   technique the "Folder only" rules elsewhere in this file already use. */
-wa-tree-item.file:hover:not(:has(.file-actions:hover)) > a {
+   wa-selection-change's own ":scope > a[href]" query). Excluded only while
+   an action link in ".file-actions" (today just History) is itself
+   hovered -- the only spots in the row that do NOT act as the file link
+   (each stops its own click's propagation precisely to prevent that, see
+   file.mustache's History icon; a new action link needs the same). Not
+   the whole ".file-actions" group: the rest of it (the empty
+   ".lock-indicator", the gap) still opens the file, and being shorter
+   than the row it left the underline flickering on in thin strips above
+   and below it. ":has()" reads a descendant's own hover state from the
+   ancestor selector, the same technique the "Folder only" rules
+   elsewhere in this file already use. */
+wa-tree-item.file:hover:not(:has(.file-actions a:hover)) > a {
     text-decoration: underline;
 }
 
