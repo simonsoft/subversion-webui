@@ -919,6 +919,21 @@ wa-tree-item a {
     text-decoration: none;
 }
 
+/* An icon in front of a label (tree entries, breadcrumbs, the History
+   message preview) is spaced from the text by a margin, not a literal
+   space: a space is part of the text, so a hovered file link's underline
+   ran under it too, and its width varies with the font. Same token as
+   ".log-author"'s own flex gap, which already spaces its icon this way;
+   about the width the space had (3.9-4.5px measured in Chromium).
+   file.mustache's History icon, inside ".file-actions", has no label and
+   isn't matched. */
+wa-tree-item > a > wa-icon:first-child,
+wa-tree-item > span > a > wa-icon:first-child,
+wa-breadcrumb-item > wa-icon,
+.log-message-preview > span > wa-icon {
+    margin-inline-end: var(--wa-space-2xs);
+}
+
 /* Hovering anywhere in a file row underlines its own name link, matching
    what a click anywhere in that same dead space already does (see the
    comment above): resolves to a synthesized click on this exact link (via

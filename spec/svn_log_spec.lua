@@ -355,7 +355,7 @@ describe("svn-log output_filter", function()
         assert.truthy(html:find('<div class="svn-log">', 1, true))
 
         assert.truthy(html:find('<a class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/?p=42">42</a>', 1, true))
-        assert.truthy(html:find('<wa-icon name="user" variant="solid" style="font-size: 0.8rem;"></wa-icon> <strong>alice</strong>', 1, true))
+        assert.truthy(html:find('<wa-icon name="user" variant="solid" style="font-size: 0.8rem;"></wa-icon><strong>alice</strong>', 1, true))
         assert.truthy(html:find('date="2024-01-01T12:00:00.000000Z" month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric"></wa-format-date>', 1, true))
         assert.truthy(html:find('<em>Fix bug</em>', 1, true))
         assert.truthy(html:find('<div class="log-message-full wa-flank wa-color-text-quiet"><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon><em>Fix bug</em></div>', 1, true))
