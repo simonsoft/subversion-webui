@@ -471,6 +471,12 @@ local ENTRY_CONTEXT_BUILDERS = {
             href_no_query = escape_html(href_no_query),
             history_query_suffix = history_query_suffix,
             path_id = build_path_id(index_path, attr.name),
+            -- The entry's icon, plus an optional badge on its corner --
+            -- same fields as a dir entry's (see ENTRY_CONTEXT_BUILDERS.dir
+            -- below), rendered by the same markup in file.mustache. No
+            -- file entry carries a badge yet.
+            icon = "file",
+            icon_badge = nil,
             -- Gates file.mustache's own "{{#repo_root}}" -- nil (link
             -- renders nothing) when repo_root is unknown, same
             -- degrade-gracefully pattern svn-log.lua's own changed-path
@@ -545,6 +551,26 @@ local ENTRY_CONTEXT_BUILDERS = {
         -- behavior every other boolean field here relies on.
         local navhidden = hide_dir_pattern ~= nil and r:regex(name, hide_dir_pattern) ~= false
 
+        -- The entry's icon and optional badge (the same two fields a file
+        -- entry has, see ENTRY_CONTEXT_BUILDERS.file): "folder" -- or, for
+        -- a navhidden entry, the same folder with a small "gear" badge on
+        -- its corner (both free Font Awesome icons), unless
+        -- SVN_INDEX_HIDE_DIR_ICON names a single icon to use instead (e.g.
+        -- Font Awesome Pro's "folder-gear", given SVN_INDEX_FA_KIT_CODE --
+        -- see output_filter). Only read for navhidden entries, which are
+        -- few.
+        local icon, icon_badge = "folder", nil
+
+        if navhidden then
+            local configured = r.subprocess_env and r.subprocess_env.SVN_INDEX_HIDE_DIR_ICON
+
+            if configured and configured ~= "" then
+                icon = configured
+            else
+                icon_badge = "gear"
+            end
+        end
+
         return {
             name = escape_html(name),
             href = escape_html(href),
@@ -553,6 +579,8 @@ local ENTRY_CONTEXT_BUILDERS = {
             is_target_leaf = is_target_leaf,
             is_target_ancestor = is_target_ancestor,
             navhidden = navhidden,
+            icon = escape_html(icon),
+            icon_badge = icon_badge,
             path_id = build_path_id(index_path, name)
         }
     end
@@ -906,6 +934,12 @@ function output_filter(r)
             -- Starts page-subheader.mustache's "Show folders" switch out
             -- checked -- see its declaration above.
             show_folders = show_folders,
+            -- SVN_INDEX_FA_KIT_CODE: a Font Awesome Pro kit code, rendered
+            -- as page.mustache's data-fa-kit-code, which makes Web Awesome
+            -- load every icon from Font Awesome's Pro CDN with that kit
+            -- (e.g. for a Pro-only SVN_INDEX_HIDE_DIR_ICON like
+            -- "folder-gear"). Unset or empty: the free icon set.
+            fa_kit_code = r.subprocess_env and r.subprocess_env.SVN_INDEX_FA_KIT_CODE ~= "" and r.subprocess_env.SVN_INDEX_FA_KIT_CODE or nil,
             -- Always a plain string when history_active is truthy -- ""
             -- for the browsed directory itself, "<filename>" for a
             -- validated direct-child file -- escaped here (see
