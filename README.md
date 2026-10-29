@@ -423,6 +423,11 @@ whole pages rendered through the real `output_filter` (answering htmx's
 own nav fetches live) and expands a folder with 2000 subfolders in the nav
 tree, as a regression check that this stays fast.
 
+`link-clicks.test.mjs` checks that file links and breadcrumb links behave
+like ordinary browser links -- ctrl-click and middle-click open a new tab
+and leave the current one alone -- with Chromium's popup blocker left on,
+as in a real browser.
+
 It is entirely independent of `busted spec/`: not run as part of it, adds
 no Node.js dependency to the rest of the repo, and isn't required for
 ordinary development -- `busted spec/` remains the primary, fast test loop.
