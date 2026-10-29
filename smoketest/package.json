@@ -8,7 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node history-dialog.test.mjs && node nav-large-folder.test.mjs"
+    "test": "node history-dialog.test.mjs && node nav-large-folder.test.mjs && node link-clicks.test.mjs"
   },
   "devDependencies": {
     "puppeteer": "^25.5.0"
