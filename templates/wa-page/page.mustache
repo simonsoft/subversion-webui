@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="wa-cloak">
+<html lang="en" class="wa-cloak"{{#fa_kit_code}} data-fa-kit-code="{{fa_kit_code}}"{{/fa_kit_code}}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -922,6 +922,39 @@ wa-tree.svn-nav .updir {
    everything this UI otherwise hides by default", nav and main alike. */
 #svn-subheader:has(wa-switch:not(:state(checked))) ~ nav[slot="navigation"] wa-tree.svn-nav .navhidden {
     display: none;
+}
+
+/* The same entries, wherever "Show folders" reveals them (nav and main
+   alike), are dimmed and get their own icon (see ENTRY_CONTEXT_BUILDERS.dir
+   in svn-index.lua): by default the folder with a small gear badge on its
+   corner, unless SVN_INDEX_HIDE_DIR_ICON names a single icon instead. Only
+   the entry's own label is dimmed, not its expanded children (nested
+   wa-tree-items, not inside this span). */
+wa-tree-item.navhidden > span {
+    color: var(--wa-color-text-quiet);
+}
+
+/* An entry icon with a badge on its corner -- dir.mustache and
+   file.mustache share the markup ("icon_badge" in the entry context). A
+   mask cuts a hole in the icon under the badge, so the icon's outline
+   doesn't run through it on any row background (hovered, selected).
+   Positions are relative to the icon's box, which Web Awesome gives the
+   same 1.25em x 1em to every Font Awesome icon, so the same geometry fits
+   a folder and a file alike. */
+.icon-badged {
+    position: relative;
+    display: inline-flex;
+}
+
+.icon-badged > wa-icon:first-child {
+    mask: radial-gradient(circle at 0.99em 0.78em, transparent 0.37em, #000 0.38em);
+}
+
+.icon-badged > wa-icon + wa-icon {
+    position: absolute;
+    right: -0.2em;
+    bottom: -0.15em;
+    font-size: 0.62em;
 }
 
 /* Navigation is driven off wa-selection-change (see dir.mustache's own
