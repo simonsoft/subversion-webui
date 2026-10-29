@@ -146,6 +146,11 @@ try {
         const state = await page.evaluate(() => ({
             sameDocument: window.__sameDocument === true,
             breadcrumb: [...document.querySelectorAll("#svn-breadcrumb wa-breadcrumb-item")].map((b) => b.textContent.trim()).join(" / "),
+            // Nav folders left expanded, each with its own loaded child folders.
+            navExpanded: [...document.querySelectorAll(".svn-nav wa-tree-item.dir")]
+                .filter((i) => i.expanded)
+                .map((i) => i.querySelector(":scope > span").textContent.trim() + "[" + [...i.querySelectorAll(":scope > wa-tree-item.dir > span")].map((s) => s.textContent.trim()).join(",") + "]")
+                .join(" "),
         }));
         await page.close();
         return { newTabUrl, requests, pageErrors, ...state };
@@ -223,12 +228,21 @@ try {
         "/svn/demo1/trunk/sub/deeper/", CRUMB_LINK, enterKey,
         (r) => !r.newTabUrl && r.sameDocument && r.requests.join() === "/svn/demo1/trunk/ (htmx)" && r.breadcrumb === "demo1/ / trunk/"
     );
+    // A plain click on a nav folder also expands it in nav: a second htmx
+    // request for the same folder, the nav item's own lazy load.
+    const navSubOpened = (r) =>
+        r.requests.length === 2 && r.requests.every((u) => u === "/svn/demo1/trunk/sub/ (htmx)") && r.navExpanded.includes("sub/[deeper/]");
+    await check(
+        "main folder: plain click swaps main in place via htmx, with no full page load",
+        "/svn/demo1/trunk/", MAIN_FOLDER_LINK, plainClick,
+        (r) => !r.newTabUrl && r.sameDocument && r.requests.join() === "/svn/demo1/trunk/sub/ (htmx)" && r.breadcrumb === "demo1/ / trunk/ / sub/"
+    );
+    await check(
+        "nav folder: plain click swaps main in place via htmx and expands the folder in nav",
+        "/svn/demo1/trunk/", NAV_FOLDER_LINK, plainClick,
+        (r) => !r.newTabUrl && r.sameDocument && navSubOpened(r) && r.breadcrumb === "demo1/ / trunk/ / sub/"
+    );
     for (const [where, link] of [["main", MAIN_FOLDER_LINK], ["nav", NAV_FOLDER_LINK]]) {
-        await check(
-            `${where} folder: plain click swaps main in place via htmx, with no full page load`,
-            "/svn/demo1/trunk/", link, plainClick,
-            (r) => !r.newTabUrl && r.sameDocument && r.requests.join() === "/svn/demo1/trunk/sub/ (htmx)" && r.breadcrumb === "demo1/ / trunk/ / sub/"
-        );
         await check(
             `${where} folder: ctrl-click opens the folder in a new tab and leaves the current tab alone`,
             "/svn/demo1/trunk/", link, ctrlClick,
@@ -241,9 +255,9 @@ try {
         );
     }
     await check(
-        "nav folder: keyboard Enter on its tree item still swaps main in place",
+        "nav folder: keyboard Enter on its tree item swaps main in place and expands the folder in nav",
         "/svn/demo1/trunk/", NAV_FOLDER_LINK, enterKey,
-        (r) => !r.newTabUrl && r.sameDocument && r.requests.join() === "/svn/demo1/trunk/sub/ (htmx)" && r.breadcrumb === "demo1/ / trunk/ / sub/"
+        (r) => !r.newTabUrl && r.sameDocument && navSubOpened(r) && r.breadcrumb === "demo1/ / trunk/ / sub/"
     );
 } finally {
     await browser?.close();
