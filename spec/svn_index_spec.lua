@@ -808,6 +808,25 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("{ once: true }", 1, true))
     end)
 
+    it("keeps nav's own wa-lazy-change from reaching wa-tree's whole-tree re-init", function()
+        -- wa-tree re-initializes every item in the tree on each
+        -- wa-lazy-change, a no-op for nav (single selection, default
+        -- expand/collapse icons) that still costs two whole-tree scans per
+        -- item -- about a second per expansion of a ~2000-entry folder. A
+        -- capture-phase document listener stops it before it reaches the
+        -- tree, scoped to ".svn-nav" so main's own tree is left alone.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('document.addEventListener("wa-lazy-change"', 1, true))
+        assert.truthy(html:find('if (event.target.closest?.(".svn-nav")) {\n        event.stopPropagation();', 1, true))
+    end)
+
     it("gives the main listing a stable id for dir/repo entries to target when swapping main content", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
