@@ -28,6 +28,38 @@ document.addEventListener("wa-lazy-load", (event) => {
     event.target.addEventListener("wa-lazy-load", (e) => e.stopPropagation(), { once: true });
 }, true);
 
+// A click on a tree entry's own name link (file.mustache, repo.mustache,
+// and the one nested inside dir.mustache's label span) -- one shared
+// listener rather than an hx-on:click on every entry, which would repeat
+// the same handler (and have htmx compile it) once per entry in every
+// listing. Capture phase on document, so it runs before wa-tree's own
+// click handler (inside wa-tree's shadow DOM) and before htmx's listener
+// on dir's span: stopping propagation here keeps the browser's own link
+// handling (new tab/window, file download) while neither of them sees the
+// click at all. A file/repo link always stops it -- otherwise wa-tree
+// would select the row and its wa-selection-change replay (see the
+// <wa-tree> markup below) would fire a second, modifier-less click,
+// navigating the current tab on a ctrl-click (and Chrome then blocks the
+// new tab as a popup). A folder link stops only a modifier click; a plain
+// one just has its own page load cancelled and carries on into wa-tree's
+// selection and the span's in-place swap. Matched by position, not class,
+// so file.mustache's History icon (nested inside ".file-actions", with its
+// own hx-trigger="click") is never caught by it, and neither is the
+// replay's own synthesized click on dir's span itself.
+document.addEventListener("click", (event) => {
+    const link = event.target.closest?.("wa-tree-item > a[href], wa-tree-item > span > a[href]");
+
+    if (!link) {
+        return;
+    }
+
+    if (link.parentElement.matches("span") && !(event.ctrlKey || event.metaKey || event.shiftKey)) {
+        event.preventDefault();
+    } else {
+        event.stopPropagation();
+    }
+}, true);
+
 // dir.mustache's wa-tree-item never sets "lazy" itself, since it's the exact
 // same markup rendered into both #svn-index (main, a strictly flat listing
 // -- its label already swaps main's whole content to browse deeper, one
@@ -1056,20 +1088,17 @@ wa-tree-item.dir > span {
      sometimes a file download, that no ajax swap could stand in for.
      Scoped to selection.forEach(...) rather than a single item, since
      single-selection mode still reports an array. A click landing directly
-     on file/repo's anchor never gets here at all: the anchor stops its own
-     click's propagation (see file.mustache/repo.mustache), so the browser
-     handles it natively and wa-tree never selects the row -- otherwise this
-     replay would fire a second, modifier-less click on top of the browser's
-     own, navigating the current tab on a ctrl-click (and Chrome then blocks
-     the new tab as a popup). dir.mustache's span wraps a real <a href> too,
+     on file/repo's anchor never gets here at all: the capture-phase "click"
+     listener in the script above stops its propagation, so the browser
+     handles it natively and wa-tree never selects the row. dir.mustache's span wraps a real <a href> too,
      for the same browser link affordances, but nested *inside* the span
      rather than replacing it: htmx's own filtered-trigger path cancels a
      click's default action on any anchor at or above the trigger element
-     before it even evaluates the filter, ctrl-clicks included. That anchor
-     stops only a modifier click's propagation (the browser opens the new
-     tab/window, and neither htmx nor wa-tree sees it); a plain click just
-     has its native navigation cancelled and carries on into wa-tree's
-     selection and this replay, exactly as before. All three entries' links
+     before it even evaluates the filter, ctrl-clicks included. The same
+     listener stops only a modifier click on that anchor (the browser opens
+     the new tab/window, and neither htmx nor wa-tree sees it); a plain
+     click just has its native navigation cancelled and carries on into
+     wa-tree's selection and this replay, exactly as before. All three entries' links
      carry tabindex="-1" (keyboard focus stays wa-tree's own roving
      tabindex, one Tab stop per tree, with arrow keys and Enter driving it)
      and draggable="false" (a name can't be dragged off as a link, e.g. onto

@@ -444,16 +444,15 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("webawesome.css", 1, true))
         assert.truthy(html:find('<header slot="header" class="wa-split wa-gap-s wa-font-size-m">', 1, true))
         assert.truthy(html:find('<footer slot="footer" id="svn-footer" class="wa-font-size-xs">', 1, true))
-        -- hx-on:click stops the link's own click from reaching wa-tree's
-        -- row selection, whose wa-selection-change replay would otherwise
-        -- fire a second, modifier-less click on top of the browser's own --
-        -- breaking ctrl-click (see page.mustache's wa-tree comment).
+        -- No per-link hx-on:click: page.mustache's one capture-phase
+        -- "click" listener keeps the link's own click out of wa-tree's row
+        -- selection (see the "delegates tree link clicks" spec below).
         -- tabindex="-1" keeps keyboard focus on wa-tree's own roving
         -- tabindex; draggable="false" stops the name being dragged off as a
         -- link (its text isn't selectable anyway: wa-tree-item's own row
         -- styles set user-select: none).
         assert.truthy(html:find(
-            '<wa-tree-item class="file"><a href="/svn/demo1/README.md" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()"><wa-icon name="file" variant="regular"></wa-icon> README.md</a>',
+            '<wa-tree-item class="file"><a href="/svn/demo1/README.md" tabindex="-1" draggable="false"><wa-icon name="file" variant="regular"></wa-icon> README.md</a>',
             1, true
         ))
     end)
@@ -609,8 +608,9 @@ describe("svn-index output_filter", function()
         -- default action of any click on an anchor at or above the trigger
         -- element, ctrl-clicks included) so ctrl/meta/shift-click, middle-
         -- click and the link context menu stay the browser's own: a
-        -- modifier click stops at the anchor, a plain click only has its
-        -- native navigation cancelled and carries on as described above.
+        -- modifier click stops at page.mustache's delegated "click"
+        -- listener, a plain click only has its native navigation cancelled
+        -- there and carries on as described above.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -624,7 +624,7 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[this.parentElement.selected]"><a href="/svn/demo1/arbortext/" tabindex="-1" draggable="false" hx-on:click="if (event.ctrlKey || event.metaKey || event.shiftKey) event.stopPropagation(); else event.preventDefault()"><wa-icon name="folder" variant="regular"></wa-icon> arbortext/</a></span>',
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[this.parentElement.selected]"><a href="/svn/demo1/arbortext/" tabindex="-1" draggable="false"><wa-icon name="folder" variant="regular"></wa-icon> arbortext/</a></span>',
             1, true
         ))
     end)
@@ -645,10 +645,8 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        -- The exact "class=\"repo\"...><a href=... hx-on:click=...>" markup
-        -- (no other attributes in between -- the stopPropagation only keeps
-        -- a click on the link itself out of wa-tree's row selection, same
-        -- as file.mustache) proves this specific entry carries no
+        -- The exact "class=\"repo\"...><a href=... draggable=...>" markup
+        -- (no other attributes in between) proves this specific entry carries no
         -- hx-get/lazy wiring -- a page-wide search for "hx-get"/"lazy" would
         -- false-fail here since the page's own nav root item and lazy-clear
         -- script always contain those strings regardless of fixture. The
@@ -657,7 +655,29 @@ describe("svn-index output_filter", function()
         -- hx-on:wa-selection-change instead (see page.mustache) -- not
         -- here, since Web Awesome's own wa-tree dispatches that event on
         -- itself, never on the individual wa-tree-item.
-        assert.truthy(html:find('<wa-tree-item class="repo"><a href="/svn/demo1/demo1/" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()">', 1, true))
+        assert.truthy(html:find('<wa-tree-item class="repo"><a href="/svn/demo1/demo1/" tabindex="-1" draggable="false"><wa-icon', 1, true))
+    end)
+
+    it("delegates tree link clicks to one capture-phase listener instead of an hx-on:click per entry", function()
+        -- One listener for every file/repo/folder name link, rather than
+        -- the same handler repeated (and compiled by htmx) per entry.
+        -- Capture phase on document, so it runs before wa-tree's own click
+        -- handler and htmx's listener on dir's span. Matched by position
+        -- ("wa-tree-item > a", "wa-tree-item > span > a") so the History
+        -- icon, nested inside ".file-actions", keeps its own handling.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext/" />
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('document.addEventListener("click", (event) => {', 1, true))
+        assert.truthy(html:find('event.target.closest?.("wa-tree-item > a[href], wa-tree-item > span > a[href]")', 1, true))
+        assert.truthy(html:find('if (link.parentElement.matches("span") && !(event.ctrlKey || event.metaKey || event.shiftKey)) {', 1, true))
+        assert.falsy(html:find('draggable="false" hx-on:click=', 1, true))
     end)
 
     it("removes the lazy attribute after its own swap lands, via a page-level htmx:after:swap listener", function()
@@ -1099,7 +1119,7 @@ describe("svn-index output_filter", function()
         -- other href in this file) before being placed in the template,
         -- same as any other HTML attribute value.
         assert.truthy(html:find(
-            '<a href="/svn/demo1/trunk/README.md?p=10&amp;view=details&amp;this=that" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()">',
+            '<a href="/svn/demo1/trunk/README.md?p=10&amp;view=details&amp;this=that" tabindex="-1" draggable="false"><wa-icon',
             1, true
         ))
         assert.truthy(html:find(
@@ -1120,7 +1140,7 @@ describe("svn-index output_filter", function()
         )
 
         assert.truthy(html:find(
-            '<a href="/svn/demo1/trunk/README.md?view=details&amp;this=that" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()">',
+            '<a href="/svn/demo1/trunk/README.md?view=details&amp;this=that" tabindex="-1" draggable="false"><wa-icon',
             1, true
         ))
     end)
