@@ -75,6 +75,19 @@ LuaOutputFilter SVN_XML_INDEX \
     # debugging).
     # SetEnv SVN_INDEX_STRIP_COMMENTS 0
 
+    # wa-page only: folders whose name matches this PCRE regex are hidden
+    # in the nav tree until the "Show folders" switch is on. Wherever
+    # shown, they are dimmed and get their own icon: by default a folder
+    # with a small gear badge, or the single Web Awesome icon named by
+    # SVN_INDEX_HIDE_DIR_ICON (variant "regular", like the plain folder).
+    # SetEnv SVN_INDEX_HIDE_DIR "^(lang|release)$"
+    # SetEnv SVN_INDEX_HIDE_DIR_ICON folder-gear
+
+    # wa-page only: a Font Awesome Pro kit code. Web Awesome then loads
+    # every icon from Font Awesome's Pro CDN with that kit, which makes
+    # Pro-only icons such as "folder-gear" available.
+    # SetEnv SVN_INDEX_FA_KIT_CODE abc123def4
+
 </Location>
 ```
 
