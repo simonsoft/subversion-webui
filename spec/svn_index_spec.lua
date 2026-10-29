@@ -679,15 +679,13 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("event.target.loading = false", 1, true))
     end)
 
-    it("shows wa-tree-item's loading spinner for every nav folder's own fetch, including the non-lazy ones walked open on a direct page load", function()
-        -- wa-tree-item only sets "loading" itself when expanding a lazy
+    it("shows a loading indicator for every nav folder's own fetch, including the non-lazy ones walked open on a direct page load", function()
+        -- wa-tree-item only shows its own spinner when expanding a lazy
         -- item; nav's on-path entries (hx-trigger="load") aren't lazy, so
-        -- nothing showed while they fetched. Confirmed via a real browser
-        -- that wa-tree-item can still be undefined when the first on-path
-        -- fetch starts (Web Awesome's autoloader), and that its own
-        -- constructor/first render then reset "loading" -- so it's set
-        -- only once defined and rendered, and only while the fetch is
-        -- still in flight (navFolderFetches), never after it finished.
+        -- nothing showed while they fetched. Driven by htmx's own
+        -- "htmx-request" class rather than wa-tree-item's "loading" state,
+        -- which isn't an attribute and which Web Awesome resets while
+        -- still upgrading the element on a first visit.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -696,11 +694,9 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('document.addEventListener("htmx:before:request"', 1, true))
-        assert.truthy(html:find('customElements.whenDefined("wa-tree-item").then(() => item.updateComplete)', 1, true))
-        assert.truthy(html:find("if (navFolderFetches.has(item)) {", 1, true))
-        assert.truthy(html:find('document.addEventListener("htmx:finally:request"', 1, true))
-        assert.truthy(html:find("if (navFolderFetches.delete(event.target)) {", 1, true))
+        assert.truthy(html:find('wa-tree.svn-nav wa-tree-item.dir.htmx-request:not([aria-busy="true"])::part(expand-button)::before {', 1, true))
+        assert.truthy(html:find("animation: svn-nav-loading 1s linear infinite;", 1, true))
+        assert.truthy(html:find("@keyframes svn-nav-loading {", 1, true))
     end)
 
     it("re-syncs nav's stale [selected] highlight via htmx:after:history:push, since main label/breadcrumb clicks never touch nav's own render path", function()
