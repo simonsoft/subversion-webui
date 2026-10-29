@@ -668,8 +668,8 @@ describe("svn-index output_filter", function()
         -- browser through this exact flow. A single page-level listener on
         -- "htmx:finally:request" -- which, unlike "htmx:after:swap", also
         -- fires for a request that got no response -- clears it, but only
-        -- for a successful response: after a failure the folder stays
-        -- lazy, so expanding it again retries.
+        -- for a successful response: a failure collapses the folder again
+        -- and leaves it lazy, so expanding it again retries.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -681,6 +681,7 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('document.addEventListener("htmx:finally:request"', 1, true))
         assert.truthy(html:find("if (status >= 200 && status < 400) {", 1, true))
         assert.truthy(html:find('item.removeAttribute("lazy");', 1, true))
+        assert.truthy(html:find("item.expanded = false;", 1, true))
     end)
 
     it("also clears wa-tree-item's own loading state, not just the lazy attribute", function()

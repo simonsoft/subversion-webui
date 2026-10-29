@@ -137,10 +137,10 @@ document.addEventListener("htmx:after:swap", (event) => {
 // (hx-select matches nothing, and files are dropped, see above), and a
 // failed request swaps nothing -- so it's always cleared here. Only a
 // successful response also marks the folder loaded: no longer lazy, and a
-// leaf when it has no subfolders. After a failure it stays lazy, so
-// collapsing and expanding it again retries the fetch; an HTTP error's
-// page is still swapped by htmx (only 204/304 aren't) but matches nothing
-// either, so it must not make the folder look empty. "lazy"/"isLeaf" are
+// leaf when it has no subfolders. A failed one collapses it again and
+// leaves it lazy, so expanding it once more retries the fetch; an HTTP
+// error's page is still swapped by htmx (only 204/304 aren't) but matches
+// nothing either, so it must not make the folder look empty. "lazy"/"isLeaf" are
 // set as real properties/attributes rather than relying on wa-tree-item's
 // own computation, which only runs on a children change. Only for a
 // wa-tree-item itself, never the root <wa-tree>'s own population fetch.
@@ -158,6 +158,8 @@ document.addEventListener("htmx:finally:request", (event) => {
     if (status >= 200 && status < 400) {
         item.removeAttribute("lazy");
         item.isLeaf = item.querySelectorAll(":scope > wa-tree-item.dir").length === 0;
+    } else {
+        item.expanded = false;
     }
 });
 
