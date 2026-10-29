@@ -1100,7 +1100,8 @@ wa-tree-item.dir > span {
      and would never see it, since bubbling only flows outward to
      ancestors, never down into descendants. One shared handler covers
      both entry kinds: a synthesized click on dir's span re-fires its own
-     existing hx-get/hx-target/hx-swap/hx-select/hx-select-oob (no
+     existing hx-get, with the hx-target/hx-swap/hx-select/hx-select-oob it
+     inherits from around its tree (see below) (no
      double-fire -- dir.mustache's own "click[this.parentElement.selected]"
      filter only matches once .selected is already true, which is only
      ever the case for this synthetic replay or a genuine reselect, never
@@ -1127,14 +1128,31 @@ wa-tree-item.dir > span {
      tabindex, one Tab stop per tree, with arrow keys and Enter driving it)
      and draggable="false" (a name can't be dragged off as a link, e.g. onto
      the tab or bookmarks bar; its text stays unselectable either way, since
-     wa-tree-item's own row styles set user-select: none). -->
-<nav slot="navigation">
-<wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">
+     wa-tree-item's own row styles set user-select: none).
+
+     Each tree's wrapper (<nav slot="navigation">, ".svn-main") carries
+     the folder label's hx-target/hx-swap/hx-select/hx-select-oob as htmx
+     ":inherited" attributes, written once per tree instead of once per
+     folder entry: every dir.mustache span inherits them, swapping
+     "#svn-index" and pulling the breadcrumb, footer and header along.
+     htmx only inherits a value an element doesn't set itself, so every
+     other requester inside sets its own: the nav tree's root fetch and
+     each dir entry's lazy fetch keep their own hx-target/hx-swap (sharing
+     the inherited hx-select), and both set hx-select-oob="" so expanding
+     nav never swaps the breadcrumb, footer or header to another folder's;
+     file.mustache's History icon sets hx-select="" and hx-select-oob="" so
+     its REPORT response is swapped whole. On the wrapper rather than the
+     nav tree itself, since an inheriting descendant gets the ancestor's
+     own effective value -- the tree's own hx-target="this" and
+     hx-select-oob="", for its root fetch, would win over anything it
+     marked ":inherited". -->
+<nav slot="navigation" hx-target:inherited="#svn-index" hx-swap:inherited="innerHTML" hx-select:inherited=".svn-index > wa-tree-item" hx-select-oob:inherited="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right">
+<wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">
 </wa-tree>
 </nav>
 {{{page-navigation-footer}}}
 {{{page-main-header}}}
-<div class="svn-main">
+<div class="svn-main" hx-target:inherited="#svn-index" hx-swap:inherited="innerHTML" hx-select:inherited=".svn-index > wa-tree-item" hx-select-oob:inherited="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right">
 <wa-tree class="svn-index" id="svn-index" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">
 {{{svn_index}}}</wa-tree>
 </div>

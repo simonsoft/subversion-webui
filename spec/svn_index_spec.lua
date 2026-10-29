@@ -620,11 +620,11 @@ describe("svn-index output_filter", function()
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find(
-            '<wa-tree-item class="dir" hx-get="/svn/demo1/arbortext/" hx-trigger="wa-lazy-load" hx-target="this" hx-swap="beforeend" hx-select=".svn-index > wa-tree-item">',
+            '<wa-tree-item class="dir" hx-get="/svn/demo1/arbortext/" hx-trigger="wa-lazy-load" hx-target="this" hx-swap="beforeend" hx-select-oob="">',
             1, true
         ))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[this.parentElement.selected]"><a href="/svn/demo1/arbortext/" tabindex="-1" draggable="false" hx-on:click="if (event.ctrlKey || event.metaKey || event.shiftKey) event.stopPropagation(); else event.preventDefault()"><wa-icon name="folder" variant="regular"></wa-icon> arbortext/</a></span>',
+            '<span hx-get="/svn/demo1/arbortext/" hx-trigger="click[this.parentElement.selected]"><a href="/svn/demo1/arbortext/" tabindex="-1" draggable="false" hx-on:click="if (event.ctrlKey || event.metaKey || event.shiftKey) event.stopPropagation(); else event.preventDefault()"><wa-icon name="folder" variant="regular"></wa-icon> arbortext/</a></span>',
             1, true
         ))
     end)
@@ -835,7 +835,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<wa-tree class="svn-index" id="svn-index" hx-on:wa-selection-change=', 1, true))
+        assert.truthy(html:find('<wa-tree class="svn-index" id="svn-index" ', 1, true))
     end)
 
     it("wires the wa-page navigation tree itself to load the repo root's own listing, with no top-level wrapper item", function()
@@ -859,7 +859,7 @@ describe("svn-index output_filter", function()
         }, "/svn/myrepo/trunk/", { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find(
-            [[<wa-tree class="svn-nav" hx-get="/svn/myrepo/" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">]],
+            [[<wa-tree class="svn-nav" hx-get="/svn/myrepo/" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">]],
             1, true
         ))
     end)
@@ -1566,13 +1566,13 @@ describe("svn-index output_filter", function()
         -- problem.
         -- Rather than a server-side distinction (like HX-Push-Url's
         -- "wa-tree#svn-index" HX-Target check above), this is scoped
-        -- entirely client-side: only dir.mustache's label itself (the
-        -- element with hx-target="#svn-index") carries
-        -- hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right", so only
-        -- *its own* requests ever pull the fetched page's
-        -- breadcrumb/footer/header along -- nav's own in-place lazy-load
-        -- fetch is a different element entirely (no hx-select-oob at all)
-        -- and is naturally unaffected, with no header-sniffing needed on
+        -- entirely client-side: both trees' wrappers carry
+        -- hx-select-oob:inherited="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right"
+        -- (with hx-target:inherited="#svn-index"), which only
+        -- dir.mustache's label span inherits, so only *its own* requests
+        -- ever pull the fetched page's breadcrumb/footer/header along --
+        -- nav's own root and lazy-load fetches each set hx-select-oob=""
+        -- themselves and are unaffected, with no header-sniffing needed on
         -- the Lua side. "#svn-breadcrumb" is the wrapping div (not just
         -- <wa-breadcrumb> itself), so the revision badge -- a sibling
         -- inside that same div -- rides along with it as one conceptual
@@ -1595,7 +1595,15 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<footer slot="footer" id="svn-footer" class="wa-font-size-xs">', 1, true))
         assert.truthy(html:find('<div class="wa-cluster" id="svn-header-left">', 1, true))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[this.parentElement.selected]">',
+            '<span hx-get="/svn/demo1/arbortext/" hx-trigger="click[this.parentElement.selected]">',
+            1, true
+        ))
+        assert.truthy(html:find(
+            '<div class="svn-main" hx-target:inherited="#svn-index" hx-swap:inherited="innerHTML" hx-select:inherited=".svn-index > wa-tree-item" hx-select-oob:inherited="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right">',
+            1, true
+        ))
+        assert.truthy(html:find(
+            'hx-trigger="wa-lazy-load" hx-target="this" hx-swap="beforeend" hx-select-oob="">',
             1, true
         ))
     end)
@@ -1769,7 +1777,7 @@ describe("svn-index output_filter", function()
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find(
-            '<a class="file-history-action" href="/svn/demo1/README.md?repo_root=/svn/" hx-action="/svn/demo1/README.md?repo_root=/svn/" hx-method="REPORT" hx-target="#svn-history-content" hx-swap="innerHTML" hx-trigger="click" hx-on:click="event.stopPropagation()" title="History" aria-label="History for README.md">',
+            '<a class="file-history-action" href="/svn/demo1/README.md?repo_root=/svn/" hx-action="/svn/demo1/README.md?repo_root=/svn/" hx-method="REPORT" hx-target="#svn-history-content" hx-swap="innerHTML" hx-select="" hx-select-oob="" hx-trigger="click" hx-on:click="event.stopPropagation()" title="History" aria-label="History for README.md">',
             1, true
         ))
     end)
