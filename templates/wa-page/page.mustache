@@ -120,30 +120,46 @@ document.addEventListener("htmx:after:swap", (event) => {
         // ENTRY_CONTEXT_BUILDERS.dir) -- unlike "expanded" above, the
         // static attribute alone renders correctly here, confirmed via a
         // real browser, so it needs no JS re-assertion.
-        const dirChildren = event.target.querySelectorAll(":scope > wa-tree-item.dir");
-        dirChildren.forEach((child) => {
+        event.target.querySelectorAll(":scope > wa-tree-item.dir").forEach((child) => {
             if (child.getAttribute("hx-trigger") === "load") {
                 child.expanded = true;
             }
         });
+    }
+});
 
-        // "lazy"/"loading"/"isLeaf" are only meaningful on a wa-tree-item
-        // itself, not on the root <wa-tree> (the "svn-nav" branch of this
-        // same check, i.e. the tree's own initial population) --
-        // wa-tree-item's own "loading" state (the spinner shown while
-        // lazy) is separate from the "lazy" attribute and only clears once
-        // the item actually observes its children change; when the
-        // expanded directory is empty, hx-select matches nothing, so
-        // beforeend appends zero nodes and "loading" (confirmed via
-        // aria-busy) would otherwise be left stuck forever. Setting
-        // "loading"/"isLeaf" directly, as real settable properties rather
-        // than just computed ones, covers both regardless of whether
-        // anything was actually appended.
-        if (event.target.matches?.("wa-tree-item.dir")) {
-            event.target.removeAttribute("lazy");
-            event.target.loading = false;
-            event.target.isLeaf = dirChildren.length === 0;
-        }
+// A nav folder's own fetch has ended, however it ended -- htmx fires
+// "htmx:finally:request" once per request, after a swap, an HTTP error or
+// no response at all (network error, timeout, abort), unlike
+// "htmx:after:swap", which a failed request never reaches. wa-tree-item's
+// own "loading" state (the spinner shown while lazy) only clears once the
+// item observes its children change -- an empty folder appends nothing
+// (hx-select matches nothing, and files are dropped, see above), and a
+// failed request swaps nothing -- so it's always cleared here. Only a
+// successful response also marks the folder loaded: no longer lazy, and a
+// leaf when it has no subfolders. A failed one collapses it again and
+// leaves it lazy, so expanding it once more retries the fetch; an HTTP
+// error's page is still swapped by htmx (only 204/304 aren't) but matches
+// nothing either, so it must not make the folder look empty. "lazy"/"isLeaf" are
+// set as real properties/attributes rather than relying on wa-tree-item's
+// own computation, which only runs on a children change. Only for a
+// wa-tree-item itself, never the root <wa-tree>'s own population fetch.
+document.addEventListener("htmx:finally:request", (event) => {
+    const item = event.target;
+
+    if (!item.matches?.(".svn-nav wa-tree-item.dir")) {
+        return;
+    }
+
+    item.loading = false;
+
+    const status = event.detail.ctx.response?.status;
+
+    if (status >= 200 && status < 400) {
+        item.removeAttribute("lazy");
+        item.isLeaf = item.querySelectorAll(":scope > wa-tree-item.dir").length === 0;
+    } else {
+        item.expanded = false;
     }
 });
 

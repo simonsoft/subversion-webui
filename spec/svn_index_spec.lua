@@ -660,15 +660,16 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<wa-tree-item class="repo"><a href="/svn/demo1/demo1/" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()">', 1, true))
     end)
 
-    it("removes the lazy attribute after its own swap lands, via a page-level htmx:after:swap listener", function()
+    it("removes the lazy attribute once a nav folder's own fetch succeeds, via a page-level htmx:finally:request listener", function()
         -- htmx 4.0.0 dispatches fully colon-namespaced lifecycle
         -- events ("htmx:after:swap", not the "htmx:afterSwap"/"afterSwap"
         -- naming used by earlier htmx versions), and this build's hx-on
         -- shorthand doesn't map onto that -- confirmed by driving a real
-        -- browser through this exact flow. A single page-level listener,
-        -- scoped to elements that still have the `lazy` attribute, is what
-        -- actually clears it (see dir.mustache/repo.mustache for the lazy
-        -- tree items this applies to).
+        -- browser through this exact flow. A single page-level listener on
+        -- "htmx:finally:request" -- which, unlike "htmx:after:swap", also
+        -- fires for a request that got no response -- clears it, but only
+        -- for a successful response: a failure collapses the folder again
+        -- and leaves it lazy, so expanding it again retries.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -677,8 +678,10 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('addEventListener("htmx:after:swap"', 1, true))
-        assert.truthy(html:find('removeAttribute("lazy")', 1, true))
+        assert.truthy(html:find('document.addEventListener("htmx:finally:request"', 1, true))
+        assert.truthy(html:find("if (status >= 200 && status < 400) {", 1, true))
+        assert.truthy(html:find('item.removeAttribute("lazy");', 1, true))
+        assert.truthy(html:find("item.expanded = false;", 1, true))
     end)
 
     it("also clears wa-tree-item's own loading state, not just the lazy attribute", function()
@@ -687,8 +690,9 @@ describe("svn-index output_filter", function()
         -- actual child-list mutation -- confirmed via a real browser that
         -- expanding a directory with zero entries appends nothing (hx-select
         -- matches nothing, so beforeend inserts no nodes), leaving "loading"
-        -- stuck forever since no mutation ever happens. Setting the property
-        -- directly ends it regardless of whether anything was appended.
+        -- stuck forever since no mutation ever happens -- and a request that
+        -- fails swaps nothing at all. Setting the property directly, once
+        -- the request has ended however it ended, covers both.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -697,7 +701,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find("event.target.loading = false", 1, true))
+        assert.truthy(html:find("item.loading = false;", 1, true))
     end)
 
     it("expands a nav folder when its label navigates main, so one click both shows and opens it", function()
@@ -766,7 +770,7 @@ describe("svn-index output_filter", function()
 
         assert.truthy(html:find('if (!child.classList.contains("dir")) {', 1, true))
         assert.truthy(html:find(':scope > wa-tree-item.dir', 1, true))
-        assert.truthy(html:find('event.target.isLeaf = dirChildren.length === 0', 1, true))
+        assert.truthy(html:find('item.isLeaf = item.querySelectorAll(":scope > wa-tree-item.dir").length === 0;', 1, true))
     end)
 
     it("marks nav's own newly-fetched dir entries lazy, both at the root and nested under an already-expanded item -- except ones already on the auto-expand path", function()
