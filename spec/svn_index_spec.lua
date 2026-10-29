@@ -700,6 +700,24 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("event.target.loading = false", 1, true))
     end)
 
+    it("expands a nav folder when its label navigates main, so one click both shows and opens it", function()
+        -- Keyed on the label span's own main-swap request, covering a
+        -- selecting click anywhere in the row, keyboard Enter and a click
+        -- on the already-selected folder. Expanding a lazy item makes
+        -- wa-tree-item fire wa-lazy-load, loading its children through
+        -- the item's own hx-trigger; main's own labels aren't matched.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext/" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('if (event.target.matches?.(".svn-nav wa-tree-item.dir > span")) {', 1, true))
+        assert.truthy(html:find("event.target.parentElement.expanded = true;", 1, true))
+    end)
+
     it("re-syncs nav's stale [selected] highlight via htmx:after:history:push, since main label/breadcrumb clicks never touch nav's own render path", function()
         -- Nav's own label clicks already keep [selected] correct on their
         -- own (wa-tree's built-in single-selection behavior), but main's

@@ -253,6 +253,22 @@ document.addEventListener("htmx:after:history:push", (event) => {
     }
 });
 
+// Clicking a folder in nav both shows it in main and expands it in nav --
+// keyed on the label span's own main-swap request (dir.mustache's
+// "click[this.parentElement.selected]"), which fires for a selecting click
+// anywhere in the row (via wa-selection-change's replay), for keyboard
+// Enter, and for a click on the already-selected folder alike. Expanding a
+// still-lazy item makes wa-tree-item itself show its spinner and fire
+// wa-lazy-load, so its children are fetched through the item's own
+// hx-trigger, exactly as a chevron click would; an already-loaded one just
+// opens. Never collapses: the chevron alone does that. Main's own folder
+// labels are left alone -- main is a flat listing with nothing to expand.
+document.addEventListener("htmx:before:request", (event) => {
+    if (event.target.matches?.(".svn-nav wa-tree-item.dir > span")) {
+        event.target.parentElement.expanded = true;
+    }
+});
+
 // "Expand all"/"Collapse all" toggle for the History dialog's own entries
 // (see page.mustache's static "#svn-history-expand-toggle", inside
 // "#svn-history-dialog"'s own header-actions slot -- present in the DOM from
