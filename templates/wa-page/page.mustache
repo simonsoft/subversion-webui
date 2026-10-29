@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="wa-cloak">
+<html lang="en" class="wa-cloak"{{#fa_kit_code}} data-fa-kit-code="{{fa_kit_code}}"{{/fa_kit_code}}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -250,6 +250,22 @@ document.addEventListener("htmx:after:history:push", (event) => {
     // selection at all rather than forcing a new fetch/expand to reveal it.
     if (matched) {
         matched.selected = true;
+    }
+});
+
+// Clicking a folder in nav both shows it in main and expands it in nav --
+// keyed on the label span's own main-swap request (dir.mustache's
+// "click[this.parentElement.selected]"), which fires for a selecting click
+// anywhere in the row (via wa-selection-change's replay), for keyboard
+// Enter, and for a click on the already-selected folder alike. Expanding a
+// still-lazy item makes wa-tree-item itself show its spinner and fire
+// wa-lazy-load, so its children are fetched through the item's own
+// hx-trigger, exactly as a chevron click would; an already-loaded one just
+// opens. Never collapses: the chevron alone does that. Main's own folder
+// labels are left alone -- main is a flat listing with nothing to expand.
+document.addEventListener("htmx:before:request", (event) => {
+    if (event.target.matches?.(".svn-nav wa-tree-item.dir > span")) {
+        event.target.parentElement.expanded = true;
     }
 });
 
@@ -908,6 +924,39 @@ wa-tree.svn-nav .updir {
     display: none;
 }
 
+/* The same entries, wherever "Show folders" reveals them (nav and main
+   alike), are dimmed and get their own icon (see ENTRY_CONTEXT_BUILDERS.dir
+   in svn-index.lua): by default the folder with a small gear badge on its
+   corner, unless SVN_INDEX_HIDE_DIR_ICON names a single icon instead. Only
+   the entry's own label is dimmed, not its expanded children (nested
+   wa-tree-items, not inside this span). */
+wa-tree-item.navhidden > span {
+    color: var(--wa-color-text-quiet);
+}
+
+/* An entry icon with a badge on its corner -- dir.mustache and
+   file.mustache share the markup ("icon_badge" in the entry context). A
+   mask cuts a hole in the icon under the badge, so the icon's outline
+   doesn't run through it on any row background (hovered, selected).
+   Positions are relative to the icon's box, which Web Awesome gives the
+   same 1.25em x 1em to every Font Awesome icon, so the same geometry fits
+   a folder and a file alike. */
+.icon-badged {
+    position: relative;
+    display: inline-flex;
+}
+
+.icon-badged > wa-icon:first-child {
+    mask: radial-gradient(circle at 0.99em 0.78em, transparent 0.37em, #000 0.38em);
+}
+
+.icon-badged > wa-icon + wa-icon {
+    position: absolute;
+    right: -0.2em;
+    bottom: -0.15em;
+    font-size: 0.62em;
+}
+
 /* Navigation is driven off wa-selection-change (see dir.mustache's own
    hx-trigger, and each <wa-tree>'s own hx-on:wa-selection-change below,
    which synthesizes a real click on a selected leaf's plain <a> for
@@ -922,14 +971,18 @@ wa-tree-item a {
 /* Hovering anywhere in a file row underlines its own name link, matching
    what a click anywhere in that same dead space already does (see the
    comment above): resolves to a synthesized click on this exact link (via
-   wa-selection-change's own ":scope > a[href]" query). Excluded whenever
-   ".file-actions" (the History icon's own group, further down) is itself
-   being hovered -- that area does NOT act as the file link (its own icon
-   calls stopPropagation precisely to prevent that, see file.mustache),
-   so its hover state shouldn't imply otherwise. ":has()" reads a
-   descendant's own hover state from the ancestor selector, the same
-   technique the "Folder only" rules elsewhere in this file already use. */
-wa-tree-item.file:hover:not(:has(.file-actions:hover)) > a {
+   wa-selection-change's own ":scope > a[href]" query). Excluded only while
+   an action link in ".file-actions" (today just History) is itself
+   hovered -- the only spots in the row that do NOT act as the file link
+   (each stops its own click's propagation precisely to prevent that, see
+   file.mustache's History icon; a new action link needs the same). Not
+   the whole ".file-actions" group: the rest of it (the empty
+   ".lock-indicator", the gap) still opens the file, and being shorter
+   than the row it left the underline flickering on in thin strips above
+   and below it. ":has()" reads a descendant's own hover state from the
+   ancestor selector, the same technique the "Folder only" rules
+   elsewhere in this file already use. */
+wa-tree-item.file:hover:not(:has(.file-actions a:hover)) > a {
     text-decoration: underline;
 }
 

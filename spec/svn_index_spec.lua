@@ -700,6 +700,24 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("event.target.loading = false", 1, true))
     end)
 
+    it("expands a nav folder when its label navigates main, so one click both shows and opens it", function()
+        -- Keyed on the label span's own main-swap request, covering a
+        -- selecting click anywhere in the row, keyboard Enter and a click
+        -- on the already-selected folder. Expanding a lazy item makes
+        -- wa-tree-item fire wa-lazy-load, loading its children through
+        -- the item's own hx-trigger; main's own labels aren't matched.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext/" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('if (event.target.matches?.(".svn-nav wa-tree-item.dir > span")) {', 1, true))
+        assert.truthy(html:find("event.target.parentElement.expanded = true;", 1, true))
+    end)
+
     it("re-syncs nav's stale [selected] highlight via htmx:after:history:push, since main label/breadcrumb clicks never touch nav's own render path", function()
         -- Nav's own label clicks already keep [selected] correct on their
         -- own (wa-tree's built-in single-selection behavior), but main's
@@ -1192,6 +1210,56 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<wa-tree-item class="dir navhidden" hx-get="/svn/demo1/lang/"', 1, true))
         assert.truthy(html:find('<wa-tree-item class="dir navhidden" hx-get="/svn/demo1/release/"', 1, true))
         assert.truthy(html:find('<wa-tree-item class="dir" hx-get="/svn/demo1/trunk/"', 1, true))
+    end)
+
+    it("gives a SVN_INDEX_HIDE_DIR-matched dir a dimmed label and the gear-badged folder icon, a non-matching one the plain folder", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name=".cms" href=".cms/" />
+<dir name="trunk" href="trunk/" />
+</index>
+</svn>]]
+        }, "/svn/demo1/",
+            { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_HIDE_DIR = "^\\." }
+        )
+
+        assert.truthy(html:find('<span class="icon-badged"><wa-icon name="folder" variant="regular"></wa-icon><wa-icon name="gear" variant="solid"></wa-icon></span> .cms/</a>', 1, true))
+        assert.truthy(html:find('"><wa-icon name="folder" variant="regular"></wa-icon> trunk/</a>', 1, true))
+        assert.truthy(html:find("wa-tree-item.navhidden > span {", 1, true))
+    end)
+
+    it("uses SVN_INDEX_HIDE_DIR_ICON as the single icon for SVN_INDEX_HIDE_DIR-matched dirs when set", function()
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name=".cms" href=".cms/" />
+<dir name="trunk" href="trunk/" />
+</index>
+</svn>]]
+        }, "/svn/demo1/",
+            { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_HIDE_DIR = "^\\.", SVN_INDEX_HIDE_DIR_ICON = "folder-gear" }
+        )
+
+        assert.truthy(html:find('"><wa-icon name="folder-gear" variant="regular"></wa-icon> .cms/</a>', 1, true))
+        assert.truthy(html:find('"><wa-icon name="folder" variant="regular"></wa-icon> trunk/</a>', 1, true))
+        assert.falsy(html:find('<span class="icon-badged">', 1, true))
+    end)
+
+    it("renders SVN_INDEX_FA_KIT_CODE as the page's data-fa-kit-code, and no attribute when unset", function()
+        local fixture = {
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/" base="myrepo">
+<dir name="trunk" href="trunk/" />
+</index>
+</svn>]]
+        }
+
+        local with_kit = run_filter(fixture, "/svn/demo1/", { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_FA_KIT_CODE = "abc123def4" })
+        local without_kit = run_filter(fixture, "/svn/demo1/", { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(with_kit:find('<html lang="en" class="wa-cloak" data-fa-kit-code="abc123def4">', 1, true))
+        assert.truthy(without_kit:find('<html lang="en" class="wa-cloak">', 1, true))
     end)
 
     it("never tags any entry \"navhidden\" when SVN_INDEX_HIDE_DIR is unset", function()
