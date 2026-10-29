@@ -453,7 +453,7 @@ describe("svn-index output_filter", function()
         -- link (its text isn't selectable anyway: wa-tree-item's own row
         -- styles set user-select: none).
         assert.truthy(html:find(
-            '<wa-tree-item class="file"><a href="/svn/demo1/README.md" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()"><wa-icon name="file" variant="regular"></wa-icon> README.md</a>',
+            '<wa-tree-item class="file"><a href="/svn/demo1/README.md" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()"><wa-icon name="file" variant="regular"></wa-icon>README.md</a>',
             1, true
         ))
     end)
@@ -545,15 +545,15 @@ describe("svn-index output_filter", function()
         -- skips modifier clicks, and hx-on:click cancels the native
         -- navigation for exactly the plain clicks htmx handles.
         assert.truthy(html:find(
-            '<wa-breadcrumb-item href="/svn/myrepo/" hx-get="/svn/myrepo/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[!(ctrlKey||metaKey||shiftKey)]" hx-on:click="if (!(event.ctrlKey || event.metaKey || event.shiftKey)) event.preventDefault()"><wa-icon name="database"></wa-icon> myrepo</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item href="/svn/myrepo/" hx-get="/svn/myrepo/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[!(ctrlKey||metaKey||shiftKey)]" hx-on:click="if (!(event.ctrlKey || event.metaKey || event.shiftKey)) event.preventDefault()"><wa-icon name="database"></wa-icon>myrepo</wa-breadcrumb-item>',
             1, true
         ))
         assert.truthy(html:find(
-            '<wa-breadcrumb-item href="/svn/myrepo/trunk/" hx-get="/svn/myrepo/trunk/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[!(ctrlKey||metaKey||shiftKey)]" hx-on:click="if (!(event.ctrlKey || event.metaKey || event.shiftKey)) event.preventDefault()"><wa-icon name="folder" variant="regular"></wa-icon> trunk</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item href="/svn/myrepo/trunk/" hx-get="/svn/myrepo/trunk/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[!(ctrlKey||metaKey||shiftKey)]" hx-on:click="if (!(event.ctrlKey || event.metaKey || event.shiftKey)) event.preventDefault()"><wa-icon name="folder" variant="regular"></wa-icon>trunk</wa-breadcrumb-item>',
             1, true
         ))
         assert.truthy(html:find(
-            '<wa-breadcrumb-item><wa-icon name="folder" variant="regular"></wa-icon> arbortext</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item><wa-icon name="folder" variant="regular"></wa-icon>arbortext</wa-breadcrumb-item>',
             1, true
         ))
         -- Absolute, not "../../../" -- see the note above compute_breadcrumbs
@@ -624,7 +624,7 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[this.parentElement.selected]"><a href="/svn/demo1/arbortext/" tabindex="-1" draggable="false" hx-on:click="if (event.ctrlKey || event.metaKey || event.shiftKey) event.stopPropagation(); else event.preventDefault()"><wa-icon name="folder" variant="regular"></wa-icon> arbortext/</a></span>',
+            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[this.parentElement.selected]"><a href="/svn/demo1/arbortext/" tabindex="-1" draggable="false" hx-on:click="if (event.ctrlKey || event.metaKey || event.shiftKey) event.stopPropagation(); else event.preventDefault()"><wa-icon name="folder" variant="regular"></wa-icon>arbortext/</a></span>',
             1, true
         ))
     end)
@@ -1224,8 +1224,8 @@ describe("svn-index output_filter", function()
             { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_HIDE_DIR = "^\\." }
         )
 
-        assert.truthy(html:find('<span class="icon-badged"><wa-icon name="folder" variant="regular"></wa-icon><wa-icon name="gear" variant="solid"></wa-icon></span> .cms/</a>', 1, true))
-        assert.truthy(html:find('"><wa-icon name="folder" variant="regular"></wa-icon> trunk/</a>', 1, true))
+        assert.truthy(html:find('<span class="icon-badged"><wa-icon name="folder" variant="regular"></wa-icon><wa-icon name="gear" variant="solid"></wa-icon></span>.cms/</a>', 1, true))
+        assert.truthy(html:find('"><wa-icon name="folder" variant="regular"></wa-icon>trunk/</a>', 1, true))
         assert.truthy(html:find("wa-tree-item.navhidden > span {", 1, true))
     end)
 
@@ -1241,8 +1241,8 @@ describe("svn-index output_filter", function()
             { SVN_INDEX_TEMPLATE = "wa-page", SVN_INDEX_HIDE_DIR = "^\\.", SVN_INDEX_HIDE_DIR_ICON = "folder-gear" }
         )
 
-        assert.truthy(html:find('"><wa-icon name="folder-gear" variant="regular"></wa-icon> .cms/</a>', 1, true))
-        assert.truthy(html:find('"><wa-icon name="folder" variant="regular"></wa-icon> trunk/</a>', 1, true))
+        assert.truthy(html:find('"><wa-icon name="folder-gear" variant="regular"></wa-icon>.cms/</a>', 1, true))
+        assert.truthy(html:find('"><wa-icon name="folder" variant="regular"></wa-icon>trunk/</a>', 1, true))
         assert.falsy(html:find('<span class="icon-badged">', 1, true))
     end)
 
