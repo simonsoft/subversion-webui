@@ -441,6 +441,12 @@ like ordinary browser links -- ctrl-click and middle-click open a new tab
 and leave the current one alone -- with Chromium's popup blocker left on,
 as in a real browser.
 
+`nav-walk.test.mjs` loads a page deep inside the repository, with and
+without a `?p=` revision pin, and checks that the nav tree walks itself
+open down to that folder: exactly the folders on the path expanded, the
+current one selected, and Web Awesome's own loading spinner shown on each
+folder while its listing is fetched.
+
 It is entirely independent of `busted spec/`: not run as part of it, adds
 no Node.js dependency to the rest of the repo, and isn't required for
 ordinary development -- `busted spec/` remains the primary, fast test loop.
