@@ -318,6 +318,68 @@ describe("svn-log input_filter", function()
         assert.falsy(body:find('<S:start-revision>', 1, true))
     end)
 
+    it("yields exactly one value for every drained body chunk, as mod_lua's input filter requires", function()
+        -- mod_lua (httpd's mod_lua.c, lua_input_filter_handle) fails the
+        -- whole request when a per-bucket yield carries no value -- which a
+        -- real browser triggers, since htmx sends the clicked <wa-icon>'s
+        -- own name as a form body.
+        local r = make_request("REPORT", "/svn/demo1/trunk/")
+        local co = coroutine.create(function() return input_filter(r) end)
+        local chunks = { "clock-rotate-left=undefined", "more" }
+
+        _G.bucket = nil
+        assert.is_true((coroutine.resume(co)))
+
+        for _, chunk in ipairs(chunks) do
+            _G.bucket = chunk
+            local results = table.pack(coroutine.resume(co))
+
+            assert.is_true(results[1])
+            assert.are.equal(2, results.n)
+            assert.are.equal("", results[2])
+        end
+
+        _G.bucket = nil
+        local ok, body = coroutine.resume(co)
+        assert.is_true(ok)
+        assert.truthy(body:find("<S:log-report", 1, true))
+    end)
+
+    it("synthesizes a file-revs-report from N-1 to N instead of a log-report for a diff link's request (?diff=1)", function()
+        local body = run_input_filter({}, "/svn/demo1/trunk/foo.txt?p=42&diff=1&repo_root=/svn/demo1/")
+
+        assert.are.equal(
+            '<S:file-revs-report xmlns:S="svn:"><S:start-revision>41</S:start-revision>'
+                .. '<S:end-revision>42</S:end-revision><S:path></S:path></S:file-revs-report>',
+            body
+        )
+    end)
+
+    it("never asks a diff for a negative start-revision", function()
+        local body = run_input_filter({}, "/svn/demo1/trunk/foo.txt?p=0&diff=1")
+
+        assert.truthy(body:find('<S:start-revision>0</S:start-revision>', 1, true))
+        assert.truthy(body:find('<S:end-revision>0</S:end-revision>', 1, true))
+    end)
+
+    it("leaves <S:path> out of a diff request without a valid revision, so mod_dav_svn answers with its own error", function()
+        for _, uri in ipairs({ "/svn/demo1/trunk/foo.txt?diff=1", [[/svn/demo1/trunk/foo.txt?p=1</S:path><evil>&diff=1]] }) do
+            local body = run_input_filter({}, uri)
+
+            assert.are.equal('<S:file-revs-report xmlns:S="svn:"></S:file-revs-report>', body)
+        end
+    end)
+
+    it("still passes a real svn client's own file-revs-report through untouched, whatever its query string", function()
+        local body, _, yield_count = run_input_filter(
+            { "<S:file-revs-report/>" }, "/svn/demo1/trunk/foo.txt?p=42&diff=1", nil, "REPORT",
+            { ["Content-Type"] = "text/xml" }
+        )
+
+        assert.are.equal("", body)
+        assert.are.equal(0, yield_count)
+    end)
+
     it("never lets non-numeric revision-pin content reach the synthesized XML body", function()
         local body = run_input_filter(
             {}, [[/svn/demo1/trunk/?p=1</S:log-report><evil>]]
@@ -359,7 +421,9 @@ describe("svn-log output_filter", function()
         assert.truthy(html:find('date="2024-01-01T12:00:00.000000Z" month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric"></wa-format-date>', 1, true))
         assert.truthy(html:find('<em>Fix bug</em>', 1, true))
         assert.truthy(html:find('<div class="log-message-full wa-flank wa-color-text-quiet"><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon><em>Fix bug</em></div>', 1, true))
-        assert.truthy(html:find('<wa-icon name="pen" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/foo.txt?p=42">/trunk/foo.txt</a></span>', 1, true))
+        -- Followed by its diff link (see "svn-log output_filter diff
+        -- links" below for that link's own markup).
+        assert.truthy(html:find('<wa-icon name="pen" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/foo.txt?p=42">/trunk/foo.txt</a> <a class="changed-path-diff"', 1, true))
 
         assert.truthy(html:find('<a class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/?p=41">41</a>', 1, true))
         assert.truthy(html:find('<wa-icon name="plus" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/bar.txt?p=41">/trunk/bar.txt</a></span>', 1, true))
@@ -494,9 +558,14 @@ describe("svn-log output_filter", function()
 
         -- The sibling plain modified-path (no copyfrom attrs) must render
         -- as a complete <li>...</li> with NO copy-from span appended --
-        -- this exact, closed string wouldn't match if one leaked in.
+        -- this exact, closed string wouldn't match if one leaked in. (Its
+        -- diff link is the only thing after the path itself.)
         assert.truthy(html:find(
-            '<li class="action-m wa-flank"><wa-icon name="pen" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/unrelated.txt?p=50">/trunk/unrelated.txt</a></span></li>',
+            '<li class="action-m wa-flank"><wa-icon name="pen" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/unrelated.txt?p=50">/trunk/unrelated.txt</a>'
+                .. ' <a class="changed-path-diff" href="/svn/demo1/trunk/unrelated.txt?p=50&amp;diff=1&amp;repo_root=/svn/demo1/"'
+                .. ' hx-action="/svn/demo1/trunk/unrelated.txt?p=50&amp;diff=1&amp;repo_root=/svn/demo1/" hx-method="REPORT"'
+                .. ' hx-target="#svn-diff-content" hx-swap="innerHTML" hx-trigger="click" title="Diff"'
+                .. ' aria-label="Diff against the previous revision"><wa-icon name="code-compare" variant="solid"></wa-icon></a></span></li>',
             1, true
         ))
     end)
@@ -942,5 +1011,203 @@ describe("svn-log output_filter", function()
 
         assert.truthy(html:find('<div class="svn-log">', 1, true))
         assert.falsy(html:find('svn-log-file', 1, true))
+    end)
+end)
+
+-- One log entry, with whatever changed-path elements the test needs.
+local function log_report_with(revision, changed_paths_xml)
+    return [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:log-item>
+<D:version-name>]] .. revision .. [[</D:version-name>
+<D:creator-displayname>alice</D:creator-displayname>
+<S:date>2024-01-01T00:00:00.000000Z</S:date>
+<D:comment>x</D:comment>
+]] .. changed_paths_xml .. [[
+</S:log-item>
+</S:log-report>]]
+end
+
+describe("svn-log output_filter diff links", function()
+    it("links a modified file's diff, as a REPORT into #svn-diff-content", function()
+        local html = run_output_filter({
+            log_report_with(42, [[<S:modified-path node-kind="file" text-mods="true" prop-mods="false">/trunk/foo.txt</S:modified-path>]])
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find(
+            '<a href="/svn/demo1/trunk/foo.txt?p=42">/trunk/foo.txt</a> <a class="changed-path-diff"'
+                .. ' href="/svn/demo1/trunk/foo.txt?p=42&amp;diff=1&amp;repo_root=/svn/demo1/"'
+                .. ' hx-action="/svn/demo1/trunk/foo.txt?p=42&amp;diff=1&amp;repo_root=/svn/demo1/"'
+                .. ' hx-method="REPORT" hx-target="#svn-diff-content"',
+            1, true
+        ))
+    end)
+
+    it("links a property-only change, and a copy or rename that also changed the file", function()
+        local html = run_output_filter({
+            log_report_with(42, [[<S:modified-path node-kind="file" text-mods="false" prop-mods="true">/trunk/props.txt</S:modified-path>
+<S:added-path copyfrom-path="/trunk/old.txt" copyfrom-rev="41" node-kind="file" text-mods="true" prop-mods="false">/trunk/renamed.txt</S:added-path>
+<S:replaced-path copyfrom-path="/branches/b/x.txt" copyfrom-rev="40" node-kind="file" text-mods="false" prop-mods="true">/trunk/x.txt</S:replaced-path>]])
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find('href="/svn/demo1/trunk/props.txt?p=42&amp;diff=1', 1, true))
+        assert.truthy(html:find('href="/svn/demo1/trunk/renamed.txt?p=42&amp;diff=1', 1, true))
+        assert.truthy(html:find('href="/svn/demo1/trunk/x.txt?p=42&amp;diff=1', 1, true))
+    end)
+
+    it("offers no diff for a pure rename, a plain add, a deletion or a directory", function()
+        local html = run_output_filter({
+            log_report_with(42, [[<S:added-path copyfrom-path="/trunk/old.txt" copyfrom-rev="41" node-kind="file" text-mods="false" prop-mods="false">/trunk/renamed.txt</S:added-path>
+<S:added-path node-kind="file" text-mods="true" prop-mods="false">/trunk/new.txt</S:added-path>
+<S:deleted-path node-kind="file" text-mods="false" prop-mods="false">/trunk/old.txt</S:deleted-path>
+<S:modified-path node-kind="dir" text-mods="false" prop-mods="true">/trunk/sub</S:modified-path>]])
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
+
+        assert.falsy(html:find("changed-path-diff", 1, true))
+    end)
+
+    it("still links a modified file when the server sends no text-mods/prop-mods at all", function()
+        local html = run_output_filter({
+            log_report_with(42, [[<S:modified-path node-kind="file">/trunk/foo.txt</S:modified-path>]])
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find('href="/svn/demo1/trunk/foo.txt?p=42&amp;diff=1', 1, true))
+    end)
+
+    it("offers no diff without repo_root, like changed-path links themselves", function()
+        local html = run_output_filter({
+            log_report_with(42, [[<S:modified-path node-kind="file" text-mods="true" prop-mods="false">/trunk/foo.txt</S:modified-path>]])
+        }, "/svn/demo1/trunk/")
+
+        assert.falsy(html:find("changed-path-diff", 1, true))
+    end)
+
+    it("never adds SVN_INDEX_QUERY_FILE to the diff link, only to the path's own link", function()
+        local html = run_output_filter({
+            log_report_with(42, [[<S:modified-path node-kind="file" text-mods="true" prop-mods="false">/trunk/foo.txt</S:modified-path>]])
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/", {
+            SVN_INDEX_TEMPLATE = "wa-page",
+            SVN_INDEX_QUERY_FILE = "view=details"
+        })
+
+        assert.truthy(html:find('href="/svn/demo1/trunk/foo.txt?p=42&amp;view=details"', 1, true))
+        assert.truthy(html:find('href="/svn/demo1/trunk/foo.txt?p=42&amp;diff=1&amp;repo_root=/svn/demo1/"', 1, true))
+        assert.falsy(html:find('diff=1[^"]*view=details'))
+    end)
+
+    it("percent-encodes the diff link's path the same way as the path's own link", function()
+        local html = run_output_filter({
+            log_report_with(42, [[<S:modified-path node-kind="file" text-mods="true" prop-mods="false">/trunk/a b&amp;c.txt</S:modified-path>]])
+        }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
+
+        assert.truthy(html:find('href="/svn/demo1/trunk/a%20b%26c.txt?p=42&amp;diff=1', 1, true))
+    end)
+end)
+
+-- Captured from a real mod_dav_svn 1.14 server, like every response in
+-- svn_diff_spec.lua (see its own header): readme.txt from r1 to r2.
+local FILE_REVS_README_R2 = [[<?xml version="1.0" encoding="utf-8"?>
+<S:file-revs-report xmlns:S="svn:" xmlns:D="DAV:">
+<S:file-rev path="/trunk/readme.txt" rev="1">
+<S:rev-prop name="svn:log">r1 initial</S:rev-prop>
+<S:txdelta>U1ZOAAAAHQEdnWxpbmUgb25lCmxpbmUgdHdvCmxpbmUgdGhyZWUK</S:txdelta></S:file-rev>
+<S:file-rev path="/trunk/readme.txt" rev="2">
+<S:rev-prop name="svn:log">r2 text + prop</S:rev-prop>
+<S:set-prop name="cms:status">draft</S:set-prop>
+<S:txdelta>U1ZOAAAdLQMfDgCfMiBjaGFuZ2VkCmxpbmUgdGhyZWUKbGluZSBmb3VyCg==</S:txdelta></S:file-rev>
+</S:file-revs-report>
+]]
+
+describe("svn-log output_filter diff rendering (?diff=1)", function()
+    local DIFF_URI = "/svn/demo1/trunk/readme.txt?p=2&diff=1&repo_root=/svn/demo1/"
+
+    it("renders diff.mustache: summary with links, property changes and content hunks", function()
+        local html, r = run_output_filter({ FILE_REVS_README_R2:sub(1, 200), FILE_REVS_README_R2:sub(201) }, DIFF_URI)
+
+        assert.are.equal("text/html; charset=utf-8", r.content_type)
+        assert.is_nil(r.headers_out["Content-Length"])
+        assert.is_nil(r.headers_out["ETag"])
+
+        assert.truthy(html:find('<div class="svn-diff" data-label="readme.txt">', 1, true))
+        assert.truthy(html:find('<a href="/svn/demo1/trunk/readme.txt?p=1">/trunk/readme.txt</a>', 1, true))
+        assert.truthy(html:find('<a href="/svn/demo1/trunk/readme.txt?p=2">/trunk/readme.txt</a>', 1, true))
+        assert.truthy(html:find('>+2</wa-badge>', 1, true))
+        assert.truthy(html:find('>&minus;1</wa-badge>', 1, true))
+        assert.truthy(html:find('<code>cms:status</code><span class="wa-color-text-quiet wa-font-size-s">property added</span>', 1, true))
+        assert.truthy(html:find('<tr class="svn-diff-hunk"><td colspan="3">@@ -1,3 +1,4 @@</td></tr>', 1, true))
+        assert.truthy(html:find(
+            '<tr class="svn-diff-line svn-diff-removed"><td class="svn-diff-number">2</td><td class="svn-diff-number"></td><td class="svn-diff-code">line two</td></tr>',
+            1, true
+        ))
+        assert.truthy(html:find(
+            '<tr class="svn-diff-line svn-diff-added"><td class="svn-diff-number"></td><td class="svn-diff-number">2</td><td class="svn-diff-code">line 2 changed</td></tr>',
+            1, true
+        ))
+        assert.truthy(html:find(
+            '<tr class="svn-diff-line svn-diff-context"><td class="svn-diff-number">3</td><td class="svn-diff-number">3</td><td class="svn-diff-code">line three</td></tr>',
+            1, true
+        ))
+        -- Every row was rendered through diff-line.mustache; no mustache
+        -- tag is left over in the page.
+        assert.falsy(html:find("{{", 1, true))
+    end)
+
+    it("adds SVN_INDEX_QUERY_FILE to the summary's own file links, like the History dialog's", function()
+        local html = run_output_filter({ FILE_REVS_README_R2 }, DIFF_URI, {
+            SVN_INDEX_TEMPLATE = "wa-page",
+            SVN_INDEX_QUERY_FILE = "view=details"
+        })
+
+        assert.truthy(html:find('href="/svn/demo1/trunk/readme.txt?p=1&amp;view=details"', 1, true))
+    end)
+
+    it("honors SVN_DIFF_MAX_BYTES", function()
+        local html = run_output_filter({ FILE_REVS_README_R2 }, DIFF_URI, {
+            SVN_INDEX_TEMPLATE = "wa-page",
+            SVN_DIFF_MAX_BYTES = "16"
+        })
+
+        assert.truthy(html:find('Content larger than <wa-format-bytes value="16">', 1, true))
+        assert.falsy(html:find("svn-diff-hunk", 1, true))
+    end)
+
+    it("renders mod_dav_svn's own error document as a message", function()
+        local html = run_output_filter({ [[<?xml version="1.0" encoding="utf-8"?>
+<D:error xmlns:D="DAV:" xmlns:m="http://apache.org/dav/xmlns" xmlns:C="svn:">
+<C:error/>
+<m:human-readable errcode="160013">
+File not found: revision 2, path '/trunk/gone.txt'
+</m:human-readable>
+</D:error>
+]] }, DIFF_URI)
+
+        assert.truthy(html:find(
+            '<wa-callout variant="danger" size="s"><wa-icon slot="icon" name="triangle-exclamation" variant="solid"></wa-icon>File not found: revision 2, path &#39;/trunk/gone.txt&#39;</wa-callout>',
+            1, true
+        ))
+    end)
+
+    it("logs and renders a parse error for a response cut short, still draining every bucket", function()
+        local html, r = run_output_filter({ FILE_REVS_README_R2:sub(1, 300), "</S:wrong>", "more" }, DIFF_URI)
+        local logged = false
+
+        for _, entry in ipairs(r.logs) do
+            if entry.level == "err" and entry.msg:find("SVN diff XML parse error", 1, true) then
+                logged = true
+            end
+        end
+
+        assert.is_true(logged)
+        assert.truthy(html:find("Unexpected response from the server", 1, true))
+    end)
+
+    it("leaves the log branch alone for a template type without diff templates", function()
+        -- test-custom-override ships no diff.mustache at all: History
+        -- itself must keep working there, which it can only do if diff
+        -- templates are loaded on a diff request alone.
+        local html = run_output_filter({
+            log_report_with(7, "")
+        }, "/svn/demo1/trunk/", { SVN_INDEX_TEMPLATE = "test-custom-override" })
+
+        assert.truthy(html:find('<div class="log-item-custom">CUSTOM:7</div>', 1, true))
     end)
 end)

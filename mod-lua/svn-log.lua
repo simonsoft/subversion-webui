@@ -13,6 +13,12 @@ local function template_dir(template_type)
     return script_dir() .. "../templates/" .. template_type .. "/"
 end
 
+-- The per-file diff (see svn-diff.lua's own header comment): dofile()d
+-- from next to this script rather than require'd -- the same "resolve
+-- relative to this file, not package.path" approach template_dir uses --
+-- and dispatched to from input_filter/output_filter below on "diff=1".
+local svn_diff = dofile(script_dir() .. "svn-diff.lua")
+
 local DEFAULT_TEMPLATE_TYPE = "simple"
 local SVNLOG_TAG = "{{{svn_log}}}"
 local DEFAULT_LOG_LIMIT = 50
@@ -230,6 +236,35 @@ local function build_log_report_body(limit, peg_revision)
     return table.concat(parts)
 end
 
+-- Builds the svn:file-revs-report request body for a diff request (see
+-- svn-diff.lua's own header comment for what comes back): start-revision
+-- N-1, end-revision N, where N is the "?p=N" peg the diff link carries,
+-- and the same empty <S:path> meaning "the file the request URI names".
+-- mod_dav_svn reads "?p=N" on a REPORT too, so the file is resolved at N
+-- even if it no longer exists at HEAD.
+--
+-- Without a valid N there is nothing sensible to ask for: <S:path> is
+-- then left out, which mod_dav_svn answers with its own 400 "Not all
+-- parameters passed" error document -- rendered by output_filter's diff
+-- branch as an error message like any other failure.
+local function build_file_revs_report_body(end_revision)
+    local parts = {
+        '<S:file-revs-report xmlns:S="svn:">',
+    }
+
+    if end_revision then
+        local start_revision = math.max(tonumber(end_revision) - 1, 0)
+
+        parts[#parts + 1] = '<S:start-revision>' .. string.format("%d", start_revision) .. '</S:start-revision>'
+        parts[#parts + 1] = '<S:end-revision>' .. end_revision .. '</S:end-revision>'
+        parts[#parts + 1] = '<S:path></S:path>'
+    end
+
+    parts[#parts + 1] = '</S:file-revs-report>'
+
+    return table.concat(parts)
+end
+
 -- SetInputFilter (unlike LuaOutputFilter's FilterProvider) has no
 -- per-request condition mechanism -- it runs on every request under the
 -- Location this is wired into, including real svn-client REPORT traffic
@@ -252,12 +287,21 @@ function input_filter(r)
     -- LuaOutputFilter's own yield("") convention (see svn-index.lua).
     coroutine.yield()
 
-    -- Drain and discard the client's own request body (htmx's hx-action
-    -- issues the REPORT with no body; even if a body were attached, it's
-    -- irrelevant here -- the real body is always fully synthesized below,
-    -- from server-side state only).
+    -- Drain and discard the client's own request body -- irrelevant here,
+    -- the real body is always fully synthesized below, from server-side
+    -- state only. In a real browser there usually *is* one: htmx v4
+    -- serializes the clicked element's own name/value, and a click landing
+    -- on a link's <wa-icon> (which has a "name" attribute) sends e.g.
+    -- "clock-rotate-left=undefined".
+    --
+    -- Each drain step must yield exactly one value, even an empty one:
+    -- mod_lua's input filter (lua_input_filter_handle in httpd's own
+    -- mod_lua.c, 2.4.58) only accepts a per-bucket yield with exactly one
+    -- result, and treats a bare yield() as a failed filter -- the REPORT
+    -- then fails with 400 (confirmed against a real Apache 2.4.58). An
+    -- empty string adds nothing to the body.
     while bucket do
-        coroutine.yield()
+        coroutine.yield("")
     end
 
     -- "more=1" marks a continuous-scroll continuation request (see
@@ -270,7 +314,16 @@ function input_filter(r)
 
     local peg_revision = validate_nonneg_integer(parse_query_param(r.args, "p"))
 
-    local body = build_log_report_body(limit, peg_revision)
+    -- "diff=1" marks a changed path's own diff link (see render_log_item's
+    -- diff_href) -- the same request shape and gate as History itself,
+    -- just a different report.
+    local body
+
+    if parse_query_param(r.args, "diff") == "1" then
+        body = build_file_revs_report_body(peg_revision)
+    else
+        body = build_log_report_body(limit, peg_revision)
+    end
 
     -- Belt-and-braces only, not load-bearing: confirmed against httpd's own
     -- source that the REPORT body is actually read by the same core
@@ -394,6 +447,41 @@ end
 -- value this request itself received) so changed-path links keep working
 -- on the next batch too -- it isn't otherwise derivable by this filter
 -- (see build_changed_path_href's own comment on why).
+-- Builds a changed path's own diff link (see svn-diff.lua): the file's
+-- URL pinned at this entry's revision, plus "diff=1" (what tells
+-- input_filter/output_filter to run a file-revs-report instead of a
+-- log-report) and repo_root echoed through, like build_more_href, so the
+-- diff can link its old/new paths. Deliberately never carries
+-- SVN_INDEX_QUERY_FILE: that fragment exists to send a *browser's* GET to
+-- some file viewer, while this URL is a REPORT that must reach
+-- mod_dav_svn's own report handler with nothing extra in the way.
+--
+-- Only offered for a file whose content or properties actually changed
+-- in this revision: a modification, or an add/replace with history (a
+-- copy or rename, diffed against its source -- a plain rename reports
+-- text-mods="false" prop-mods="false" and gets no link, since there's
+-- nothing to show). A server too old to send text-mods/prop-mods at all
+-- gets the link whenever the rest holds. nil whenever repo_root or the
+-- revision is unknown, same as build_changed_path_href.
+local function build_diff_href(repo_root, cp, revision)
+    if not repo_root or repo_root == "" or not validate_nonneg_integer(revision) then
+        return nil
+    end
+
+    if cp.node_kind ~= "file" or (cp.text_mods == "false" and cp.prop_mods == "false") then
+        return nil
+    end
+
+    if cp.action ~= "M" and not ((cp.action == "A" or cp.action == "R") and cp.copyfrom_path) then
+        return nil
+    end
+
+    local relative_path = cp.path:gsub("^/", "")
+
+    return repo_root .. percent_encode_path(relative_path) .. "?p=" .. revision
+        .. "&diff=1&repo_root=" .. repo_root
+end
+
 local function build_more_href(request_href, next_revision, repo_root)
     local href = request_href .. "?p=" .. next_revision .. "&more=1"
 
@@ -436,12 +524,15 @@ local function render_log_item(templates, item, context)
             context.repo_root, cp.path, link_revision, cp.node_kind, context.query_file_params
         )
 
+        local diff_href = build_diff_href(context.repo_root, cp, item.revision)
+
         local entry = {
             action = cp.action,
             action_class = cp.action:lower(),
             icon = ACTION_ICONS[cp.action],
             path = escape_html(cp.path),
-            href = href and escape_html(href) or nil
+            href = href and escape_html(href) or nil,
+            diff_href = diff_href and escape_html(diff_href) or nil
         }
 
         if cp.copyfrom_path then
@@ -507,7 +598,173 @@ local function render_log_item(templates, item, context)
     })
 end
 
+-- Reuses SVN_INDEX_TEMPLATE (not a separate env var): the History link
+-- only exists in wa-page's own page.mustache, so this filter only ever
+-- needs to resolve wa-page's own log.mustache/log-item.mustache (and
+-- diff.mustache/diff-line.mustache) -- but reads the same env var
+-- svn-index.lua uses, for consistency, rather than inventing a second
+-- template-selection knob.
+local function resolve_template_type(r)
+    local template_type = (r.subprocess_env and r.subprocess_env.SVN_INDEX_TEMPLATE) or ""
+
+    if template_type == "" then
+        template_type = DEFAULT_TEMPLATE_TYPE
+    end
+
+    return template_type
+end
+
+-- Cache of already-loaded diff templates, keyed by template type -- same
+-- rationale as log_template_cache. Loaded separately from the log
+-- templates (and only on a diff request) so a template type without
+-- diff templates of its own -- e.g. a custom skin made before this
+-- feature -- keeps serving History exactly as before.
+local diff_template_cache = {}
+
+local function load_diff_template_set(template_type)
+    local cached = diff_template_cache[template_type]
+
+    if cached then
+        return cached
+    end
+
+    if not template_type:match("^[%w%-]+$") then
+        error("invalid template type '" .. tostring(template_type) .. "'")
+    end
+
+    local dir = template_dir(template_type)
+    local set = {
+        page = read_template(dir, "diff"),
+        hunk = read_template(dir, "diff-hunk"),
+        line = read_template(dir, "diff-line")
+    }
+
+    diff_template_cache[template_type] = set
+
+    return set
+end
+
+-- Renders each item through `template` on its own and joins them.
+-- Every repeated part of a diff -- each line (diff-line.mustache, placed
+-- by "{{{rows}}}") and each hunk (diff-hunk.mustache, placed by
+-- "{{{hunk_bodies}}}") -- goes through this rather than a
+-- "{{#lines}}...{{/lines}}" section: lustache builds a list section's
+-- output by repeated string concatenation, which goes quadratic on a long
+-- diff -- measured at 18-43 seconds for a fully rewritten 1 MB file
+-- (24,000 rows), against under 1.5 seconds rendered one by one like this.
+-- (svn-log.lua's own log items are rendered one by one too.)
+local function render_each(template, items)
+    local parts = {}
+
+    for i, item in ipairs(items) do
+        parts[i] = lustache:render(template, item)
+    end
+
+    return table.concat(parts)
+end
+
+-- SVN_DIFF_MAX_BYTES: the largest content (per side, in bytes) a diff is
+-- computed for -- anything bigger shows a "too large" message instead.
+-- Falls back to svn-diff.lua's own default when unset/invalid.
+local function resolve_diff_max_bytes(env)
+    return tonumber(validate_nonneg_integer(env and env.SVN_DIFF_MAX_BYTES)) or svn_diff.DEFAULT_MAX_BYTES
+end
+
+-- output_filter's diff branch: renders mod_dav_svn's file-revs-report
+-- response (see svn-diff.lua) as diff.mustache. Unlike the log, nothing
+-- can be streamed out early -- both sides have to be known before any
+-- line can be compared -- so the whole response is parsed first and the
+-- rendered diff is yielded once, at the end. A parse failure (an error
+-- document, or a response cut short) still renders: diff.mustache shows
+-- the reason in place of the diff.
+local function diff_output_filter(r)
+    local templates = load_diff_template_set(resolve_template_type(r))
+    local request_href = url_path(tostring(r.unparsed_uri or r.uri or ""))
+    local repo_root = parse_query_param(r.args, "repo_root")
+    local end_revision = validate_nonneg_integer(parse_query_param(r.args, "p"))
+    local max_bytes = resolve_diff_max_bytes(r.subprocess_env)
+    local query_file_params = r.subprocess_env and r.subprocess_env.SVN_INDEX_QUERY_FILE
+
+    r.content_type = "text/html; charset=utf-8"
+    r.headers_out["Content-Length"] = nil
+    r.headers_out["ETag"] = nil
+
+    r:info(string.format(
+        "SVN diff filter entered: method=%s uri=%s revision=%s",
+        tostring(r.method),
+        tostring(r.uri),
+        tostring(end_revision)
+    ))
+
+    -- base64 runs ~4/3 the size of what it encodes; the slack covers
+    -- svndiff's own window headers and instructions.
+    local parser = svn_diff.new_file_revs_parser(max_bytes * 4 // 3 + 4096)
+    local parse_error = nil
+
+    coroutine.yield("")
+
+    -- Every bucket is still drained after a parse error -- yielding once
+    -- per bucket is what moves mod_lua on to the next one -- but no
+    -- longer fed to the parser, which refuses further input by then.
+    while bucket do
+        if not parse_error then
+            local ok, err = parser.feed(bucket)
+
+            if not ok then
+                parse_error = tostring(err)
+            end
+        end
+
+        coroutine.yield("")
+    end
+
+    local parsed, finish_error = parser.finish()
+
+    parse_error = parse_error or finish_error
+
+    if parse_error then
+        r:err("SVN diff XML parse error: " .. parse_error)
+    end
+
+    local context = svn_diff.build_context(parsed, {
+        end_revision = end_revision,
+        max_bytes = max_bytes,
+        parse_error = parse_error,
+        -- The same "open this file at that revision" links the History
+        -- dialog's own changed paths use (SVN_INDEX_QUERY_FILE included
+        -- -- these are for a browser's GET, unlike the diff URL itself).
+        href_for = function(path, revision)
+            local href = build_changed_path_href(repo_root, path, revision, "file", query_file_params)
+            return href and escape_html(href) or nil
+        end
+    })
+
+    for _, prop in ipairs(context.props or {}) do
+        prop.rows = render_each(templates.line, prop.lines)
+    end
+
+    if context.hunks then
+        for _, hunk in ipairs(context.hunks) do
+            hunk.rows = render_each(templates.line, hunk.lines)
+        end
+
+        context.hunk_bodies = render_each(templates.hunk, context.hunks)
+    end
+
+    coroutine.yield(lustache:render(templates.page, context))
+
+    r:info(string.format(
+        "SVN diff rendered: uri=%s revisions=%d",
+        request_href,
+        #parsed.revs
+    ))
+end
+
 function output_filter(r)
+    if parse_query_param(r.args, "diff") == "1" then
+        return diff_output_filter(r)
+    end
+
     local bucket_count = 0
     local element_count = 0
     local rendered_count = 0
@@ -517,17 +774,7 @@ function output_filter(r)
     -- build_more_href), updated as items stream through EndElement below.
     local last_revision = nil
 
-    -- Reuses SVN_INDEX_TEMPLATE (not a separate env var): the History link
-    -- only exists in wa-page's own page.mustache, so this filter only ever
-    -- needs to resolve wa-page's own log.mustache/log-item.mustache -- but
-    -- reads the same env var svn-index.lua uses, for consistency, rather
-    -- than inventing a second template-selection knob.
-    local template_type = (r.subprocess_env and r.subprocess_env.SVN_INDEX_TEMPLATE) or ""
-
-    if template_type == "" then
-        template_type = DEFAULT_TEMPLATE_TYPE
-    end
-
+    local template_type = resolve_template_type(r)
     local templates = load_log_template_set(template_type)
 
     -- Trusted as-is, unlike svn-index.lua's own request_href (which
@@ -686,7 +933,12 @@ function output_filter(r)
                     path = "",
                     node_kind = attr["node-kind"],
                     copyfrom_path = attr["copyfrom-path"],
-                    copyfrom_rev = attr["copyfrom-rev"]
+                    copyfrom_rev = attr["copyfrom-rev"],
+                    -- "true"/"false" strings, kept as-is: only
+                    -- build_diff_href reads them, and it treats "absent"
+                    -- (an older server) differently from "false".
+                    text_mods = attr["text-mods"],
+                    prop_mods = attr["prop-mods"]
                 }
                 item.changed_paths[#item.changed_paths + 1] = entry
                 capture_target, capture_field, capture_buffer = entry, "path", ""

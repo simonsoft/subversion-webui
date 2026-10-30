@@ -1,0 +1,29 @@
+<div class="svn-diff" data-label="{{{label}}}">
+{{#error}}<wa-callout variant="danger" size="s"><wa-icon slot="icon" name="triangle-exclamation" variant="solid"></wa-icon>{{{message}}}</wa-callout>
+{{/error}}{{#summary}}<div class="svn-diff-summary wa-split wa-gap-s">
+<div class="wa-cluster wa-gap-xs">
+{{#old}}<span class="svn-diff-path">{{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}} <span class="revision-badge revision-badge-small wa-font-size-s">{{{rev}}}</span></span>
+<wa-icon name="arrow-right" variant="solid" class="wa-color-text-quiet"></wa-icon>
+{{/old}}{{#new}}<span class="svn-diff-path">{{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}} <span class="revision-badge revision-badge-small wa-font-size-s">{{{rev}}}</span></span>
+{{/new}}{{#added}}<wa-badge variant="neutral" appearance="outlined">added</wa-badge>
+{{/added}}</div>
+{{#stats}}<div class="wa-cluster wa-gap-2xs">
+<wa-badge variant="success" appearance="outlined">+{{added}}</wa-badge>
+<wa-badge variant="danger" appearance="outlined">&minus;{{removed}}</wa-badge>
+</div>
+{{/stats}}</div>
+{{/summary}}{{#unchanged}}<wa-callout variant="neutral" size="s"><wa-icon slot="icon" name="circle-info" variant="solid"></wa-icon>No changes in this revision.</wa-callout>
+{{/unchanged}}{{#props}}<section class="svn-diff-prop">
+<div class="svn-diff-prop-name wa-cluster wa-gap-xs"><wa-icon name="{{icon}}" variant="solid"></wa-icon><code>{{{name}}}</code><span class="wa-color-text-quiet wa-font-size-s">property {{status_label}}</span></div>
+<table class="svn-diff-table">
+{{{rows}}}</table>
+</section>
+{{/props}}{{#content_unchanged}}<wa-callout variant="neutral" size="s"><wa-icon slot="icon" name="circle-info" variant="solid"></wa-icon>Content unchanged.</wa-callout>
+{{/content_unchanged}}{{#content_binary}}<wa-callout variant="neutral" size="s"><wa-icon slot="icon" name="circle-info" variant="solid"></wa-icon>Binary content{{#mime_type}} ({{{mime_type}}}){{/mime_type}} &ndash; not shown.</wa-callout>
+{{/content_binary}}{{#content_too_large}}<wa-callout variant="neutral" size="s"><wa-icon slot="icon" name="circle-info" variant="solid"></wa-icon>Content larger than <wa-format-bytes value="{{limit}}"></wa-format-bytes> &ndash; not shown.</wa-callout>
+{{/content_too_large}}{{#content_not_utf8}}<wa-callout variant="neutral" size="s"><wa-icon slot="icon" name="circle-info" variant="solid"></wa-icon>Content is not valid UTF-8 &ndash; not shown.</wa-callout>
+{{/content_not_utf8}}{{#content_error}}<wa-callout variant="danger" size="s"><wa-icon slot="icon" name="triangle-exclamation" variant="solid"></wa-icon>Could not reconstruct the content: {{{message}}}</wa-callout>
+{{/content_error}}{{#approximate}}<wa-callout variant="warning" size="s"><wa-icon slot="icon" name="triangle-exclamation" variant="solid"></wa-icon>Too many changes to compare line by line &ndash; some unchanged lines may be shown as removed and added.</wa-callout>
+{{/approximate}}{{#has_hunks}}<table class="svn-diff-table">
+{{{hunk_bodies}}}</table>
+{{/has_hunks}}</div>
