@@ -16,7 +16,7 @@ end
 -- The per-file diff (see svn-diff.lua's own header comment): dofile()d
 -- from next to this script rather than require'd -- the same "resolve
 -- relative to this file, not package.path" approach template_dir uses --
--- and dispatched to from input_filter/output_filter below on "diff=1".
+-- and dispatched to from input_filter/output_filter below on "?diff".
 local svn_diff = dofile(script_dir() .. "svn-diff.lua")
 
 local DEFAULT_TEMPLATE_TYPE = "simple"
@@ -64,7 +64,8 @@ local function escape_html(value)
 end
 
 -- Duplicated from svn-index.lua (see its own comment on why this hand-rolled
--- scan is used uniformly instead of r:parseargs()).
+-- scan is used uniformly instead of r:parseargs(), and why a bare key --
+-- "?diff", no "=" -- returns "" rather than nil).
 local function parse_query_param(str, key)
     if not str then
         return nil
@@ -76,6 +77,9 @@ local function parse_query_param(str, key)
         local k, v = pair:match("^([^=]+)=(.*)$")
         if k == key then
             return v
+        end
+        if pair == key then
+            return ""
         end
     end
 
@@ -314,12 +318,13 @@ function input_filter(r)
 
     local peg_revision = validate_nonneg_integer(parse_query_param(r.args, "p"))
 
-    -- "diff=1" marks a changed path's own diff link (see render_log_item's
-    -- diff_href) -- the same request shape and gate as History itself,
-    -- just a different report.
+    -- A bare "diff" flag (like "?history" in svn-index.lua: present means
+    -- on, whatever its value) marks a changed path's own diff link (see
+    -- render_log_item's diff_href) -- the same request shape and gate as
+    -- History itself, just a different report.
     local body
 
-    if parse_query_param(r.args, "diff") == "1" then
+    if parse_query_param(r.args, "diff") then
         body = build_file_revs_report_body(peg_revision)
     else
         body = build_log_report_body(limit, peg_revision)
@@ -448,7 +453,7 @@ end
 -- on the next batch too -- it isn't otherwise derivable by this filter
 -- (see build_changed_path_href's own comment on why).
 -- Builds a changed path's own diff link (see svn-diff.lua): the file's
--- URL pinned at this entry's revision, plus "diff=1" (what tells
+-- URL pinned at this entry's revision, plus the bare "diff" flag (what tells
 -- input_filter/output_filter to run a file-revs-report instead of a
 -- log-report) and repo_root echoed through, like build_more_href, so the
 -- diff can link its old/new paths. Deliberately never carries
@@ -479,7 +484,7 @@ local function build_diff_href(repo_root, cp, revision)
     local relative_path = cp.path:gsub("^/", "")
 
     return repo_root .. percent_encode_path(relative_path) .. "?p=" .. revision
-        .. "&diff=1&repo_root=" .. repo_root
+        .. "&diff&repo_root=" .. repo_root
 end
 
 local function build_more_href(request_href, next_revision, repo_root)
@@ -765,7 +770,7 @@ local function diff_output_filter(r)
 end
 
 function output_filter(r)
-    if parse_query_param(r.args, "diff") == "1" then
+    if parse_query_param(r.args, "diff") then
         return diff_output_filter(r)
     end
 

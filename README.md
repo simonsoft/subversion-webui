@@ -421,7 +421,7 @@ rename is diffed against its source; a file modified inside a branch that
 was copied in the same commit is diffed against its real predecessor.
 
 No extra Apache config is needed: it reuses the History filter pair above.
-The icon issues a `REPORT` on `<file>?p=N&diff=1`, which
+The icon issues a `REPORT` on `<file>?p=N&diff`, which
 `SVN_LOG_REPORT_BODY` turns into an svn `file-revs-report` (the report
 `svn blame` uses) from revision N-1 to N, and `SVN_LOG_HTML` decodes
 mod_dav_svn's answer (the old content, its delta to N, and both property

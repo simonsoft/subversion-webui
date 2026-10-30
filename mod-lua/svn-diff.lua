@@ -1,13 +1,13 @@
 -- The History dialog's per-file diff (see README.md's "Diff" section).
 --
 -- Not a filter of its own: svn-log.lua's input_filter/output_filter
--- dispatch here whenever a request carries "diff=1", so a deployment that
--- already has History configured needs no extra Apache config at all (the
--- SVN_LOG_HTML FilterProvider condition -- REPORT, XML response,
--- HX-Request -- already matches this request too). svn-log.lua dofile()s
--- this file and uses the table it returns. Everything in here is plain Lua
--- over strings and tables -- no request_rec, no lustache, no template
--- loading -- so spec/svn_diff_spec.lua can exercise it directly.
+-- dispatch here whenever a request carries the bare "diff" flag, so a
+-- deployment that already has History configured needs no extra Apache
+-- config at all (the SVN_LOG_HTML FilterProvider condition -- REPORT, XML
+-- response, HX-Request -- already matches this request too). svn-log.lua
+-- dofile()s this file and uses the table it returns. Everything in here is
+-- plain Lua over strings and tables -- no request_rec, no lustache, no
+-- template loading -- so spec/svn_diff_spec.lua can exercise it directly.
 --
 -- The data source is mod_dav_svn's file-revs-report (the same REPORT
 -- "svn blame" uses), requested on "<file>?p=N" with start-revision N-1 and

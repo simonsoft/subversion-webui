@@ -345,8 +345,8 @@ describe("svn-log input_filter", function()
         assert.truthy(body:find("<S:log-report", 1, true))
     end)
 
-    it("synthesizes a file-revs-report from N-1 to N instead of a log-report for a diff link's request (?diff=1)", function()
-        local body = run_input_filter({}, "/svn/demo1/trunk/foo.txt?p=42&diff=1&repo_root=/svn/demo1/")
+    it("synthesizes a file-revs-report from N-1 to N instead of a log-report for a diff link's request (?diff)", function()
+        local body = run_input_filter({}, "/svn/demo1/trunk/foo.txt?p=42&diff&repo_root=/svn/demo1/")
 
         assert.are.equal(
             '<S:file-revs-report xmlns:S="svn:"><S:start-revision>41</S:start-revision>'
@@ -355,15 +355,34 @@ describe("svn-log input_filter", function()
         )
     end)
 
+    it("treats \"diff\" as a flag: bare, empty or with any value, like ?history", function()
+        for _, uri in ipairs({
+            "/svn/demo1/trunk/foo.txt?p=42&diff",
+            "/svn/demo1/trunk/foo.txt?diff&p=42",
+            "/svn/demo1/trunk/foo.txt?p=42&diff=",
+            "/svn/demo1/trunk/foo.txt?p=42&diff=1"
+        }) do
+            local body = run_input_filter({}, uri)
+
+            assert.truthy(body:find("<S:file-revs-report", 1, true))
+        end
+    end)
+
+    it("doesn't mistake another param that merely contains \"diff\" for the flag", function()
+        local body = run_input_filter({}, "/svn/demo1/trunk/?p=42&nodiff&x=diff")
+
+        assert.truthy(body:find("<S:log-report", 1, true))
+    end)
+
     it("never asks a diff for a negative start-revision", function()
-        local body = run_input_filter({}, "/svn/demo1/trunk/foo.txt?p=0&diff=1")
+        local body = run_input_filter({}, "/svn/demo1/trunk/foo.txt?p=0&diff")
 
         assert.truthy(body:find('<S:start-revision>0</S:start-revision>', 1, true))
         assert.truthy(body:find('<S:end-revision>0</S:end-revision>', 1, true))
     end)
 
     it("leaves <S:path> out of a diff request without a valid revision, so mod_dav_svn answers with its own error", function()
-        for _, uri in ipairs({ "/svn/demo1/trunk/foo.txt?diff=1", [[/svn/demo1/trunk/foo.txt?p=1</S:path><evil>&diff=1]] }) do
+        for _, uri in ipairs({ "/svn/demo1/trunk/foo.txt?diff", [[/svn/demo1/trunk/foo.txt?p=1</S:path><evil>&diff]] }) do
             local body = run_input_filter({}, uri)
 
             assert.are.equal('<S:file-revs-report xmlns:S="svn:"></S:file-revs-report>', body)
@@ -372,7 +391,7 @@ describe("svn-log input_filter", function()
 
     it("still passes a real svn client's own file-revs-report through untouched, whatever its query string", function()
         local body, _, yield_count = run_input_filter(
-            { "<S:file-revs-report/>" }, "/svn/demo1/trunk/foo.txt?p=42&diff=1", nil, "REPORT",
+            { "<S:file-revs-report/>" }, "/svn/demo1/trunk/foo.txt?p=42&diff", nil, "REPORT",
             { ["Content-Type"] = "text/xml" }
         )
 
@@ -562,8 +581,8 @@ describe("svn-log output_filter", function()
         -- diff link is the only thing after the path itself.)
         assert.truthy(html:find(
             '<li class="action-m wa-flank"><wa-icon name="pen" variant="solid" style="font-size: 0.8rem;"></wa-icon><span><a href="/svn/demo1/trunk/unrelated.txt?p=50">/trunk/unrelated.txt</a>'
-                .. ' <a class="changed-path-diff" href="/svn/demo1/trunk/unrelated.txt?p=50&amp;diff=1&amp;repo_root=/svn/demo1/"'
-                .. ' hx-action="/svn/demo1/trunk/unrelated.txt?p=50&amp;diff=1&amp;repo_root=/svn/demo1/" hx-method="REPORT"'
+                .. ' <a class="changed-path-diff" href="/svn/demo1/trunk/unrelated.txt?p=50&amp;diff&amp;repo_root=/svn/demo1/"'
+                .. ' hx-action="/svn/demo1/trunk/unrelated.txt?p=50&amp;diff&amp;repo_root=/svn/demo1/" hx-method="REPORT"'
                 .. ' hx-target="#svn-diff-content" hx-swap="innerHTML" hx-trigger="click" title="Diff"'
                 .. ' aria-label="Diff against the previous revision"><wa-icon name="code-compare" variant="solid"></wa-icon></a></span></li>',
             1, true
@@ -1035,8 +1054,8 @@ describe("svn-log output_filter diff links", function()
 
         assert.truthy(html:find(
             '<a href="/svn/demo1/trunk/foo.txt?p=42">/trunk/foo.txt</a> <a class="changed-path-diff"'
-                .. ' href="/svn/demo1/trunk/foo.txt?p=42&amp;diff=1&amp;repo_root=/svn/demo1/"'
-                .. ' hx-action="/svn/demo1/trunk/foo.txt?p=42&amp;diff=1&amp;repo_root=/svn/demo1/"'
+                .. ' href="/svn/demo1/trunk/foo.txt?p=42&amp;diff&amp;repo_root=/svn/demo1/"'
+                .. ' hx-action="/svn/demo1/trunk/foo.txt?p=42&amp;diff&amp;repo_root=/svn/demo1/"'
                 .. ' hx-method="REPORT" hx-target="#svn-diff-content"',
             1, true
         ))
@@ -1049,9 +1068,9 @@ describe("svn-log output_filter diff links", function()
 <S:replaced-path copyfrom-path="/branches/b/x.txt" copyfrom-rev="40" node-kind="file" text-mods="false" prop-mods="true">/trunk/x.txt</S:replaced-path>]])
         }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
 
-        assert.truthy(html:find('href="/svn/demo1/trunk/props.txt?p=42&amp;diff=1', 1, true))
-        assert.truthy(html:find('href="/svn/demo1/trunk/renamed.txt?p=42&amp;diff=1', 1, true))
-        assert.truthy(html:find('href="/svn/demo1/trunk/x.txt?p=42&amp;diff=1', 1, true))
+        assert.truthy(html:find('href="/svn/demo1/trunk/props.txt?p=42&amp;diff', 1, true))
+        assert.truthy(html:find('href="/svn/demo1/trunk/renamed.txt?p=42&amp;diff', 1, true))
+        assert.truthy(html:find('href="/svn/demo1/trunk/x.txt?p=42&amp;diff', 1, true))
     end)
 
     it("offers no diff for a pure rename, a plain add, a deletion or a directory", function()
@@ -1070,7 +1089,7 @@ describe("svn-log output_filter diff links", function()
             log_report_with(42, [[<S:modified-path node-kind="file">/trunk/foo.txt</S:modified-path>]])
         }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
 
-        assert.truthy(html:find('href="/svn/demo1/trunk/foo.txt?p=42&amp;diff=1', 1, true))
+        assert.truthy(html:find('href="/svn/demo1/trunk/foo.txt?p=42&amp;diff', 1, true))
     end)
 
     it("offers no diff without repo_root, like changed-path links themselves", function()
@@ -1090,8 +1109,8 @@ describe("svn-log output_filter diff links", function()
         })
 
         assert.truthy(html:find('href="/svn/demo1/trunk/foo.txt?p=42&amp;view=details"', 1, true))
-        assert.truthy(html:find('href="/svn/demo1/trunk/foo.txt?p=42&amp;diff=1&amp;repo_root=/svn/demo1/"', 1, true))
-        assert.falsy(html:find('diff=1[^"]*view=details'))
+        assert.truthy(html:find('href="/svn/demo1/trunk/foo.txt?p=42&amp;diff&amp;repo_root=/svn/demo1/"', 1, true))
+        assert.falsy(html:find('diff[^"]*view=details'))
     end)
 
     it("percent-encodes the diff link's path the same way as the path's own link", function()
@@ -1099,7 +1118,7 @@ describe("svn-log output_filter diff links", function()
             log_report_with(42, [[<S:modified-path node-kind="file" text-mods="true" prop-mods="false">/trunk/a b&amp;c.txt</S:modified-path>]])
         }, "/svn/demo1/trunk/?repo_root=/svn/demo1/")
 
-        assert.truthy(html:find('href="/svn/demo1/trunk/a%20b%26c.txt?p=42&amp;diff=1', 1, true))
+        assert.truthy(html:find('href="/svn/demo1/trunk/a%20b%26c.txt?p=42&amp;diff', 1, true))
     end)
 end)
 
@@ -1117,8 +1136,8 @@ local FILE_REVS_README_R2 = [[<?xml version="1.0" encoding="utf-8"?>
 </S:file-revs-report>
 ]]
 
-describe("svn-log output_filter diff rendering (?diff=1)", function()
-    local DIFF_URI = "/svn/demo1/trunk/readme.txt?p=2&diff=1&repo_root=/svn/demo1/"
+describe("svn-log output_filter diff rendering (?diff)", function()
+    local DIFF_URI = "/svn/demo1/trunk/readme.txt?p=2&diff&repo_root=/svn/demo1/"
 
     it("renders diff.mustache: summary with links, property changes and content hunks", function()
         local html, r = run_output_filter({ FILE_REVS_README_R2:sub(1, 200), FILE_REVS_README_R2:sub(201) }, DIFF_URI)
@@ -1186,7 +1205,7 @@ describe("svn-log output_filter diff rendering (?diff=1)", function()
 <S:file-rev path="/branches/b1/readme.txt" rev="4">
 <S:txdelta>U1ZOAAAtKgULCQCLFhdicmFuY2ggZWRpdA==</S:txdelta></S:file-rev>
 </S:file-revs-report>
-]] }, "/svn/demo1/branches/b1/readme.txt?p=4&diff=1&repo_root=/svn/demo1/", {
+]] }, "/svn/demo1/branches/b1/readme.txt?p=4&diff&repo_root=/svn/demo1/", {
             SVN_INDEX_TEMPLATE = "wa-page",
             SVN_LOG_DATE_LANG = "sv"
         })
