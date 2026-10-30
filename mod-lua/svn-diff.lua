@@ -1157,9 +1157,11 @@ local function basename(path)
     return path:match("([^/]+)/*$") or path
 end
 
+-- Same icons as a History entry's own changed paths (svn-log.lua's
+-- ACTION_ICONS for A/D/M).
 local PROP_STATUS = {
     added = { label = "added", icon = "plus" },
-    removed = { label = "removed", icon = "minus" },
+    removed = { label = "removed", icon = "trash" },
     modified = { label = "modified", icon = "pen" }
 }
 

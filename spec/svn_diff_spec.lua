@@ -568,6 +568,9 @@ describe("svn-diff build_context", function()
         assert.is_nil(context.props[1].lines[2].no_newline)
         assert.are.equal("cms:status", context.props[2].name)
         assert.are.equal("removed", context.props[2].status)
+        -- The same icons a History entry's changed paths use.
+        assert.are.equal("plus", context.props[1].icon)
+        assert.are.equal("trash", context.props[2].icon)
         -- application/xml counts as text here, unlike in svn diff itself.
         assert.is_true(context.has_hunks)
     end)

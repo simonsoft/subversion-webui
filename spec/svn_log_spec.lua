@@ -1136,10 +1136,13 @@ describe("svn-log output_filter diff rendering (?diff=1)", function()
         assert.truthy(html:find(
             '<span class="svn-diff-path"><a href="/svn/demo1/trunk/readme.txt?p=2">/trunk/readme.txt</a></span>\n'
                 .. '<a id="svn-diff-old-revision" class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/readme.txt?p=1">1</a>\n'
-                .. '<wa-tooltip for="svn-diff-old-revision">r1<br><em>r1 initial</em></wa-tooltip>\n'
+                .. '<wa-tooltip for="svn-diff-old-revision"><div class="svn-diff-commit"><div class="wa-cluster wa-gap-s">'
+                .. '<span class="revision-badge wa-font-size-s">1</span></div>'
+                .. '<div><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon> <em>r1 initial</em></div>'
+                .. '</div></wa-tooltip>\n'
                 .. '<wa-icon name="arrow-right" variant="solid" class="wa-color-text-quiet"></wa-icon>\n'
                 .. '<a id="svn-diff-new-revision" class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/readme.txt?p=2">2</a>\n'
-                .. '<wa-tooltip for="svn-diff-new-revision">r2<br><em>r2 text + prop</em></wa-tooltip>',
+                .. '<wa-tooltip for="svn-diff-new-revision">',
             1, true
         ))
         assert.truthy(html:find('>+2</wa-badge>', 1, true))
@@ -1190,14 +1193,24 @@ describe("svn-log output_filter diff rendering (?diff=1)", function()
 
         assert.truthy(html:find('<span class="svn-diff-path"><a href="/svn/demo1/trunk/readme.txt?p=2">/trunk/readme.txt</a></span>', 1, true))
         assert.truthy(html:find('<span class="svn-diff-path"><a href="/svn/demo1/branches/b1/readme.txt?p=4">/branches/b1/readme.txt</a></span>', 1, true))
+        -- Laid out like a History entry's own summary: revision, date,
+        -- author (user icon), then message (comment icon).
         assert.truthy(html:find(
-            '<wa-tooltip for="svn-diff-old-revision">r2 &middot; alice &middot; <wa-format-date date="2026-10-29T23:35:08.786192Z"'
-                .. ' month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric" lang="sv"></wa-format-date>'
-                .. '<br><em>Edit</em></wa-tooltip>',
+            '<wa-tooltip for="svn-diff-old-revision"><div class="svn-diff-commit"><div class="wa-cluster wa-gap-s">'
+                .. '<span class="revision-badge wa-font-size-s">2</span>'
+                .. '<wa-format-date class="wa-text-nowrap" date="2026-10-29T23:35:08.786192Z" month="numeric" day="numeric"'
+                .. ' year="numeric" hour="numeric" minute="numeric" lang="sv"></wa-format-date>'
+                .. '<span><wa-icon name="user" variant="solid" style="font-size: 0.8rem;"></wa-icon> <strong>alice</strong></span></div>'
+                .. '<div><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon> <em>Edit</em></div>'
+                .. '</div></wa-tooltip>',
             1, true
         ))
         -- The new side's file-rev here carries no rev-props at all.
-        assert.truthy(html:find('<wa-tooltip for="svn-diff-new-revision">r4</wa-tooltip>', 1, true))
+        assert.truthy(html:find(
+            '<wa-tooltip for="svn-diff-new-revision"><div class="svn-diff-commit"><div class="wa-cluster wa-gap-s">'
+                .. '<span class="revision-badge wa-font-size-s">4</span></div></div></wa-tooltip>',
+            1, true
+        ))
     end)
 
     it("honors SVN_DIFF_MAX_BYTES", function()

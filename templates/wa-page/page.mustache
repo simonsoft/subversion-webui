@@ -986,6 +986,15 @@ wa-page[view='mobile'] .log-body {
     color: inherit;
 }
 
+/* A revision badge's tooltip (see diff.mustache): the commit laid out like
+   a History entry's own summary -- revision, date, author, then message. */
+.svn-diff-commit {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-2xs);
+    text-align: start;
+}
+
 .svn-diff-prop {
     display: flex;
     flex-direction: column;
