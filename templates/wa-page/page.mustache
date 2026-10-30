@@ -982,6 +982,14 @@ wa-page[view='mobile'] .log-body {
     gap: var(--wa-space-m);
 }
 
+/* Path(s) with old -> new revision badges and the change counts, then
+   the commit the old side comes from (see diff.mustache). */
+.svn-diff-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-2xs);
+}
+
 .svn-diff-path a {
     color: inherit;
 }

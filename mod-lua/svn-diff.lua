@@ -1057,8 +1057,10 @@ function M.new_file_revs_parser(max_delta_chars)
     local parser = lxp.new({
         StartElement = function(_, name, attr)
             if name == "S:file-rev" then
-                current = { path = attr.path or "", rev = attr.rev or "", set = {}, removed = {} }
+                current = { path = attr.path or "", rev = attr.rev or "", revprops = {}, set = {}, removed = {} }
                 result.revs[#result.revs + 1] = current
+            elseif current and name == "S:rev-prop" and attr.name then
+                start_capture("revprop", { name = attr.name, base64 = attr.encoding == "base64" })
             elseif current and name == "S:set-prop" and attr.name then
                 start_capture("prop", { name = attr.name, base64 = attr.encoding == "base64" })
             elseif current and name == "S:remove-prop" and attr.name then
@@ -1097,7 +1099,9 @@ function M.new_file_revs_parser(max_delta_chars)
             if capture then
                 local text = table.concat(buffer)
 
-                if capture.kind == "prop" and name == "S:set-prop" then
+                if capture.kind == "revprop" and name == "S:rev-prop" then
+                    current.revprops[capture.name] = capture.base64 and M.base64_decode(text) or text
+                elseif capture.kind == "prop" and name == "S:set-prop" then
                     current.set[capture.name] = capture.base64 and M.base64_decode(text) or text
                 elseif capture.kind == "txdelta" and name == "S:txdelta" then
                     current.delta = text
@@ -1297,6 +1301,7 @@ end
 --   href_for      function(path, rev) -> already-escaped href or nil, for
 --                 the old/new path links in the summary line
 --   parse_error   finish()'s own error, if any
+--   date_lang     SVN_LOG_DATE_LANG, for the old commit's own date
 function M.build_context(parsed, opts)
     local revs = parsed.revs
     local href_for = opts.href_for or function() return nil end
@@ -1335,7 +1340,8 @@ function M.build_context(parsed, opts)
     local context = {
         label = escape_html(basename((new_rev or old_rev).path)),
         summary = true,
-        new = side(new_rev or old_rev)
+        new = side(new_rev or old_rev),
+        date_lang = opts.date_lang and escape_html(opts.date_lang) or nil
     }
 
     if not new_rev then
@@ -1345,6 +1351,20 @@ function M.build_context(parsed, opts)
 
     if old_rev then
         context.old = side(old_rev)
+        -- The old side is the commit that last changed the file before N
+        -- (r3 for a file untouched from r3 to r10, not r10) -- named in
+        -- full, with its author, date and the first line of its log
+        -- message, all of which file-revs-report already carries as
+        -- rev-props. nil, not "", when absent, so diff.mustache can test
+        -- each one directly.
+        local revprops = old_rev.revprops or {}
+        local message = (revprops["svn:log"] or ""):match("^%s*([^\n]-)%s*\n") or (revprops["svn:log"] or ""):match("^%s*(.-)%s*$")
+
+        context.old.author = revprops["svn:author"] and escape_html(revprops["svn:author"]) or nil
+        context.old.date = revprops["svn:date"] and escape_html(revprops["svn:date"]) or nil
+        context.old.message = message ~= "" and escape_html(message) or nil
+        -- The path is only shown once when both sides share it.
+        context.renamed = old_rev.path ~= new_rev.path or nil
     else
         context.added = true
     end

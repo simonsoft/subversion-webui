@@ -726,10 +726,14 @@ local function diff_output_filter(r)
         r:err("SVN diff XML parse error: " .. parse_error)
     end
 
+    -- SVN_LOG_DATE_LANG: same handling as output_filter's own.
+    local date_lang = r.subprocess_env and r.subprocess_env.SVN_LOG_DATE_LANG
+
     local context = svn_diff.build_context(parsed, {
         end_revision = end_revision,
         max_bytes = max_bytes,
         parse_error = parse_error,
+        date_lang = date_lang ~= "" and date_lang or nil,
         -- The same "open this file at that revision" links the History
         -- dialog's own changed paths use (SVN_INDEX_QUERY_FILE included
         -- -- these are for a browser's GET, unlike the diff URL itself).

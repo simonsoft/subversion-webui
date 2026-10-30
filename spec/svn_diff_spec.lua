@@ -510,8 +510,17 @@ describe("svn-diff build_context", function()
         })
 
         assert.are.equal("readme.txt", context.label)
-        assert.are.same({ path = "/trunk/readme.txt", rev = "1", href = "/trunk/readme.txt?p=1" }, context.old)
+        assert.are.same({
+            path = "/trunk/readme.txt",
+            rev = "1",
+            href = "/trunk/readme.txt?p=1",
+            author = "root",
+            date = "2026-10-29T23:35:08.751209Z",
+            message = "r1 initial"
+        }, context.old)
         assert.are.same({ path = "/trunk/readme.txt", rev = "2", href = "/trunk/readme.txt?p=2" }, context.new)
+        -- Same path on both sides: diff.mustache shows it once.
+        assert.is_nil(context.renamed)
         assert.are.same({ added = 2, removed = 1 }, context.stats)
         assert.is_true(context.has_hunks)
         assert.are.same({
@@ -562,7 +571,32 @@ describe("svn-diff build_context", function()
         assert.are.equal("/trunk/readme.txt", context.old.path)
         assert.are.equal("2", context.old.rev)
         assert.are.equal("/branches/b1/readme.txt", context.new.path)
+        assert.is_true(context.renamed)
         assert.are.same({ added = 1, removed = 1 }, context.stats)
+    end)
+
+    it("names the commit the old side comes from, by its first log message line, even when it's well before N-1", function()
+        -- doc.xml was last changed in r3 before r11.
+        local context = render_context(DOC_R11:gsub(
+            '<S:file%-rev path="/trunk/doc.xml" rev="3">',
+            '%0\n<S:rev-prop name="svn:author">alice</S:rev-prop>'
+                .. '\n<S:rev-prop name="svn:log">  Release it\nwith more detail below</S:rev-prop>'
+        ), { end_revision = "11" })
+
+        assert.are.equal("3", context.old.rev)
+        assert.are.equal("alice", context.old.author)
+        assert.are.equal("Release it", context.old.message)
+        assert.is_nil(context.old.date)
+    end)
+
+    it("decodes a base64-encoded rev-prop, and leaves out an empty log message", function()
+        local context = render_context(README_R2
+            :gsub('<S:rev%-prop name="svn:author">root</S:rev%-prop>', '<S:rev-prop name="svn:author" encoding="base64">YWxpY2U=</S:rev-prop>', 1)
+            :gsub('<S:rev%-prop name="svn:log">r1 initial</S:rev%-prop>', '<S:rev-prop name="svn:log"> </S:rev-prop>', 1),
+            { end_revision = "2" })
+
+        assert.are.equal("alice", context.old.author)
+        assert.is_nil(context.old.message)
     end)
 
     it("diffs a file added without history against nothing", function()
