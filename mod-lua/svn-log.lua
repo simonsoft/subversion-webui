@@ -308,12 +308,13 @@ function input_filter(r)
         coroutine.yield("")
     end
 
-    -- "more=1" marks a continuous-scroll continuation request (see
-    -- output_filter's own sentinel/more_href construction below) -- it
-    -- only ever changes which limit env var resolve_log_limit consults,
-    -- never anything else about how this body is built (peg_revision is
-    -- read and applied identically either way).
-    local more_flag = parse_query_param(r.args, "more") == "1"
+    -- A bare "more" flag (present means on, like "diff" below) marks a
+    -- continuous-scroll continuation request (see output_filter's own
+    -- sentinel/more_href construction below) -- it only ever changes
+    -- which limit env var resolve_log_limit consults, never anything else
+    -- about how this body is built (peg_revision is read and applied
+    -- identically either way).
+    local more_flag = parse_query_param(r.args, "more") ~= nil
     local limit = resolve_log_limit(r.subprocess_env, more_flag)
 
     local peg_revision = validate_nonneg_integer(parse_query_param(r.args, "p"))
@@ -446,12 +447,13 @@ end
 -- revision_href below), pinned via "?p=" at one revision below the last
 -- entry actually rendered -- continuing the backward walk from exactly
 -- where this batch left off, without re-showing that last entry itself.
--- "more=1" is what tells input_filter/output_filter's own resolve_log_limit
--- calls to consult SVN_LOG_LIMIT_SCROLL instead of SVN_LOG_LIMIT for this
--- next batch. repo_root is echoed through unchanged (same raw query-string
--- value this request itself received) so changed-path links keep working
--- on the next batch too -- it isn't otherwise derivable by this filter
--- (see build_changed_path_href's own comment on why).
+-- The bare "more" flag is what tells input_filter/output_filter's own
+-- resolve_log_limit calls to consult SVN_LOG_LIMIT_SCROLL instead of
+-- SVN_LOG_LIMIT for this next batch. repo_root is echoed through unchanged
+-- (same raw query-string value this request itself received) so
+-- changed-path links keep working on the next batch too -- it isn't
+-- otherwise derivable by this filter (see build_changed_path_href's own
+-- comment on why).
 -- Builds a changed path's own diff link (see svn-diff.lua): the file's
 -- URL pinned at this entry's revision, plus the bare "diff" flag (what tells
 -- input_filter/output_filter to run a file-revs-report instead of a
@@ -488,7 +490,7 @@ local function build_diff_href(repo_root, cp, revision)
 end
 
 local function build_more_href(request_href, next_revision, repo_root)
-    local href = request_href .. "?p=" .. next_revision .. "&more=1"
+    local href = request_href .. "?p=" .. next_revision .. "&more"
 
     if repo_root and repo_root ~= "" then
         href = href .. "&repo_root=" .. repo_root
@@ -810,12 +812,12 @@ function output_filter(r)
     -- text in that case.
     local repo_root = parse_query_param(r.args, "repo_root")
 
-    -- Mirrors input_filter's own "more=1" read: only changes which limit
+    -- Mirrors input_filter's own "more" read: only changes which limit
     -- resolve_log_limit consults below (to know the ceiling this
     -- request's own <S:limit> was actually sent with), never anything
     -- about rendering shape -- the log.mustache preamble/postamble wrapper
     -- is emitted unconditionally, on every request alike.
-    local more_flag = parse_query_param(r.args, "more") == "1"
+    local more_flag = parse_query_param(r.args, "more") ~= nil
     local resolved_limit = tonumber(resolve_log_limit(r.subprocess_env, more_flag))
 
     -- SVN_INDEX_QUERY_FILE: the same env var svn-index.lua already reads

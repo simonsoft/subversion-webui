@@ -250,12 +250,20 @@ describe("svn-log input_filter", function()
         assert.truthy(body:find('<S:limit>10</S:limit>', 1, true))
     end)
 
-    it("honors SVN_LOG_LIMIT_SCROLL instead of SVN_LOG_LIMIT on a continuous-scroll continuation request (?more=1)", function()
+    it("honors SVN_LOG_LIMIT_SCROLL instead of SVN_LOG_LIMIT on a continuous-scroll continuation request (?more)", function()
         local body = run_input_filter(
-            {}, "/svn/demo1/trunk/?more=1", { SVN_LOG_LIMIT = "10", SVN_LOG_LIMIT_SCROLL = "200" }
+            {}, "/svn/demo1/trunk/?more", { SVN_LOG_LIMIT = "10", SVN_LOG_LIMIT_SCROLL = "200" }
         )
 
         assert.truthy(body:find('<S:limit>200</S:limit>', 1, true))
+    end)
+
+    it("treats \"more\" as a flag: bare, empty or with any value", function()
+        for _, uri in ipairs({ "/svn/demo1/trunk/?more", "/svn/demo1/trunk/?p=9&more=", "/svn/demo1/trunk/?more=1&p=9" }) do
+            local body = run_input_filter({}, uri, { SVN_LOG_LIMIT = "10", SVN_LOG_LIMIT_SCROLL = "200" })
+
+            assert.truthy(body:find('<S:limit>200</S:limit>', 1, true))
+        end
     end)
 
     it("ignores SVN_LOG_LIMIT_SCROLL on a plain (non-continuation) request, even when it's set", function()
@@ -266,23 +274,23 @@ describe("svn-log input_filter", function()
         assert.truthy(body:find('<S:limit>10</S:limit>', 1, true))
     end)
 
-    it("falls back to SVN_LOG_LIMIT's own resolution when SVN_LOG_LIMIT_SCROLL is unset on a ?more=1 request", function()
+    it("falls back to SVN_LOG_LIMIT's own resolution when SVN_LOG_LIMIT_SCROLL is unset on a ?more request", function()
         local body = run_input_filter(
-            {}, "/svn/demo1/trunk/?more=1", { SVN_LOG_LIMIT = "10" }
+            {}, "/svn/demo1/trunk/?more", { SVN_LOG_LIMIT = "10" }
         )
 
         assert.truthy(body:find('<S:limit>10</S:limit>', 1, true))
     end)
 
-    it("falls back all the way to the hardcoded default on a ?more=1 request when neither limit env var is set", function()
-        local body = run_input_filter({}, "/svn/demo1/trunk/?more=1")
+    it("falls back all the way to the hardcoded default on a ?more request when neither limit env var is set", function()
+        local body = run_input_filter({}, "/svn/demo1/trunk/?more")
 
         assert.truthy(body:find('<S:limit>50</S:limit>', 1, true))
     end)
 
-    it("falls back to SVN_LOG_LIMIT for an invalid SVN_LOG_LIMIT_SCROLL on a ?more=1 request, never emitting the raw attacker string", function()
+    it("falls back to SVN_LOG_LIMIT for an invalid SVN_LOG_LIMIT_SCROLL on a ?more request, never emitting the raw attacker string", function()
         local body = run_input_filter(
-            {}, "/svn/demo1/trunk/?more=1", { SVN_LOG_LIMIT = "10", SVN_LOG_LIMIT_SCROLL = "not-a-number" }
+            {}, "/svn/demo1/trunk/?more", { SVN_LOG_LIMIT = "10", SVN_LOG_LIMIT_SCROLL = "not-a-number" }
         )
 
         assert.truthy(body:find('<S:limit>10</S:limit>', 1, true))
@@ -718,9 +726,9 @@ describe("svn-log output_filter", function()
         -- A full 1-item batch (== SVN_LOG_LIMIT) means older history may
         -- still exist -- the sentinel pins the next fetch one revision
         -- below the last one actually rendered, and marks itself as a
-        -- continuation via "more=1" (see resolve_log_limit).
+        -- continuation via "more" (see resolve_log_limit).
         assert.truthy(html:find('class="svn-log-more', 1, true))
-        assert.truthy(html:find('hx-action="/svn/demo1/trunk/?p=9&amp;more=1"', 1, true))
+        assert.truthy(html:find('hx-action="/svn/demo1/trunk/?p=9&amp;more"', 1, true))
     end)
 
     it("omits the sentinel when a batch comes back short of the resolved limit (log-report already reached end-revision=0 on its own)", function()
@@ -766,7 +774,7 @@ describe("svn-log output_filter", function()
         }, "/svn/demo1/trunk/?repo_root=/svn/demo1/", { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_LIMIT = "1" })
 
         assert.truthy(with_repo_root:find(
-            'hx-action="/svn/demo1/trunk/?p=9&amp;more=1&amp;repo_root=/svn/demo1/"', 1, true
+            'hx-action="/svn/demo1/trunk/?p=9&amp;more&amp;repo_root=/svn/demo1/"', 1, true
         ))
 
         local without_repo_root = run_output_filter({
@@ -785,10 +793,10 @@ describe("svn-log output_filter", function()
 
     it("uses SVN_LOG_LIMIT_SCROLL (not SVN_LOG_LIMIT) as the resolved limit when rendering a continuation request's own response", function()
         -- Confirms output_filter's own resolve_log_limit call reads the
-        -- same "more=1" flag input_filter does: a 2-item batch is "full"
+        -- same "more" flag input_filter does: a 2-item batch is "full"
         -- here (SVN_LOG_LIMIT_SCROLL=2), even though it's short of
         -- SVN_LOG_LIMIT=10 -- proving the sentinel decision used the
-        -- scroll limit, not the plain one, for this ?more=1 request.
+        -- scroll limit, not the plain one, for this ?more request.
         local html = run_output_filter({
             [[<S:log-report xmlns:S="svn:" xmlns:D="DAV:">
 <S:log-item>
@@ -804,9 +812,9 @@ describe("svn-log output_filter", function()
 <D:comment>y</D:comment>
 </S:log-item>
 </S:log-report>]]
-        }, "/svn/demo1/trunk/?more=1", { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_LIMIT = "10", SVN_LOG_LIMIT_SCROLL = "2" })
+        }, "/svn/demo1/trunk/?more", { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_LIMIT = "10", SVN_LOG_LIMIT_SCROLL = "2" })
 
-        assert.truthy(html:find('hx-action="/svn/demo1/trunk/?p=8&amp;more=1"', 1, true))
+        assert.truthy(html:find('hx-action="/svn/demo1/trunk/?p=8&amp;more"', 1, true))
     end)
 
     it("prefers \"log-item.custom.mustache\" over \"log-item.mustache\" when both exist (mirrors svn-index.lua's own override convention)", function()
@@ -980,7 +988,7 @@ describe("svn-log output_filter", function()
 </S:log-report>]]
         }, "/svn/demo1/trunk/file.txt", { SVN_INDEX_TEMPLATE = "wa-page", SVN_LOG_LIMIT = "1" })
 
-        assert.truthy(html:find('hx-action="/svn/demo1/trunk/file.txt?p=9&amp;more=1"', 1, true))
+        assert.truthy(html:find('hx-action="/svn/demo1/trunk/file.txt?p=9&amp;more"', 1, true))
         assert.falsy(html:find('file.txt/?p=9', 1, true))
     end)
 
