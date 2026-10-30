@@ -518,7 +518,14 @@ describe("svn-diff build_context", function()
             date = "2026-10-29T23:35:08.751209Z",
             message = "r1 initial"
         }, context.old)
-        assert.are.same({ path = "/trunk/readme.txt", rev = "2", href = "/trunk/readme.txt?p=2" }, context.new)
+        assert.are.same({
+            path = "/trunk/readme.txt",
+            rev = "2",
+            href = "/trunk/readme.txt?p=2",
+            author = "root",
+            date = "2026-10-29T23:35:08.786192Z",
+            message = "r2 text + prop"
+        }, context.new)
         -- Same path on both sides: diff.mustache shows it once.
         assert.is_nil(context.renamed)
         assert.are.same({ added = 2, removed = 1 }, context.stats)

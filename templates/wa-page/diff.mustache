@@ -1,14 +1,15 @@
 <div class="svn-diff" data-label="{{{label}}}">
 {{#error}}<wa-callout variant="danger" size="s"><wa-icon slot="icon" name="triangle-exclamation" variant="solid"></wa-icon>{{{message}}}</wa-callout>
-{{/error}}{{#summary}}<div class="svn-diff-header">
-<div class="wa-split wa-gap-s">
+{{/error}}{{#summary}}<div class="wa-split wa-gap-s">
 <div class="wa-cluster wa-gap-xs">
 {{#renamed}}{{#old}}<span class="svn-diff-path">{{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}}</span>
 {{/old}}{{/renamed}}{{^renamed}}{{#new}}<span class="svn-diff-path">{{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}}</span>
-{{/new}}{{/renamed}}{{#old}}{{#href}}<a class="revision-badge wa-font-size-s" href="{{{href}}}">{{{rev}}}</a>{{/href}}{{^href}}<span class="revision-badge wa-font-size-s">{{{rev}}}</span>{{/href}}
+{{/new}}{{/renamed}}{{#old}}{{#href}}<a id="svn-diff-old-revision" class="revision-badge wa-font-size-s" href="{{{href}}}">{{{rev}}}</a>{{/href}}{{^href}}<span id="svn-diff-old-revision" class="revision-badge wa-font-size-s" tabindex="0">{{{rev}}}</span>{{/href}}
+<wa-tooltip for="svn-diff-old-revision">r{{{rev}}}{{#author}} &middot; {{{author}}}{{/author}}{{#date}} &middot; <wa-format-date date="{{{date}}}" month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric"{{#date_lang}} lang="{{{date_lang}}}"{{/date_lang}}></wa-format-date>{{/date}}{{#message}}<br><em>{{{message}}}</em>{{/message}}</wa-tooltip>
 <wa-icon name="arrow-right" variant="solid" class="wa-color-text-quiet"></wa-icon>
 {{/old}}{{#renamed}}{{#new}}<span class="svn-diff-path">{{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}}</span>
-{{/new}}{{/renamed}}{{#new}}{{#href}}<a class="revision-badge wa-font-size-s" href="{{{href}}}">{{{rev}}}</a>{{/href}}{{^href}}<span class="revision-badge wa-font-size-s">{{{rev}}}</span>{{/href}}
+{{/new}}{{/renamed}}{{#new}}{{#href}}<a id="svn-diff-new-revision" class="revision-badge wa-font-size-s" href="{{{href}}}">{{{rev}}}</a>{{/href}}{{^href}}<span id="svn-diff-new-revision" class="revision-badge wa-font-size-s" tabindex="0">{{{rev}}}</span>{{/href}}
+<wa-tooltip for="svn-diff-new-revision">r{{{rev}}}{{#author}} &middot; {{{author}}}{{/author}}{{#date}} &middot; <wa-format-date date="{{{date}}}" month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric"{{#date_lang}} lang="{{{date_lang}}}"{{/date_lang}}></wa-format-date>{{/date}}{{#message}}<br><em>{{{message}}}</em>{{/message}}</wa-tooltip>
 {{/new}}{{#added}}<wa-badge variant="neutral" appearance="outlined">added</wa-badge>
 {{/added}}</div>
 {{#stats}}<div class="wa-cluster wa-gap-2xs">
@@ -16,8 +17,6 @@
 <wa-badge variant="danger" appearance="outlined">&minus;{{removed}}</wa-badge>
 </div>
 {{/stats}}</div>
-{{#old}}<div class="svn-diff-base wa-color-text-quiet wa-font-size-s">Compared with r{{{rev}}}{{#author}} by {{{author}}}{{/author}}{{#date}}, <wa-format-date date="{{{date}}}" month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric"{{#date_lang}} lang="{{{date_lang}}}"{{/date_lang}}></wa-format-date>{{/date}}{{#message}} &ndash; <em>{{{message}}}</em>{{/message}}</div>
-{{/old}}</div>
 {{/summary}}{{#unchanged}}<wa-callout variant="neutral" size="s"><wa-icon slot="icon" name="circle-info" variant="solid"></wa-icon>No changes in this revision.</wa-callout>
 {{/unchanged}}{{#props}}<section class="svn-diff-prop">
 <div class="svn-diff-prop-name wa-cluster wa-gap-xs"><wa-icon name="{{icon}}" variant="solid"></wa-icon><code>{{{name}}}</code><span class="wa-color-text-quiet wa-font-size-s">property {{status_label}}</span></div>

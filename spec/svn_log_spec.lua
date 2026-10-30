@@ -1129,18 +1129,19 @@ describe("svn-log output_filter diff rendering (?diff=1)", function()
 
         assert.truthy(html:find('<div class="svn-diff" data-label="readme.txt">', 1, true))
         -- One path (it's the same on both sides), then each side's own
-        -- revision badge linking to that version, then the old side's
-        -- commit.
+        -- revision badge linking to that version, with its commit in a
+        -- tooltip.
         local _, path_count = html:gsub("/trunk/readme.txt</a>", "")
         assert.are.equal(1, path_count)
         assert.truthy(html:find(
             '<span class="svn-diff-path"><a href="/svn/demo1/trunk/readme.txt?p=2">/trunk/readme.txt</a></span>\n'
-                .. '<a class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/readme.txt?p=1">1</a>\n'
+                .. '<a id="svn-diff-old-revision" class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/readme.txt?p=1">1</a>\n'
+                .. '<wa-tooltip for="svn-diff-old-revision">r1<br><em>r1 initial</em></wa-tooltip>\n'
                 .. '<wa-icon name="arrow-right" variant="solid" class="wa-color-text-quiet"></wa-icon>\n'
-                .. '<a class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/readme.txt?p=2">2</a>',
+                .. '<a id="svn-diff-new-revision" class="revision-badge wa-font-size-s" href="/svn/demo1/trunk/readme.txt?p=2">2</a>\n'
+                .. '<wa-tooltip for="svn-diff-new-revision">r2<br><em>r2 text + prop</em></wa-tooltip>',
             1, true
         ))
-        assert.truthy(html:find('Compared with r1 &ndash; <em>r1 initial</em></div>', 1, true))
         assert.truthy(html:find('>+2</wa-badge>', 1, true))
         assert.truthy(html:find('>&minus;1</wa-badge>', 1, true))
         assert.truthy(html:find('<code>cms:status</code><span class="wa-color-text-quiet wa-font-size-s">property added</span>', 1, true))
@@ -1171,7 +1172,7 @@ describe("svn-log output_filter diff rendering (?diff=1)", function()
         assert.truthy(html:find('href="/svn/demo1/trunk/readme.txt?p=1&amp;view=details"', 1, true))
     end)
 
-    it("shows both paths when the file was copied or renamed, and the old commit's author and date", function()
+    it("shows both paths when the file was copied or renamed, and each commit's author and date in its tooltip", function()
         local html = run_output_filter({ [[<?xml version="1.0" encoding="utf-8"?>
 <S:file-revs-report xmlns:S="svn:" xmlns:D="DAV:">
 <S:file-rev path="/trunk/readme.txt" rev="2">
@@ -1190,10 +1191,13 @@ describe("svn-log output_filter diff rendering (?diff=1)", function()
         assert.truthy(html:find('<span class="svn-diff-path"><a href="/svn/demo1/trunk/readme.txt?p=2">/trunk/readme.txt</a></span>', 1, true))
         assert.truthy(html:find('<span class="svn-diff-path"><a href="/svn/demo1/branches/b1/readme.txt?p=4">/branches/b1/readme.txt</a></span>', 1, true))
         assert.truthy(html:find(
-            'Compared with r2 by alice, <wa-format-date date="2026-10-29T23:35:08.786192Z" month="numeric" day="numeric"'
-                .. ' year="numeric" hour="numeric" minute="numeric" lang="sv"></wa-format-date> &ndash; <em>Edit</em>',
+            '<wa-tooltip for="svn-diff-old-revision">r2 &middot; alice &middot; <wa-format-date date="2026-10-29T23:35:08.786192Z"'
+                .. ' month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric" lang="sv"></wa-format-date>'
+                .. '<br><em>Edit</em></wa-tooltip>',
             1, true
         ))
+        -- The new side's file-rev here carries no rev-props at all.
+        assert.truthy(html:find('<wa-tooltip for="svn-diff-new-revision">r4</wa-tooltip>', 1, true))
     end)
 
     it("honors SVN_DIFF_MAX_BYTES", function()

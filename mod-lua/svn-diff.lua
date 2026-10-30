@@ -1301,7 +1301,7 @@ end
 --   href_for      function(path, rev) -> already-escaped href or nil, for
 --                 the old/new path links in the summary line
 --   parse_error   finish()'s own error, if any
---   date_lang     SVN_LOG_DATE_LANG, for the old commit's own date
+--   date_lang     SVN_LOG_DATE_LANG, for the revision tooltips' dates
 function M.build_context(parsed, opts)
     local revs = parsed.revs
     local href_for = opts.href_for or function() return nil end
@@ -1329,11 +1329,25 @@ function M.build_context(parsed, opts)
         new_rev = revs[1]
     end
 
+    -- Each side's own commit -- for the old side, the one that last
+    -- changed the file before N (r3 for a file untouched from r3 to r10,
+    -- not r10) -- with its author, date and the first line of its log
+    -- message, all of which file-revs-report already carries as
+    -- rev-props (diff.mustache puts them in a tooltip on the revision
+    -- badge). nil, not "", when absent, so diff.mustache can test each
+    -- one directly.
     local function side(file_rev)
+        local revprops = file_rev.revprops or {}
+        local log = revprops["svn:log"] or ""
+        local message = log:match("^%s*([^\n]-)%s*\n") or log:match("^%s*(.-)%s*$")
+
         return {
             path = escape_html(file_rev.path),
             rev = escape_html(file_rev.rev),
-            href = href_for(file_rev.path, file_rev.rev)
+            href = href_for(file_rev.path, file_rev.rev),
+            author = revprops["svn:author"] and escape_html(revprops["svn:author"]) or nil,
+            date = revprops["svn:date"] and escape_html(revprops["svn:date"]) or nil,
+            message = message ~= "" and escape_html(message) or nil
         }
     end
 
@@ -1351,18 +1365,6 @@ function M.build_context(parsed, opts)
 
     if old_rev then
         context.old = side(old_rev)
-        -- The old side is the commit that last changed the file before N
-        -- (r3 for a file untouched from r3 to r10, not r10) -- named in
-        -- full, with its author, date and the first line of its log
-        -- message, all of which file-revs-report already carries as
-        -- rev-props. nil, not "", when absent, so diff.mustache can test
-        -- each one directly.
-        local revprops = old_rev.revprops or {}
-        local message = (revprops["svn:log"] or ""):match("^%s*([^\n]-)%s*\n") or (revprops["svn:log"] or ""):match("^%s*(.-)%s*$")
-
-        context.old.author = revprops["svn:author"] and escape_html(revprops["svn:author"]) or nil
-        context.old.date = revprops["svn:date"] and escape_html(revprops["svn:date"]) or nil
-        context.old.message = message ~= "" and escape_html(message) or nil
         -- The path is only shown once when both sides share it.
         context.renamed = old_rev.path ~= new_rev.path or nil
     else

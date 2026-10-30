@@ -410,9 +410,9 @@ diffed line by line), then the content as a unified diff with three lines
 of context and the changed words highlighted within each changed line.
 Closing it (Escape, the close button, or a click outside) returns to
 History unchanged. Its header shows the path (both paths, if the file was
-copied or renamed) with old and new revision badges, and names the commit
-the old side comes from -- the file's last change before this revision,
-not simply the one before -- with its author, date and log message.
+copied or renamed) with old and new revision badges; hovering a badge
+shows that commit's author, date and log message. The old side is the
+file's last change before this revision, not simply the one before.
 
 The icon is offered for a file that was modified, or copied/renamed and
 then changed, in that revision (`text-mods`/`prop-mods` in the log); a
