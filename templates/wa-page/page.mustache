@@ -374,6 +374,31 @@ document.addEventListener("wa-hide", (event) => {
         scheduleHistoryExpandToggleLabelSync();
     }
 });
+
+// A "?history"/"?history=<filename>" page (see svn-index.lua) opens the
+// History dialog on load -- so once the user closes it, that param is
+// dropped from the address bar too, or reloading (or bookmarking, or
+// copying the URL) would open it all over again. history.replaceState,
+// not pushState: closing a dialog isn't a navigation the Back button
+// should step through. htmx's own state object is passed back untouched,
+// and so is the rest of the URL, fragment included. (URLSearchParams
+// re-encodes the params it keeps, but the only other one a page URL ever
+// carries is "p", a plain revision number.) "wa-after-hide" bubbles up
+// from every Web Awesome element inside the dialog too (an entry's own
+// <wa-details> collapsing, a tooltip), so only the dialog's own event
+// counts.
+document.addEventListener("wa-after-hide", (event) => {
+    if (event.target.id !== "svn-history-dialog") {
+        return;
+    }
+
+    const url = new URL(window.location.href);
+
+    if (url.searchParams.has("history")) {
+        url.searchParams.delete("history");
+        history.replaceState(history.state, "", url);
+    }
+});
 </script>
 <style>
 wa-page {
