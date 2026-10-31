@@ -639,6 +639,76 @@ try {
 
     await page.screenshot({ path: path.join(OUTPUT_DIR, "03-final.png"), fullPage: true });
 
+    // 7b. Closing the dialog drops "?history" from the address bar (see
+    // page.mustache's own "wa-after-hide" listener), so reloading doesn't
+    // open it again -- while every other param, and the fragment, stay
+    // byte for byte. The harness serves this same pre-opened page for any
+    // query string. Each case resolves on the dialog's own wa-after-hide,
+    // the event the listener itself reacts to.
+    const closeDialogAndReadUrl = () =>
+        page.evaluate(
+            () =>
+                new Promise((resolve) => {
+                    const dialog = document.getElementById("svn-history-dialog");
+                    dialog.addEventListener(
+                        "wa-after-hide",
+                        (event) => {
+                            if (event.target === dialog) {
+                                setTimeout(() => resolve(window.location.search + window.location.hash), 0);
+                            }
+                        }
+                    );
+                    dialog.open = false;
+                })
+        );
+    const openHarnessAt = async (query) => {
+        await page.goto(`http://127.0.0.1:${port}/${query}`, { waitUntil: "networkidle0" });
+        await page.evaluate(() =>
+            Promise.all([customElements.whenDefined("wa-dialog"), customElements.whenDefined("wa-details")])
+        );
+        await new Promise((r) => setTimeout(r, 300));
+    };
+
+    await openHarnessAt("?p=3&history=read%20me.txt&x=a%20b#entry");
+    // An entry's own <wa-details> collapsing fires wa-after-hide inside the
+    // dialog too -- that must not count as the dialog closing.
+    const searchAfterEntryCollapse = await page.evaluate(
+        () =>
+            new Promise((resolve) => {
+                const item = document.querySelector("wa-details.log-item");
+                item.addEventListener("wa-after-show", () => {
+                    item.addEventListener("wa-after-hide", () => setTimeout(() => resolve(window.location.search), 0), { once: true });
+                    item.open = false;
+                }, { once: true });
+                item.open = true;
+            })
+    );
+    record(
+        "collapsing an entry inside the dialog leaves ?history in the URL",
+        searchAfterEntryCollapse === "?p=3&history=read%20me.txt&x=a%20b",
+        searchAfterEntryCollapse
+    );
+    const urlAfterClose = await closeDialogAndReadUrl();
+    record(
+        "closing the dialog drops ?history=<file>, keeping other params and the fragment as they were",
+        urlAfterClose === "?p=3&x=a%20b#entry",
+        urlAfterClose
+    );
+
+    await openHarnessAt("?history");
+    const urlAfterBareClose = await closeDialogAndReadUrl();
+    record("closing the dialog drops a bare ?history, leaving no empty '?'", urlAfterBareClose === "", urlAfterBareClose);
+    const hrefAfterBareClose = await page.evaluate(() => window.location.href);
+    record(
+        "...and the page URL is otherwise unchanged",
+        hrefAfterBareClose === `http://127.0.0.1:${port}/`,
+        hrefAfterBareClose
+    );
+
+    await openHarnessAt("?p=3");
+    const urlWithoutHistory = await closeDialogAndReadUrl();
+    record("closing the dialog leaves a URL without ?history alone", urlWithoutHistory === "?p=3", urlWithoutHistory);
+
     // 8. No console/page errors during the whole run.
     record("no console/page errors during the whole run", consoleErrors.length === 0, consoleErrors.join(" | "));
 
