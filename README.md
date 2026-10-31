@@ -291,7 +291,9 @@ pair above (no new REPORT-handling logic, just new places that link to it):
   history already fetched and the dialog opened automatically, via a
   declarative `hx-trigger="load"` on `#svn-history-content` -- no extra
   request, no bootstrap script. Revision pinning reuses the existing
-  `?p=<rev>` param.
+  `?p=<rev>` param. Closing the dialog removes `history` from the address
+  bar again (`?p=<rev>` and the fragment stay), so reloading the page
+  doesn't reopen it.
 
 All three (the icon, and both `?history` forms) require `SVN_LOG_HTML`'s
 `FilterProvider` condition above (the `HX-Request` check) -- a deployment
