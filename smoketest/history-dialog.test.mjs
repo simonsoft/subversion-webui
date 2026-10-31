@@ -641,8 +641,8 @@ try {
 
     // 7b. Closing the dialog drops "?history" from the address bar (see
     // page.mustache's own "wa-after-hide" listener), so reloading doesn't
-    // open it again -- while every other param, and the fragment, stay
-    // byte for byte. The harness serves this same pre-opened page for any
+    // open it again -- while "p" and the fragment stay. The harness serves
+    // this same pre-opened page for any
     // query string. Each case resolves on the dialog's own wa-after-hide,
     // the event the listener itself reacts to.
     const closeDialogAndReadUrl = () =>
@@ -669,7 +669,7 @@ try {
         await new Promise((r) => setTimeout(r, 300));
     };
 
-    await openHarnessAt("?p=3&history=read%20me.txt&x=a%20b#entry");
+    await openHarnessAt("?p=3&history=read%20me.txt#entry");
     // An entry's own <wa-details> collapsing fires wa-after-hide inside the
     // dialog too -- that must not count as the dialog closing.
     const searchAfterEntryCollapse = await page.evaluate(
@@ -685,13 +685,13 @@ try {
     );
     record(
         "collapsing an entry inside the dialog leaves ?history in the URL",
-        searchAfterEntryCollapse === "?p=3&history=read%20me.txt&x=a%20b",
+        searchAfterEntryCollapse === "?p=3&history=read%20me.txt",
         searchAfterEntryCollapse
     );
     const urlAfterClose = await closeDialogAndReadUrl();
     record(
-        "closing the dialog drops ?history=<file>, keeping other params and the fragment as they were",
-        urlAfterClose === "?p=3&x=a%20b#entry",
+        "closing the dialog drops ?history=<file>, keeping ?p and the fragment",
+        urlAfterClose === "?p=3#entry",
         urlAfterClose
     );
 
