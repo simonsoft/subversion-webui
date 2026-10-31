@@ -103,7 +103,7 @@ overridden without editing (or forking) the shipped file: if a
 `name.custom.mustache` sits alongside `name.mustache` in that same
 directory, it's loaded instead. This works for every template file
 (`page`, `dir`, `file`, `repo`, `updir`, `page-head-end`, `page-title`, and,
-for `wa-page`, `log`/`log-item`) in all four template types.
+for `wa-page`, `log`/`log-item`/`diff`/`diff-hunk`/`diff-line`) in all four template types.
 
 Each template type also ships an empty `page-head-end.mustache`, rendered
 with the exact same variable context as `page.mustache` and inserted just
@@ -402,6 +402,62 @@ response instead of a filter -- see mod_lua's own docs for
   this repo can't cover with `busted`/`smoketest`.
 - **A malformed `torev` is silently dropped**, not rejected -- the request
   still redirects, just without a revision pin, rather than a 400.
+
+### Diff (wa-page skin only)
+
+In the History dialog, a changed file gets a diff icon right after its
+path. It opens a second dialog on top of History with that file's change
+in that revision: properties added, removed or modified (each value
+diffed line by line), then the content as a unified diff with three lines
+of context and the changed words highlighted within each changed line.
+Closing it (Escape, the close button, or a click outside) returns to
+History unchanged. Its header shows the path (both paths, if the file was
+copied or renamed) with old and new revision badges; hovering a badge
+shows that commit's author, date and log message. The old side is the
+file's last change before this revision, not simply the one before.
+
+The icon is offered for a file that was modified, or copied/renamed and
+then changed, in that revision (`text-mods`/`prop-mods` in the log); a
+plain rename, a plain add, a delete or a folder gets none. A copy or
+rename is diffed against its source; a file modified inside a branch that
+was copied in the same commit is diffed against its real predecessor.
+
+No extra Apache config is needed: it reuses the History filter pair above.
+The icon issues a `REPORT` on `<file>?p=N&diff`, which
+`SVN_LOG_REPORT_BODY` turns into an svn `file-revs-report` (the report
+`svn blame` uses) from revision N-1 to N, and `SVN_LOG_HTML` decodes
+mod_dav_svn's answer (the old content, its delta to N, and both property
+sets) and renders the diff from `diff.mustache` (the whole dialog
+content), `diff-hunk.mustache` (each hunk, placed by `{{{hunk_bodies}}}`)
+and `diff-line.mustache` (each line, placed by `{{{rows}}}`) -- all three
+can be overridden like every other template. All
+of it is computed in `mod-lua/svn-diff.lua`, within the same request, under
+mod_dav_svn's own path-based authorization.
+
+Content is shown only for text: `svn:mime-type` unset (unless the content
+itself looks binary, by Subversion's own add-time check), `text/*`, or an
+XML/JSON type -- more lenient than `svn diff`, which treats
+`application/xml` as binary. Binary content, content that isn't valid
+UTF-8, and content above `SVN_DIFF_MAX_BYTES` get a one-line message
+instead; property changes are still shown.
+
+```
+<Location /svn>
+
+    # ... existing History config from above ...
+
+    # Largest content (per side, in bytes) a diff is computed for.
+    # Defaults to 1048576 (1 MiB) when unset.
+    # SetEnv SVN_DIFF_MAX_BYTES 1048576
+
+</Location>
+```
+
+For scale, on a test server: a 1 MB XML file with 80 changed paragraphs
+took about 0.25 s end to end, the same file completely rewritten (24,000
+diff lines) about 1.3 s. A pathological change (thousands of lines
+reordered) stops searching early and falls back to a correct but
+non-minimal diff, flagged as approximate in the dialog.
 
 ### Apache httpd transfer
 

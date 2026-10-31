@@ -10,7 +10,7 @@
 <div class="log-body">
 <div class="log-message-full{{^message}} log-message-empty{{/message}} wa-flank wa-color-text-quiet"><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon><em>{{{message}}}</em></div>
 <ul class="changed-paths">
-{{#changed_paths}}<li class="action-{{action_class}} wa-flank"><wa-icon name="{{icon}}" variant="solid" style="font-size: 0.8rem;"></wa-icon><span>{{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}}{{#copyfrom}} <span class="copy-from wa-color-text-quiet wa-font-size-s">from {{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}} <span class="revision-badge revision-badge-small wa-font-size-s">{{{rev}}}</span></span>{{/copyfrom}}</span></li>
+{{#changed_paths}}<li class="action-{{action_class}} wa-flank"><wa-icon name="{{icon}}" variant="solid" style="font-size: 0.8rem;"></wa-icon><span>{{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}}{{#copyfrom}} <span class="copy-from wa-color-text-quiet wa-font-size-s">from {{#href}}<a href="{{{href}}}">{{{path}}}</a>{{/href}}{{^href}}{{{path}}}{{/href}} <span class="revision-badge revision-badge-small wa-font-size-s">{{{rev}}}</span></span>{{/copyfrom}}{{#diff_href}} <a class="changed-path-diff" href="{{{diff_href}}}" hx-action="{{{diff_href}}}" hx-method="REPORT" hx-target="#svn-diff-content" hx-swap="innerHTML" hx-trigger="click" title="Diff" aria-label="Diff against the previous revision"><wa-icon name="code-compare" variant="solid"></wa-icon></a>{{/diff_href}}</span></li>
 {{/changed_paths}}</ul>
 </div>
 </wa-details>
