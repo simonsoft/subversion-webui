@@ -1368,6 +1368,7 @@ describe("svn-index output_filter", function()
         }, "/svn/demo1/trunk/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(pinned_html:find('<span class="revision-badge wa-font-size-s">10</span>', 1, true))
+        assert.truthy(pinned_html:find('<a class="revision-view-current" href="/svn/demo1/trunk/" title="View current">', 1, true))
 
         local head_html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
@@ -1383,6 +1384,7 @@ describe("svn-index output_filter", function()
         -- the <span> markup itself is what actually proves the badge is
         -- (or isn't) rendered.
         assert.falsy(head_html:find('<span class="revision-badge">', 1, true))
+        assert.falsy(head_html:find('<a class="revision-view-current"', 1, true))
     end)
 
     it("\"Up\" preserves the revision pin while staying inside the same repository, \"Start\" resets to HEAD (confirmed with the user)", function()
