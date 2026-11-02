@@ -113,11 +113,7 @@ document.addEventListener("htmx:before:swap", (event) => {
                 // otherwise still show a chevron that reveals nothing
                 // when clicked.
                 child.remove();
-            } else if (child.getAttribute("hx-trigger") !== "load") {
-                // hx-trigger="load" is dir.mustache's own is_target_any
-                // marker (set server-side; see ENTRY_CONTEXT_BUILDERS.dir)
-                // -- those get "expanded" instead, in the
-                // "htmx:after:swap" listener below.
+            } else {
                 child.setAttribute("lazy", "");
             }
         }
@@ -126,56 +122,97 @@ document.addEventListener("htmx:before:swap", (event) => {
 
 document.addEventListener("htmx:after:swap", (event) => {
     // Covers a directory's own content finishing loading, whether that was
-    // triggered by a real chevron click (lazy="true" -> wa-lazy-load), an
-    // on-path entry's own hx-trigger="load" auto-firing, or the nav tree's
-    // own root-level population -- event.target is either a
+    // triggered by a chevron click or this walk itself (lazy="true" ->
+    // wa-lazy-load), or the nav tree's own root-level population --
+    // event.target is either a
     // "wa-tree-item.dir" or the "svn-nav" tree itself in every such case,
     // and both always sit inside (or, for the tree itself, at the root of)
     // ".svn-nav", so a single ancestor check covers all of them uniformly.
     // Never fires for main's own copies: their hx-trigger="wa-lazy-load"
     // never actually fires there (no chevron is ever shown, since they're
-    // never marked lazy and never on-path), so this swap target never
-    // occurs for them, and main's own tree doesn't carry the "svn-nav"
-    // class anyway.
+    // never marked lazy), so this swap target never occurs for them, and
+    // main's own tree doesn't carry the "svn-nav" class anyway.
+    //
+    // Nav walks itself open down to the current page's folder: of the
+    // folders just inserted, the one on the path to it is expanded -- an
+    // ordinary lazy expansion, so wa-tree-item shows its own spinner and
+    // fires wa-lazy-load, whose fetch lands back here for the next level
+    // -- and the folder itself is also selected. Expanding waits until
+    // wa-tree-item is defined and the entry has rendered: on a first visit
+    // Web Awesome's autoloader may still be loading it when the root
+    // listing arrives, and wa-tree-item ignores an "expanded" change made
+    // before its first render (watch("expanded", { waitUntilFirstUpdate:
+    // true })), which would leave the folder open but never loaded.
     if (event.target.closest?.(".svn-nav")) {
-        // hx-trigger="load" is dir.mustache's own is_target_any marker (set
-        // server-side; see ENTRY_CONTEXT_BUILDERS.dir) -- reading it back
-        // here, rather than templating a separate "expanded" attribute
-        // too, keeps that expressed in exactly one place. This sets
-        // "expanded" as a real JS property, never relying on a
-        // static HTML attribute alone: confirmed via a real browser that
-        // an "expanded" attribute present in the server-rendered markup
-        // itself can still end up visually collapsed somewhere in this
-        // actual htmx-driven insert-then-self-fetch flow (not
-        // reproducible from a plain, non-htmx element in isolation).
-        // "selected" marks dir.mustache's own is_target_leaf match (see
-        // ENTRY_CONTEXT_BUILDERS.dir) -- unlike "expanded" above, the
-        // static attribute alone renders correctly here, confirmed via a
-        // real browser, so it needs no JS re-assertion.
-        const dirChildren = event.target.querySelectorAll(":scope > wa-tree-item.dir");
-        dirChildren.forEach((child) => {
-            if (child.getAttribute("hx-trigger") === "load") {
-                child.expanded = true;
+        event.target.querySelectorAll(":scope > wa-tree-item.dir").forEach((child) => {
+            const relation = navPathRelation(child);
+
+            if (relation) {
+                customElements.whenDefined("wa-tree-item").then(() => child.updateComplete).then(() => {
+                    child.expanded = true;
+
+                    if (relation === "current") {
+                        child.selected = true;
+                    }
+                });
             }
         });
+    }
+});
 
-        // "lazy"/"loading"/"isLeaf" are only meaningful on a wa-tree-item
-        // itself, not on the root <wa-tree> (the "svn-nav" branch of this
-        // same check, i.e. the tree's own initial population) --
-        // wa-tree-item's own "loading" state (the spinner shown while
-        // lazy) is separate from the "lazy" attribute and only clears once
-        // the item actually observes its children change; when the
-        // expanded directory is empty, hx-select matches nothing, so
-        // beforeend appends zero nodes and "loading" (confirmed via
-        // aria-busy) would otherwise be left stuck forever. Setting
-        // "loading"/"isLeaf" directly, as real settable properties rather
-        // than just computed ones, covers both regardless of whether
-        // anything was actually appended.
-        if (event.target.matches?.("wa-tree-item.dir")) {
-            event.target.removeAttribute("lazy");
-            event.target.loading = false;
-            event.target.isLeaf = dirChildren.length === 0;
-        }
+// Where a nav folder stands relative to the current page's own folder:
+// "current" (it is that folder), "ancestor" (on the path to it), or null.
+// Path and "?p=" revision pin are compared independently: an ancestor's
+// hx-get (".../trunk/?p=10") is never a string prefix of the current URL
+// (".../trunk/sub/?p=10"), since they diverge exactly where one has "?p=10"
+// and the other continues with "sub/". A missing pin on both sides (HEAD)
+// counts as the same revision. The prefix check relies on every folder
+// href ending in "/" (svn-index.lua warns if mod_dav_svn ever emits one
+// without it), so "trunk/" never matches a sibling "trunk-extra/".
+function navPathRelation(item) {
+    const href = new URL(item.getAttribute("hx-get"), location.href);
+
+    if (href.searchParams.get("p") !== new URLSearchParams(location.search).get("p")) {
+        return null;
+    }
+    if (href.pathname === location.pathname) {
+        return "current";
+    }
+    return location.pathname.startsWith(href.pathname) ? "ancestor" : null;
+}
+
+// A nav folder's own fetch has ended, however it ended -- htmx fires
+// "htmx:finally:request" once per request, after a swap, an HTTP error or
+// no response at all (network error, timeout, abort), unlike
+// "htmx:after:swap", which a failed request never reaches. wa-tree-item's
+// own "loading" state (the spinner shown while lazy) only clears once the
+// item observes its children change -- an empty folder appends nothing
+// (hx-select matches nothing, and files are dropped, see above), and a
+// failed request swaps nothing -- so it's always cleared here. Only a
+// successful response also marks the folder loaded: no longer lazy, and a
+// leaf when it has no subfolders. A failed one collapses it again and
+// leaves it lazy, so expanding it once more retries the fetch; an HTTP
+// error's page is still swapped by htmx (only 204/304 aren't) but matches
+// nothing either, so it must not make the folder look empty. "lazy"/"isLeaf" are
+// set as real properties/attributes rather than relying on wa-tree-item's
+// own computation, which only runs on a children change. Only for a
+// wa-tree-item itself, never the root <wa-tree>'s own population fetch.
+document.addEventListener("htmx:finally:request", (event) => {
+    const item = event.target;
+
+    if (!item.matches?.(".svn-nav wa-tree-item.dir")) {
+        return;
+    }
+
+    item.loading = false;
+
+    const status = event.detail.ctx.response?.status;
+
+    if (status >= 200 && status < 400) {
+        item.removeAttribute("lazy");
+        item.isLeaf = item.querySelectorAll(":scope > wa-tree-item.dir").length === 0;
+    } else {
+        item.expanded = false;
     }
 });
 
@@ -206,6 +243,30 @@ document.addEventListener("htmx:after:swap", (event) => {
         // view of this same dialog, so the toggle's own label is reset
         // here to match.
         setHistoryExpandToggleLabel(false);
+    }
+});
+
+// A changed path's diff link (see log-item.mustache's ".changed-path-diff")
+// swaps into "#svn-diff-content", inside the static "#svn-diff-dialog" --
+// opened here once the swap lands, for the same reason as History above,
+// and on top of the still-open History dialog: both are wa-dialogs, which
+// open as native modal <dialog>s, so the newest one stacks above the
+// other in the top layer, and Web Awesome's own shared "dismissible"
+// stack makes Escape close only the top one (confirmed against Web
+// Awesome 3.12's own source, along with light-dismiss only reacting to a
+// click on that dialog's own backdrop, and body scroll-locking being
+// counted per dialog). Closing the diff therefore lands back on History,
+// exactly where it was. The dialog's own label is the file's name, which
+// diff.mustache carries as "data-label" on its outermost element (a
+// rendered error has none, leaving "Diff"). A new diff starts scrolled to
+// its top, not wherever the previous one was left.
+document.addEventListener("htmx:after:swap", (event) => {
+    if (event.detail.ctx.target?.id === "svn-diff-content") {
+        const dialog = document.getElementById("svn-diff-dialog");
+
+        dialog.label = event.detail.ctx.target.querySelector(".svn-diff")?.dataset.label || "Diff";
+        event.detail.ctx.target.scrollTop = 0;
+        dialog.open = true;
     }
 });
 
@@ -390,6 +451,31 @@ document.addEventListener("wa-hide", (event) => {
         scheduleHistoryExpandToggleLabelSync();
     }
 });
+
+// A "?history"/"?history=<filename>" page (see svn-index.lua) opens the
+// History dialog on load -- so once the user closes it, that param is
+// dropped from the address bar too, or reloading (or bookmarking, or
+// copying the URL) would open it all over again. history.replaceState,
+// not pushState: closing a dialog isn't a navigation the Back button
+// should step through. htmx's own state object is passed back untouched,
+// and so is the rest of the URL, fragment included. (URLSearchParams
+// re-encodes the params it keeps, but the only other one a page URL ever
+// carries is "p", a plain revision number.) "wa-after-hide" bubbles up
+// from every Web Awesome element inside the dialog too (an entry's own
+// <wa-details> collapsing, a tooltip), so only the dialog's own event
+// counts.
+document.addEventListener("wa-after-hide", (event) => {
+    if (event.target.id !== "svn-history-dialog") {
+        return;
+    }
+
+    const url = new URL(window.location.href);
+
+    if (url.searchParams.has("history")) {
+        url.searchParams.delete("history");
+        history.replaceState(history.state, "", url);
+    }
+});
 </script>
 <style>
 wa-page {
@@ -504,6 +590,12 @@ nav[slot="subheader"] {
     border: var(--wa-border-width-s) dashed var(--wa-color-surface-border);
     border-radius: 0;
     padding: 0 var(--wa-space-2xs);
+}
+
+/* "View current" link after the badge: the History header icon
+   (clock-rotate-left) mirrored, i.e. a clock rotating forward in time. */
+.revision-view-current wa-icon {
+    transform: scaleX(-1);
 }
 
 /* Pure-CSS show/hide, no JS: wa-switch exposes its checked state via the
@@ -937,6 +1029,146 @@ wa-page[view='mobile'] .log-body {
     gap: var(--wa-space-2xs);
 }
 
+/* A changed path's diff link (see log-item.mustache), right after the path
+   itself: just its icon, muted until hovered, same color reset as the path
+   link above. Dimmed while its own request is in flight -- htmx puts
+   "htmx-request" on the requesting element -- since the dialog only opens
+   once the diff has arrived. */
+.changed-path-diff {
+    color: var(--wa-color-text-quiet);
+    margin-inline-start: var(--wa-space-2xs);
+}
+
+.changed-path-diff:hover {
+    color: inherit;
+}
+
+.changed-path-diff.htmx-request {
+    opacity: 0.4;
+    cursor: progress;
+}
+
+/* "#svn-diff-dialog" sizes to its content, unlike History's fixed height
+   -- a diff is as long as it is, and a short one shouldn't sit in a mostly
+   empty box -- scrolling internally past this height instead. */
+#svn-diff-content {
+    max-height: 75vh;
+    overflow-y: auto;
+}
+
+#svn-diff-dialog::part(dialog) {
+    max-width: 1620px;
+}
+
+.svn-diff {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-m);
+}
+
+.svn-diff-path a {
+    color: inherit;
+}
+
+/* A revision badge's tooltip (see diff.mustache): the commit laid out like
+   a History entry's own summary -- revision, date, author, then message. */
+.svn-diff-commit {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-2xs);
+    text-align: start;
+}
+
+.svn-diff-prop {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-2xs);
+}
+
+/* One table per property value and one for all content hunks (see
+   diff.mustache/diff-line.mustache): two narrow line-number columns, then
+   the line itself, wrapped rather than scrolled sideways -- long
+   paragraph-per-line XML is the common case here. Removed/added rows get
+   Web Awesome's own quiet danger/success fills, and the words that
+   actually changed within a paired line the stronger fill of the same
+   color. The "-"/"+" prefix is generated content, so copying lines out of
+   the diff doesn't pick it up. */
+.svn-diff-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--wa-font-family-code);
+    font-size: var(--wa-font-size-s);
+    line-height: 1.5;
+    border: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
+}
+
+.svn-diff-table td {
+    padding: 0 var(--wa-space-xs);
+    vertical-align: top;
+}
+
+.svn-diff-number {
+    width: 1%;
+    text-align: right;
+    white-space: nowrap;
+    color: var(--wa-color-text-quiet);
+    user-select: none;
+}
+
+.svn-diff-code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.svn-diff-code::before {
+    content: " ";
+    display: inline-block;
+    width: 1.5ch;
+    user-select: none;
+}
+
+.svn-diff-removed {
+    background: var(--wa-color-danger-fill-quiet);
+}
+
+.svn-diff-removed .svn-diff-code::before {
+    content: "-";
+}
+
+.svn-diff-added {
+    background: var(--wa-color-success-fill-quiet);
+}
+
+.svn-diff-added .svn-diff-code::before {
+    content: "+";
+}
+
+.svn-diff-code mark {
+    color: inherit;
+    border-radius: var(--wa-border-radius-s);
+}
+
+.svn-diff-removed mark {
+    background: var(--wa-color-danger-fill-normal);
+}
+
+.svn-diff-added mark {
+    background: var(--wa-color-success-fill-normal);
+}
+
+.svn-diff-no-newline {
+    color: var(--wa-color-text-quiet);
+    font-size: 0.75em;
+    margin-inline-start: var(--wa-space-2xs);
+}
+
+/* "@@ -a,b +c,d @@" separator row between hunks. */
+.svn-diff-hunk td {
+    padding: var(--wa-space-2xs) var(--wa-space-xs);
+    background: var(--wa-color-neutral-fill-quiet);
+    color: var(--wa-color-text-quiet);
+}
+
 /* The navigation tree only ever browses folders -- files (and the ".."
    entry, which is superseded by the header's "Up" button) fetched into it
    via htmx are hidden here regardless of how deeply they end up nested. */
@@ -998,6 +1230,22 @@ wa-tree-item.navhidden > span {
 wa-tree-item a {
     color: inherit;
     text-decoration: none;
+}
+
+/* An icon in front of a label (tree entries, breadcrumbs, the History
+   message preview) is spaced from the text by a margin, not a literal
+   space: a space is part of the text, so a hovered file link's underline
+   ran under it too, and its width varies with the font. Same token as
+   ".log-author"'s own flex gap, which already spaces its icon this way;
+   about the width the space had (3.9-4.5px measured in Chromium). A
+   badged icon (".icon-badged", below) gets it on its wrapper instead.
+   file.mustache's History icon, inside ".file-actions", has no label and
+   isn't matched. */
+wa-tree-item > a > :is(wa-icon, .icon-badged):first-child,
+wa-tree-item > span > a > :is(wa-icon, .icon-badged):first-child,
+wa-breadcrumb-item > wa-icon,
+.log-message-preview > span > wa-icon {
+    margin-inline-end: var(--wa-space-2xs);
 }
 
 /* Hovering anywhere in a file row underlines its own name link, matching
@@ -1183,6 +1431,14 @@ wa-tree-item.dir > span {
 <wa-button id="svn-history-expand-toggle" appearance="plain" size="s">Expand all</wa-button>
 </div>
 <div id="svn-history-content"{{#history_active}} hx-action="{{{request_href}}}{{{history_target}}}{{{history_query_suffix}}}" hx-method="REPORT" hx-trigger="load"{{/history_active}}></div>
+</wa-dialog>
+<!-- Opened on top of "#svn-history-dialog" by a changed path's diff link
+     (see the "svn-diff-content" htmx:after:swap listener above). A sibling
+     of the History dialog rather than nested inside it: stacking works
+     either way (both paint in the top layer), but a nested one's own
+     wa-show/wa-hide events would bubble through History's element too. -->
+<wa-dialog id="svn-diff-dialog" label="Diff" light-dismiss style="--width: 90vw;">
+<div id="svn-diff-content"></div>
 </wa-dialog>
 </wa-page>
 </body>
