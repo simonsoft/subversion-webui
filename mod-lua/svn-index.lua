@@ -233,10 +233,9 @@ local function percent_encode_query(value)
     end))
 end
 
--- Strips a full URL (e.g. htmx's "HX-Current-URL" request header, which
--- mirrors the browser's own location.href) down to just its path, for
--- comparing against this filter's own path-only hrefs -- drops the
--- scheme://host[:port] prefix and any trailing query string/fragment.
+-- Strips a URL (a full one, or a path-plus-query such as r.unparsed_uri or
+-- an entry href) down to just its path -- drops any scheme://host[:port]
+-- prefix and any trailing query string/fragment.
 local function url_path(url)
     local path = url:match("^%a[%w+.-]*://[^/]*(/.*)$") or url
 
@@ -245,14 +244,10 @@ end
 
 -- Extracts the value of `key` from a query string. Works uniformly whether
 -- `str` is a bare query string (r.args, no leading "?"), a path-plus-query
--- value (hx_href, e.g. "/svn/demo3/lang/?p=10"), or a full URL
--- (HX-Current-URL) -- if there's a "?", only what follows it is treated as
--- the query. mod_lua's own r:parseargs() only ever parses the *current
--- request's* own r.args, which covers just one of the three call sites
--- this is used from (the other two are a request header value and a
--- string this filter builds itself) -- using one hand-rolled mechanism
--- uniformly, rather than mixing that in for just the one case it covers,
--- keeps this simpler and testable without a real Apache request object.
+-- value (e.g. "/svn/demo3/lang/?p=10") or a full URL -- if there's a "?",
+-- only what follows it is treated as the query. Hand-rolled rather than
+-- mod_lua's own r:parseargs(), which keeps this testable without a real
+-- Apache request object.
 --
 -- Returns "" (not nil) for a bare key -- present with no "=" at all (e.g.
 -- "?history" rather than "?history=" or "?history=x") -- the common
@@ -446,7 +441,7 @@ local ENTRY_CONTEXT_BUILDERS = {
     -- query_file_params (SVN_INDEX_QUERY_FILE) is applied only to file
     -- entries' own links (confirmed with the user) -- dir/updir/repo never
     -- receive it.
-    file = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, index_path, repo_root, history_query_suffix)
+    file = function(attr, request_href, query_file_params, r, hide_dir_pattern, index_path, repo_root, history_query_suffix)
         local href = attr.href or "#"
         local hx_href = append_query(request_href .. href, query_file_params)
 
@@ -485,63 +480,29 @@ local ENTRY_CONTEXT_BUILDERS = {
         }
     end,
 
-    -- nav_target_path/nav_target_revision (the path and "?p=" revision
-    -- portions of htmx's "HX-Current-URL" request header, only ever
-    -- computed for nav's own requests -- see the "nav_target_path" comment
-    -- in output_filter()) are nil for every other request, so
-    -- "is_target_any" is naturally false/omitted everywhere else,
-    -- including every "repo" entry (aliased below): a repo's own hx_href
-    -- is never a prefix match unless the request is literally for the
-    -- Collection-of-Repositories page itself, which compares against a
-    -- *shorter* path that can't "start with" a longer one.
     -- hide_dir_pattern (SVN_INDEX_HIDE_DIR, see output_filter) is only
     -- ever meant for ordinary directories -- this same function also runs
     -- for "repo" entries via the alias below, so "navhidden" ends up
     -- computed (but unused) there too: repo.mustache deliberately never
     -- references it, so a repo name matching the pattern has no visible
     -- effect.
-    dir = function(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, index_path)
+    dir = function(attr, request_href, query_file_params, r, hide_dir_pattern, index_path)
         local name = (attr.name or attr.href or ""):gsub("/$", "")
         local href = attr.href or "#"
 
-        -- "is_target_any" below is a prefix check that relies on every
-        -- directory href ending in "/" (before any "?p=REV" revision-pin
-        -- suffix mod_dav_svn may have attached) to avoid false-matching a
-        -- sibling with a shared prefix (e.g. "trunk" vs "trunk-extra") --
-        -- warn loudly if mod_dav_svn ever emits one without it, since that
-        -- assumption would otherwise fail silently.
+        -- page.mustache's nav walk (the "htmx:after:swap" listener) finds
+        -- the folders on the path to the current page by a prefix check on
+        -- their hx-get, which relies on every directory href ending in "/"
+        -- (before any "?p=REV" revision-pin suffix mod_dav_svn may have
+        -- attached) to avoid false-matching a sibling with a shared prefix
+        -- (e.g. "trunk" vs "trunk-extra") -- warn loudly if mod_dav_svn ever
+        -- emits one without it, since that assumption would otherwise fail
+        -- silently.
         if url_path(href):sub(-1) ~= "/" then
             r:warn("svn-index: dir href does not end with '/': " .. tostring(href))
         end
 
         local hx_href = request_href .. href
-        local hx_href_path = url_path(hx_href)
-        local hx_href_revision = parse_query_param(hx_href, "p")
-
-        -- Path and revision-pin must independently agree for this entry to
-        -- be considered on the path to nav_target_path -- they can't be
-        -- folded into a single whole-string comparison: an ancestor's own
-        -- hx_href (".../trunk/?p=10") is never a string-prefix of a deeper
-        -- target's own path (".../trunk/arbortext/", nav_target_path is
-        -- already query-free) even with the query included on both sides,
-        -- since they diverge exactly where one has "?p=10" and the other
-        -- continues with "arbortext/". Revision compared via plain
-        -- equality -- nil == nil (both unpinned, i.e. both HEAD) counts as
-        -- a match.
-        local same_revision = hx_href_revision == nav_target_revision
-
-        -- Three mutually-informing views of the same relationship between
-        -- this entry and nav_target_path: "is_target_any" (a strict
-        -- ancestor of the target, or the target itself -- i.e. "should
-        -- this be walked open at all"), "is_target_leaf" (an exact match
-        -- -- i.e. "is this the one nav's current selection points at"),
-        -- and "is_target_ancestor" (on the path but not the target itself
-        -- -- i.e. "should this be opened, but isn't itself the selection").
-        local is_target_any = nav_target_path and same_revision
-            and nav_target_path:sub(1, #hx_href_path) == hx_href_path
-        local is_target_leaf = nav_target_path and same_revision
-            and nav_target_path == hx_href_path
-        local is_target_ancestor = is_target_any and not is_target_leaf
 
         -- r:regex() returns a *table* (truthy) on match, `false` on no
         -- match -- normalized to a plain boolean here (rather than handing
@@ -575,9 +536,6 @@ local ENTRY_CONTEXT_BUILDERS = {
             name = escape_html(name),
             href = escape_html(href),
             hx_href = escape_html(hx_href),
-            is_target_any = is_target_any,
-            is_target_leaf = is_target_leaf,
-            is_target_ancestor = is_target_ancestor,
             navhidden = navhidden,
             icon = escape_html(icon),
             icon_badge = icon_badge,
@@ -593,7 +551,7 @@ local ENTRY_CONTEXT_BUILDERS = {
 -- same context shape as "dir".
 ENTRY_CONTEXT_BUILDERS.repo = ENTRY_CONTEXT_BUILDERS.dir
 
-local function render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, index_path, repo_root, history_query_suffix)
+local function render_entry(element, attr, request_href, templates, query_file_params, r, hide_dir_pattern, index_path, repo_root, history_query_suffix)
     local build_context = ENTRY_CONTEXT_BUILDERS[element]
     local entry_template = templates.entries[element]
 
@@ -601,7 +559,7 @@ local function render_entry(element, attr, request_href, templates, query_file_p
         return nil
     end
 
-    return lustache:render(entry_template, build_context(attr, request_href, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, index_path, repo_root, history_query_suffix))
+    return lustache:render(entry_template, build_context(attr, request_href, query_file_params, r, hide_dir_pattern, index_path, repo_root, history_query_suffix))
 end
 
 function output_filter(r)
@@ -784,27 +742,6 @@ function output_filter(r)
         r:info("HX-Current-URL: " .. tostring(r.headers_in["HX-Current-URL"]))
     end
 
-    -- Powers nav's auto-expand-to-current-folder: since location.href never
-    -- actually changes during nav's own background fetches (only real page
-    -- loads do that), every request in the chain sees the same
-    -- HX-Current-URL -- the one real target the whole cascade is walking
-    -- toward -- so each one can independently decide, from this alone,
-    -- whether any of its own entries sit on the path to it (see
-    -- "is_target_any" in ENTRY_CONTEXT_BUILDERS.dir). Excluded for main's own
-    -- content-swap request (a named swap target, the same distinction
-    -- HX-Push-Url below also uses) -- otherwise, browsing several
-    -- levels deep via main and then clicking a *shallower* ancestor's
-    -- label in nav would see HX-Current-URL still pointing at the deeper
-    -- (pre-navigation) URL and could wrongly mark one of main's own,
-    -- supposedly-always-flat entries as on the path.
-    local nav_target_path = nil
-    local nav_target_revision = nil
-
-    if r.headers_in and r.headers_in["HX-Current-URL"] and not is_named_swap_target(r.headers_in["HX-Target"]) then
-        nav_target_path = url_path(r.headers_in["HX-Current-URL"])
-        nav_target_revision = parse_query_param(r.headers_in["HX-Current-URL"], "p")
-    end
-
     -- Set these before emitting any transformed response content.
     r.content_type = "text/html; charset=utf-8"
 
@@ -820,10 +757,10 @@ function output_filter(r)
     -- Every htmx-issued request against this endpoint -- both nav's own
     -- lazy-expansion fetches and a real main-content-swap navigation --
     -- hits the *same* URL as every other request for that path; only
-    -- request headers (HX-Target, HX-Current-URL) distinguish which
-    -- variant of the response comes back (see nav_target_path and the
-    -- ETag omission below). A URL-keyed cache can't see those headers, so
-    -- storing any one variant risks it being replayed for a different one.
+    -- request headers (HX-Target) distinguish which variant of the
+    -- response comes back (HX-Push-Url, below, is sent for main's own swap
+    -- only). A URL-keyed cache can't see those headers, so storing any one
+    -- variant risks it being replayed for a different one.
     -- Gated on HX-Request (present on every htmx-issued fetch, htmx.org
     -- convention) rather than applied to all requests, so an ordinary
     -- full-page load -- always the same, safely cacheable document for its
@@ -1043,13 +980,12 @@ function output_filter(r)
                 -- semantically-equivalent rendering of the underlying
                 -- revision, not a byte-precise one. Only set when this
                 -- response is provably a pure function of (repo, path,
-                -- revision): omitted for nav's own root/lazy-expansion
-                -- fetches (nav_target_path truthy -- see the comment above
-                -- it), whose expanded/selected markers can differ for the
-                -- identical URL+revision depending on the browser's
-                -- current HX-Current-URL; also omitted on the Collection-
-                -- of-Repositories listing, which has no revision concept
-                -- at all -- gated on "index.base ~= \"\"" (the same
+                -- revision) -- every listing is, nav's own fetches
+                -- included, since nav walks itself open to the current
+                -- folder in the browser (see page.mustache) rather than
+                -- the server marking entries from HX-Current-URL. Omitted
+                -- on the Collection-of-Repositories listing, which has no
+                -- revision concept at all -- gated on "index.base ~= \"\"" (the same
                 -- has_base signal template_context() already relies on),
                 -- NOT "index.rev ~= \"\"": confirmed against a real server
                 -- that mod_dav_svn still emits a "rev" attribute (e.g.
@@ -1059,7 +995,7 @@ function output_filter(r)
                 -- is mod_dav_svn's own trusted XML output (always a plain
                 -- integer), not client-supplied, so no separate escaping is
                 -- needed for the header value.
-                if index.base ~= "" and not nav_target_path then
+                if index.base ~= "" then
                     r.headers_out["ETag"] = 'W/"' .. index.rev .. '-lua"'
                 end
 
@@ -1072,8 +1008,8 @@ function output_filter(r)
                     local has_base = index.base ~= ""
                     breadcrumbs, segment_count, repo_parent_path = compute_breadcrumbs(index.path, index.base, has_base, request_href, revision_suffix)
 
-                    -- Nav walks the browsed path open on its own (see
-                    -- is_target_any in ENTRY_CONTEXT_BUILDERS.dir), but a
+                    -- Nav walks the browsed path open on its own (see the
+                    -- "htmx:after:swap" listener in page.mustache), but a
                     -- navhidden directory anywhere on that path -- the
                     -- browsed directory itself included -- stays hidden
                     -- while "Show folders" is off, leaving the walked-open
@@ -1153,7 +1089,7 @@ function output_filter(r)
                 element = "repo"
             end
 
-            local html = render_entry(element, attr, request_href, templates, query_file_params, nav_target_path, nav_target_revision, r, hide_dir_pattern, index.path, repo_root, history_query_suffix)
+            local html = render_entry(element, attr, request_href, templates, query_file_params, r, hide_dir_pattern, index.path, repo_root, history_query_suffix)
 
             if html then
                 rendered_count = rendered_count + 1

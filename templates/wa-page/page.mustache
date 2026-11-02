@@ -81,11 +81,7 @@ document.addEventListener("htmx:before:swap", (event) => {
                 // otherwise still show a chevron that reveals nothing
                 // when clicked.
                 child.remove();
-            } else if (child.getAttribute("hx-trigger") !== "load") {
-                // hx-trigger="load" is dir.mustache's own is_target_any
-                // marker (set server-side; see ENTRY_CONTEXT_BUILDERS.dir)
-                // -- those get "expanded" instead, in the
-                // "htmx:after:swap" listener below.
+            } else {
                 child.setAttribute("lazy", "");
             }
         }
@@ -94,39 +90,64 @@ document.addEventListener("htmx:before:swap", (event) => {
 
 document.addEventListener("htmx:after:swap", (event) => {
     // Covers a directory's own content finishing loading, whether that was
-    // triggered by a real chevron click (lazy="true" -> wa-lazy-load), an
-    // on-path entry's own hx-trigger="load" auto-firing, or the nav tree's
-    // own root-level population -- event.target is either a
+    // triggered by a chevron click or this walk itself (lazy="true" ->
+    // wa-lazy-load), or the nav tree's own root-level population --
+    // event.target is either a
     // "wa-tree-item.dir" or the "svn-nav" tree itself in every such case,
     // and both always sit inside (or, for the tree itself, at the root of)
     // ".svn-nav", so a single ancestor check covers all of them uniformly.
     // Never fires for main's own copies: their hx-trigger="wa-lazy-load"
     // never actually fires there (no chevron is ever shown, since they're
-    // never marked lazy and never on-path), so this swap target never
-    // occurs for them, and main's own tree doesn't carry the "svn-nav"
-    // class anyway.
+    // never marked lazy), so this swap target never occurs for them, and
+    // main's own tree doesn't carry the "svn-nav" class anyway.
+    //
+    // Nav walks itself open down to the current page's folder: of the
+    // folders just inserted, the one on the path to it is expanded -- an
+    // ordinary lazy expansion, so wa-tree-item shows its own spinner and
+    // fires wa-lazy-load, whose fetch lands back here for the next level
+    // -- and the folder itself is also selected. Expanding waits until
+    // wa-tree-item is defined and the entry has rendered: on a first visit
+    // Web Awesome's autoloader may still be loading it when the root
+    // listing arrives, and wa-tree-item ignores an "expanded" change made
+    // before its first render (watch("expanded", { waitUntilFirstUpdate:
+    // true })), which would leave the folder open but never loaded.
     if (event.target.closest?.(".svn-nav")) {
-        // hx-trigger="load" is dir.mustache's own is_target_any marker (set
-        // server-side; see ENTRY_CONTEXT_BUILDERS.dir) -- reading it back
-        // here, rather than templating a separate "expanded" attribute
-        // too, keeps that expressed in exactly one place. This sets
-        // "expanded" as a real JS property, never relying on a
-        // static HTML attribute alone: confirmed via a real browser that
-        // an "expanded" attribute present in the server-rendered markup
-        // itself can still end up visually collapsed somewhere in this
-        // actual htmx-driven insert-then-self-fetch flow (not
-        // reproducible from a plain, non-htmx element in isolation).
-        // "selected" marks dir.mustache's own is_target_leaf match (see
-        // ENTRY_CONTEXT_BUILDERS.dir) -- unlike "expanded" above, the
-        // static attribute alone renders correctly here, confirmed via a
-        // real browser, so it needs no JS re-assertion.
         event.target.querySelectorAll(":scope > wa-tree-item.dir").forEach((child) => {
-            if (child.getAttribute("hx-trigger") === "load") {
-                child.expanded = true;
+            const relation = navPathRelation(child);
+
+            if (relation) {
+                customElements.whenDefined("wa-tree-item").then(() => child.updateComplete).then(() => {
+                    child.expanded = true;
+
+                    if (relation === "current") {
+                        child.selected = true;
+                    }
+                });
             }
         });
     }
 });
+
+// Where a nav folder stands relative to the current page's own folder:
+// "current" (it is that folder), "ancestor" (on the path to it), or null.
+// Path and "?p=" revision pin are compared independently: an ancestor's
+// hx-get (".../trunk/?p=10") is never a string prefix of the current URL
+// (".../trunk/sub/?p=10"), since they diverge exactly where one has "?p=10"
+// and the other continues with "sub/". A missing pin on both sides (HEAD)
+// counts as the same revision. The prefix check relies on every folder
+// href ending in "/" (svn-index.lua warns if mod_dav_svn ever emits one
+// without it), so "trunk/" never matches a sibling "trunk-extra/".
+function navPathRelation(item) {
+    const href = new URL(item.getAttribute("hx-get"), location.href);
+
+    if (href.searchParams.get("p") !== new URLSearchParams(location.search).get("p")) {
+        return null;
+    }
+    if (href.pathname === location.pathname) {
+        return "current";
+    }
+    return location.pathname.startsWith(href.pathname) ? "ancestor" : null;
+}
 
 // A nav folder's own fetch has ended, however it ended -- htmx fires
 // "htmx:finally:request" once per request, after a swap, an HTTP error or
