@@ -539,6 +539,12 @@ nav[slot="subheader"] {
     padding: 0 var(--wa-space-2xs);
 }
 
+/* "View current" link after the badge: the History header icon
+   (clock-rotate-left) mirrored, i.e. a clock rotating forward in time. */
+.revision-view-current wa-icon {
+    transform: scaleX(-1);
+}
+
 /* Pure-CSS show/hide, no JS: wa-switch exposes its checked state via the
    standard custom-element-internals ":state()" pseudo-class (confirmed via
    a real browser -- unlike its "checked" *attribute*, which does NOT
