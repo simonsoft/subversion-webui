@@ -442,21 +442,9 @@ local function build_changed_path_href(repo_root, path, revision, node_kind, que
     return href
 end
 
--- Builds the "load more" sentinel's own href: same directory currently
--- being browsed (request_href, exactly like render_log_item's own
--- revision_href below), pinned via "?p=" at one revision below the last
--- entry actually rendered -- continuing the backward walk from exactly
--- where this batch left off, without re-showing that last entry itself.
--- The bare "more" flag is what tells input_filter/output_filter's own
--- resolve_log_limit calls to consult SVN_LOG_LIMIT_SCROLL instead of
--- SVN_LOG_LIMIT for this next batch. repo_root is echoed through unchanged
--- (same raw query-string value this request itself received) so
--- changed-path links keep working on the next batch too -- it isn't
--- otherwise derivable by this filter (see build_changed_path_href's own
--- comment on why).
 -- Builds a changed path's own diff link (see svn-diff.lua): the file's
--- URL pinned at this entry's revision, plus the bare "diff" flag (what tells
--- input_filter/output_filter to run a file-revs-report instead of a
+-- URL pinned at this entry's revision, plus the bare "diff" flag (what
+-- tells input_filter/output_filter to run a file-revs-report instead of a
 -- log-report) and repo_root echoed through, like build_more_href, so the
 -- diff can link its old/new paths. Deliberately never carries
 -- SVN_INDEX_QUERY_FILE: that fragment exists to send a *browser's* GET to
@@ -470,6 +458,17 @@ end
 -- nothing to show). A server too old to send text-mods/prop-mods at all
 -- gets the link whenever the rest holds. nil whenever repo_root or the
 -- revision is unknown, same as build_changed_path_href.
+--
+-- Never offered for a directory, even one whose properties changed:
+-- file-revs-report only works on files, and no single mod_dav_svn request
+-- returns a directory's properties at two revisions (confirmed against
+-- mod_dav_svn's own reports/*.c) -- PROPFIND, and update-report's own
+-- full-property mode, give one revision only; replay-report and an
+-- update-report delta give just the new values of what changed, never the
+-- old ones. "svn diff" itself fetches a directory's old properties with a
+-- second request. An output filter only ever sees one response, so a
+-- before/after directory diff would take two requests combined somehow --
+-- left out for now.
 local function build_diff_href(repo_root, cp, revision)
     if not repo_root or repo_root == "" or not validate_nonneg_integer(revision) then
         return nil
@@ -489,6 +488,18 @@ local function build_diff_href(repo_root, cp, revision)
         .. "&diff&repo_root=" .. repo_root
 end
 
+-- Builds the "load more" sentinel's own href: same directory currently
+-- being browsed (request_href, exactly like render_log_item's own
+-- revision_href below), pinned via "?p=" at one revision below the last
+-- entry actually rendered -- continuing the backward walk from exactly
+-- where this batch left off, without re-showing that last entry itself.
+-- The bare "more" flag is what tells input_filter/output_filter's own
+-- resolve_log_limit calls to consult SVN_LOG_LIMIT_SCROLL instead of
+-- SVN_LOG_LIMIT for this next batch. repo_root is echoed through unchanged
+-- (same raw query-string value this request itself received) so
+-- changed-path links keep working on the next batch too -- it isn't
+-- otherwise derivable by this filter (see build_changed_path_href's own
+-- comment on why).
 local function build_more_href(request_href, next_revision, repo_root)
     local href = request_href .. "?p=" .. next_revision .. "&more"
 

@@ -422,6 +422,15 @@ plain rename, a plain add, a delete or a folder gets none. A copy or
 rename is diffed against its source; a file modified inside a branch that
 was copied in the same commit is diffed against its real predecessor.
 
+Folders get no icon even when their properties changed. The diff comes
+from one svn request, and for files `file-revs-report` returns both
+versions at once; for a folder, no single mod_dav_svn request returns its
+properties at two revisions (`PROPFIND` gives one revision, `replay`/
+`update` reports only the new values of what changed). `svn diff` itself
+makes a second request for a folder's old properties, and an output
+filter only ever sees one response -- so a folder property diff would
+need two requests combined, which isn't implemented.
+
 No extra Apache config is needed: it reuses the History filter pair above.
 The icon issues a `REPORT` on `<file>?p=N&diff`, which
 `SVN_LOG_REPORT_BODY` turns into an svn `file-revs-report` (the report
