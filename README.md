@@ -352,10 +352,10 @@ RewriteRule ^/log\.html$ - [F]
 # LOG_TARGET_SPLIT marks that this succeeded -- required by the final
 # rules below so a "target" that's missing entirely, or present but with
 # no "/" in it at all, produces no redirect at all (matching a missing
-# "target"), rather than one built from stale/empty LOG_PARENT/
+# "target"), rather than one built from stale/empty LOG_DIR/
 # LOG_FILENAME values left over from nothing actually having matched.
 RewriteCond %{ENV:LOG_TARGET} ^(.*)/([^/]*)$
-RewriteRule ^/log\.html$ - [E=LOG_PARENT:%1,E=LOG_FILENAME:%2,E=LOG_TARGET_SPLIT:1]
+RewriteRule ^/log\.html$ - [E=LOG_DIR:%1,E=LOG_FILENAME:%2,E=LOG_TARGET_SPLIT:1]
 
 # "base" into an env var: a RewriteRule's %N only refers to the LAST
 # matched RewriteCond, so "base" and "torev" can't each come from their
@@ -368,17 +368,17 @@ RewriteRule ^/log\.html$ - [E=LOG_BASE:%1]
 # ${escape:...} re-encodes anything that still needs it (a space in the
 # filename, say) -- confirmed against ap_escape_uri's own source comment
 # that, on Unix, it deliberately leaves "/" alone as a path separator, so
-# this doesn't turn LOG_PARENT's own real "/" characters back into "%2F".
+# this doesn't turn LOG_DIR's own real "/" characters back into "%2F".
 RewriteCond %{ENV:LOG_TARGET_SPLIT} ^1$
 RewriteCond %{ENV:LOG_BASE} .
 RewriteCond %{QUERY_STRING} (?:^|&)torev=([0-9]+)
-RewriteRule ^/log\.html$ /svn/%{ENV:LOG_BASE}${escape:%{ENV:LOG_PARENT}}/?history=${escape:%{ENV:LOG_FILENAME}}&p=%1 [R=302,L,NE]
+RewriteRule ^/log\.html$ /svn/%{ENV:LOG_BASE}${escape:%{ENV:LOG_DIR}}/?history=${escape:%{ENV:LOG_FILENAME}}&p=%1 [R=302,L,NE]
 
 # torev absent (or present but not a plain non-negative integer, which is
 # silently dropped here rather than rejected): redirect without "&p=".
 RewriteCond %{ENV:LOG_TARGET_SPLIT} ^1$
 RewriteCond %{ENV:LOG_BASE} .
-RewriteRule ^/log\.html$ /svn/%{ENV:LOG_BASE}${escape:%{ENV:LOG_PARENT}}/?history=${escape:%{ENV:LOG_FILENAME}} [R=302,L,NE]
+RewriteRule ^/log\.html$ /svn/%{ENV:LOG_BASE}${escape:%{ENV:LOG_DIR}}/?history=${escape:%{ENV:LOG_FILENAME}} [R=302,L,NE]
 ```
 
 ("`/svn`" is hardcoded here as the `<Location /svn>` mount point -- adjust
