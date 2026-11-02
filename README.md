@@ -352,26 +352,33 @@ RewriteRule ^/log\.html$ - [F]
 # LOG_TARGET_SPLIT marks that this succeeded -- required by the final
 # rules below so a "target" that's missing entirely, or present but with
 # no "/" in it at all, produces no redirect at all (matching a missing
-# "target"), rather than one built from stale/empty LOG_PARENT/
+# "target"), rather than one built from stale/empty LOG_DIR/
 # LOG_FILENAME values left over from nothing actually having matched.
 RewriteCond %{ENV:LOG_TARGET} ^(.*)/([^/]*)$
-RewriteRule ^/log\.html$ - [E=LOG_PARENT:%1,E=LOG_FILENAME:%2,E=LOG_TARGET_SPLIT:1]
+RewriteRule ^/log\.html$ - [E=LOG_DIR:%1,E=LOG_FILENAME:%2,E=LOG_TARGET_SPLIT:1]
+
+# "base" into an env var: a RewriteRule's %N only refers to the LAST
+# matched RewriteCond, so "base" and "torev" can't each come from their
+# own condition of the same rule (%1 would be torev's, %2 empty).
+RewriteCond %{QUERY_STRING} (?:^|&)base=([^&]+)
+RewriteRule ^/log\.html$ - [E=LOG_BASE:%1]
 
 # torev present and a plain non-negative integer: redirect with "&p=".
+# The torev condition must stay last, for %1.
 # ${escape:...} re-encodes anything that still needs it (a space in the
 # filename, say) -- confirmed against ap_escape_uri's own source comment
 # that, on Unix, it deliberately leaves "/" alone as a path separator, so
-# this doesn't turn LOG_PARENT's own real "/" characters back into "%2F".
+# this doesn't turn LOG_DIR's own real "/" characters back into "%2F".
 RewriteCond %{ENV:LOG_TARGET_SPLIT} ^1$
-RewriteCond %{QUERY_STRING} (?:^|&)base=([^&]+)
+RewriteCond %{ENV:LOG_BASE} .
 RewriteCond %{QUERY_STRING} (?:^|&)torev=([0-9]+)
-RewriteRule ^/log\.html$ /svn/%1${escape:%{ENV:LOG_PARENT}}/?history=${escape:%{ENV:LOG_FILENAME}}&p=%2 [R=302,L,NE]
+RewriteRule ^/log\.html$ /svn/%{ENV:LOG_BASE}${escape:%{ENV:LOG_DIR}}/?history=${escape:%{ENV:LOG_FILENAME}}&p=%1 [R=302,L,NE]
 
 # torev absent (or present but not a plain non-negative integer, which is
 # silently dropped here rather than rejected): redirect without "&p=".
 RewriteCond %{ENV:LOG_TARGET_SPLIT} ^1$
-RewriteCond %{QUERY_STRING} (?:^|&)base=([^&]+)
-RewriteRule ^/log\.html$ /svn/%1${escape:%{ENV:LOG_PARENT}}/?history=${escape:%{ENV:LOG_FILENAME}} [R=302,L,NE]
+RewriteCond %{ENV:LOG_BASE} .
+RewriteRule ^/log\.html$ /svn/%{ENV:LOG_BASE}${escape:%{ENV:LOG_DIR}}/?history=${escape:%{ENV:LOG_FILENAME}} [R=302,L,NE]
 ```
 
 ("`/svn`" is hardcoded here as the `<Location /svn>` mount point -- adjust
@@ -390,16 +397,11 @@ Caveats worth knowing before relying on this, none of which apply to a Lua
 response instead of a filter -- see mod_lua's own docs for
 `LuaMapHandler`), if you'd rather have them covered:
 
-- **The `${mapname:key}` lookups inside `[E=...]` flag values (the
-  `LOG_TARGET`/`LOG_PARENT`/`LOG_FILENAME` rules above) aren't something
-  this repo could verify against a real server.** Apache's own docs
-  confirm `[E=VAR:VAL]` supports `%N`/`$N` backreferences in `VAL`, but
-  don't explicitly document a `${...}` map lookup inside `VAL` the way
-  this relies on -- architecturally it's the same interpolation pass
-  `mod_rewrite` already applies to every other right-hand-side string, so
-  it's expected to work, but test this against your own Apache before
-  relying on it in production, the same way you'd test any Apache config
-  this repo can't cover with `busted`/`smoketest`.
+- **Not covered by `busted`/`smoketest`.** The sample was checked by hand
+  against Apache httpd 2.4.58 (including the `${mapname:key}` lookups
+  inside `[E=...]` flag values, which Apache's docs don't explicitly
+  document), but test it against your own Apache before relying on it in
+  production.
 - **A malformed `torev` is silently dropped**, not rejected -- the request
   still redirects, just without a revision pin, rather than a 400.
 
