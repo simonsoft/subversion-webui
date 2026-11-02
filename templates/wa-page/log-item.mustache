@@ -3,9 +3,9 @@
 <div class="log-summary-meta">
 <span class="log-revision-slot"><a class="revision-badge wa-font-size-s" href="{{{revision_href}}}">{{{revision}}}</a></span>
 <wa-format-date class="wa-text-nowrap" style="overflow: clip;" date="{{{date}}}" month="numeric" day="numeric" year="numeric" hour="numeric" minute="numeric"{{#date_lang}} lang="{{{date_lang}}}"{{/date_lang}}></wa-format-date>
-<span class="log-author wa-color-text-quiet"><wa-icon name="user" variant="solid" style="font-size: 0.8rem;"></wa-icon> <strong>{{{author}}}</strong></span>
+<span class="log-author wa-color-text-quiet"><wa-icon name="user" variant="solid" style="font-size: 0.8rem;"></wa-icon><strong>{{{author}}}</strong></span>
 </div>
-<div class="log-message-preview{{^message}} log-message-empty{{/message}} wa-color-text-quiet"><span><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon> <em>{{{message}}}</em></span></div>
+<div class="log-message-preview{{^message}} log-message-empty{{/message}} wa-color-text-quiet"><span><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon><em>{{{message}}}</em></span></div>
 </div>
 <div class="log-body">
 <div class="log-message-full{{^message}} log-message-empty{{/message}} wa-flank wa-color-text-quiet"><wa-icon name="comment" variant="solid" style="font-size: 0.8rem;"></wa-icon><em>{{{message}}}</em></div>
