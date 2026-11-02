@@ -193,6 +193,30 @@ document.addEventListener("htmx:after:swap", (event) => {
     }
 });
 
+// A changed path's diff link (see log-item.mustache's ".changed-path-diff")
+// swaps into "#svn-diff-content", inside the static "#svn-diff-dialog" --
+// opened here once the swap lands, for the same reason as History above,
+// and on top of the still-open History dialog: both are wa-dialogs, which
+// open as native modal <dialog>s, so the newest one stacks above the
+// other in the top layer, and Web Awesome's own shared "dismissible"
+// stack makes Escape close only the top one (confirmed against Web
+// Awesome 3.12's own source, along with light-dismiss only reacting to a
+// click on that dialog's own backdrop, and body scroll-locking being
+// counted per dialog). Closing the diff therefore lands back on History,
+// exactly where it was. The dialog's own label is the file's name, which
+// diff.mustache carries as "data-label" on its outermost element (a
+// rendered error has none, leaving "Diff"). A new diff starts scrolled to
+// its top, not wherever the previous one was left.
+document.addEventListener("htmx:after:swap", (event) => {
+    if (event.detail.ctx.target?.id === "svn-diff-content") {
+        const dialog = document.getElementById("svn-diff-dialog");
+
+        dialog.label = event.detail.ctx.target.querySelector(".svn-diff")?.dataset.label || "Diff";
+        event.detail.ctx.target.scrollTop = 0;
+        dialog.open = true;
+    }
+});
+
 // A continuous-scroll append (see log-more.mustache's own sentinel,
 // swapped via hx-target="this" hx-swap="outerHTML") only ever replaces
 // itself with a fresh batch of COLLAPSED entries (log-item.mustache never
@@ -946,6 +970,146 @@ wa-page[view='mobile'] .log-body {
     gap: var(--wa-space-2xs);
 }
 
+/* A changed path's diff link (see log-item.mustache), right after the path
+   itself: just its icon, muted until hovered, same color reset as the path
+   link above. Dimmed while its own request is in flight -- htmx puts
+   "htmx-request" on the requesting element -- since the dialog only opens
+   once the diff has arrived. */
+.changed-path-diff {
+    color: var(--wa-color-text-quiet);
+    margin-inline-start: var(--wa-space-2xs);
+}
+
+.changed-path-diff:hover {
+    color: inherit;
+}
+
+.changed-path-diff.htmx-request {
+    opacity: 0.4;
+    cursor: progress;
+}
+
+/* "#svn-diff-dialog" sizes to its content, unlike History's fixed height
+   -- a diff is as long as it is, and a short one shouldn't sit in a mostly
+   empty box -- scrolling internally past this height instead. */
+#svn-diff-content {
+    max-height: 75vh;
+    overflow-y: auto;
+}
+
+#svn-diff-dialog::part(dialog) {
+    max-width: 1620px;
+}
+
+.svn-diff {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-m);
+}
+
+.svn-diff-path a {
+    color: inherit;
+}
+
+/* A revision badge's tooltip (see diff.mustache): the commit laid out like
+   a History entry's own summary -- revision, date, author, then message. */
+.svn-diff-commit {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-2xs);
+    text-align: start;
+}
+
+.svn-diff-prop {
+    display: flex;
+    flex-direction: column;
+    gap: var(--wa-space-2xs);
+}
+
+/* One table per property value and one for all content hunks (see
+   diff.mustache/diff-line.mustache): two narrow line-number columns, then
+   the line itself, wrapped rather than scrolled sideways -- long
+   paragraph-per-line XML is the common case here. Removed/added rows get
+   Web Awesome's own quiet danger/success fills, and the words that
+   actually changed within a paired line the stronger fill of the same
+   color. The "-"/"+" prefix is generated content, so copying lines out of
+   the diff doesn't pick it up. */
+.svn-diff-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--wa-font-family-code);
+    font-size: var(--wa-font-size-s);
+    line-height: 1.5;
+    border: var(--wa-border-width-s) var(--wa-border-style) var(--wa-color-surface-border);
+}
+
+.svn-diff-table td {
+    padding: 0 var(--wa-space-xs);
+    vertical-align: top;
+}
+
+.svn-diff-number {
+    width: 1%;
+    text-align: right;
+    white-space: nowrap;
+    color: var(--wa-color-text-quiet);
+    user-select: none;
+}
+
+.svn-diff-code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.svn-diff-code::before {
+    content: " ";
+    display: inline-block;
+    width: 1.5ch;
+    user-select: none;
+}
+
+.svn-diff-removed {
+    background: var(--wa-color-danger-fill-quiet);
+}
+
+.svn-diff-removed .svn-diff-code::before {
+    content: "-";
+}
+
+.svn-diff-added {
+    background: var(--wa-color-success-fill-quiet);
+}
+
+.svn-diff-added .svn-diff-code::before {
+    content: "+";
+}
+
+.svn-diff-code mark {
+    color: inherit;
+    border-radius: var(--wa-border-radius-s);
+}
+
+.svn-diff-removed mark {
+    background: var(--wa-color-danger-fill-normal);
+}
+
+.svn-diff-added mark {
+    background: var(--wa-color-success-fill-normal);
+}
+
+.svn-diff-no-newline {
+    color: var(--wa-color-text-quiet);
+    font-size: 0.75em;
+    margin-inline-start: var(--wa-space-2xs);
+}
+
+/* "@@ -a,b +c,d @@" separator row between hunks. */
+.svn-diff-hunk td {
+    padding: var(--wa-space-2xs) var(--wa-space-xs);
+    background: var(--wa-color-neutral-fill-quiet);
+    color: var(--wa-color-text-quiet);
+}
+
 /* The navigation tree only ever browses folders -- files (and the ".."
    entry, which is superseded by the header's "Up" button) fetched into it
    via htmx are hidden here regardless of how deeply they end up nested. */
@@ -1195,6 +1359,14 @@ wa-tree-item.dir > span {
 <wa-button id="svn-history-expand-toggle" appearance="plain" size="s">Expand all</wa-button>
 </div>
 <div id="svn-history-content"{{#history_active}} hx-action="{{{request_href}}}{{{history_target}}}{{{history_query_suffix}}}" hx-method="REPORT" hx-trigger="load"{{/history_active}}></div>
+</wa-dialog>
+<!-- Opened on top of "#svn-history-dialog" by a changed path's diff link
+     (see the "svn-diff-content" htmx:after:swap listener above). A sibling
+     of the History dialog rather than nested inside it: stacking works
+     either way (both paint in the top layer), but a nested one's own
+     wa-show/wa-hide events would bubble through History's element too. -->
+<wa-dialog id="svn-diff-dialog" label="Diff" light-dismiss style="--width: 90vw;">
+<div id="svn-diff-content"></div>
 </wa-dialog>
 </wa-page>
 </body>
