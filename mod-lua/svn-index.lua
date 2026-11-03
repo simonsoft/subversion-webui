@@ -769,15 +769,15 @@ function output_filter(r)
         r.headers_out["Cache-Control"] = "no-store"
     end
 
-    -- Only a main-content-swap request (dir.mustache's label, targeting a
-    -- named element such as wa-page's "#svn-index") represents an actual
+    -- Only a main-content-swap request (wa-page's "#svn-navigator",
+    -- targeting a named element, "#svn-index") represents an actual
     -- "navigate to a new folder" -- the nav tree's own in-place lazy
     -- expansion (hx-target="this", an element with no id) never changes
     -- what main is showing, so it must not push a new URL. Returning this
     -- as a response header, rather than "hx-push-url" on the template,
     -- keeps the decision here where the true swap target (from the
     -- incoming request) is actually known. (The breadcrumb itself doesn't
-    -- need this: dir.mustache's label carries its own
+    -- need this: "#svn-navigator" carries its own
     -- hx-select-oob="#svn-breadcrumb" directly, so only that specific
     -- element's own requests ever pull the breadcrumb along -- nav's own
     -- lazy-load fetch is a different element entirely and never has that
@@ -851,10 +851,10 @@ function output_filter(r)
             -- compute_breadcrumbs) -- so it goes stale after an
             -- htmx-driven navigation that doesn't reload the page.
             -- page.mustache's header cluster carries an id
-            -- ("#svn-header-left") specifically so the breadcrumb/dir.mustache
-            -- navigation links can pull a freshly-rendered one out of their
-            -- own full-page response via hx-select-oob, the same way they
-            -- already do for "#svn-breadcrumb"/"#svn-footer".
+            -- ("#svn-header-left") specifically so in-place navigation
+            -- ("#svn-navigator") can pull a freshly-rendered one out of its
+            -- own full-page response via hx-select-oob, the same way it
+            -- already does for "#svn-breadcrumb"/"#svn-footer".
             request_href = escape_html(request_href),
             repo_root = repo_root and escape_html(repo_root) or nil,
             -- The browsed directory's own path, encoded for use as a

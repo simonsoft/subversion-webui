@@ -149,7 +149,7 @@ try {
             // Nav folders left expanded, each with its own loaded child folders.
             navExpanded: [...document.querySelectorAll(".svn-nav wa-tree-item.dir")]
                 .filter((i) => i.expanded)
-                .map((i) => i.querySelector(":scope > span").textContent.trim() + "[" + [...i.querySelectorAll(":scope > wa-tree-item.dir > span")].map((s) => s.textContent.trim()).join(",") + "]")
+                .map((i) => i.querySelector(":scope > a").textContent.trim() + "[" + [...i.querySelectorAll(":scope > wa-tree-item.dir > a")].map((s) => s.textContent.trim()).join(",") + "]")
                 .join(" "),
         }));
         await page.close();
@@ -176,8 +176,8 @@ try {
     // "trunk" -- a linked ancestor of the current "deeper" folder.
     const CRUMB_LINK = "#svn-breadcrumb wa-breadcrumb-item:nth-of-type(2)";
     // "sub/", in main's listing of trunk/ and nested under trunk/ in nav.
-    const MAIN_FOLDER_LINK = "#svn-index wa-tree-item.dir > span > a";
-    const NAV_FOLDER_LINK = ".svn-nav wa-tree-item.dir wa-tree-item.dir > span > a";
+    const MAIN_FOLDER_LINK = "#svn-index wa-tree-item.dir > a";
+    const NAV_FOLDER_LINK = ".svn-nav wa-tree-item.dir wa-tree-item.dir > a";
 
     // One scenario: a missing link (e.g. no breadcrumb <a> at all) or any
     // other error records a FAIL rather than aborting the remaining ones.
@@ -258,6 +258,26 @@ try {
         "nav folder: keyboard Enter on its tree item swaps main in place and expands the folder in nav",
         "/svn/demo1/trunk/", NAV_FOLDER_LINK, enterKey,
         (r) => !r.newTabUrl && r.sameDocument && navSubOpened(r) && r.breadcrumb === "demo1/ / trunk/ / sub/"
+    );
+    // A click in the row's empty space, right of the name: wa-tree selects
+    // the row, and that selection navigates -- exactly once.
+    const rowSpaceClick = async (page, el) => {
+        const box = await el.boundingBox();
+        await page.mouse.click(box.x + box.width - 20, box.y + 10);
+    };
+    await check(
+        "main folder: a click elsewhere in its row swaps main in place, once",
+        "/svn/demo1/trunk/", "#svn-index wa-tree-item.dir", rowSpaceClick,
+        (r) => !r.newTabUrl && r.sameDocument && r.requests.join() === "/svn/demo1/trunk/sub/ (htmx)" && r.breadcrumb === "demo1/ / trunk/ / sub/"
+    );
+    // Nav walks itself open to the current folder and selects it on load; a
+    // click on that already-selected folder's link still shows it again
+    // (wa-tree fires no selection change for it), and it's already loaded,
+    // so there's no second, lazy-load request.
+    await check(
+        "nav folder: a click on the already-selected folder swaps main again, once",
+        "/svn/demo1/trunk/sub/", ".svn-nav wa-tree-item.dir[selected] > a", plainClick,
+        (r) => !r.newTabUrl && r.sameDocument && r.requests.join() === "/svn/demo1/trunk/sub/ (htmx)" && r.breadcrumb === "demo1/ / trunk/ / sub/"
     );
 } finally {
     await browser?.close();

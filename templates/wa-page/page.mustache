@@ -28,6 +28,86 @@ document.addEventListener("wa-lazy-load", (event) => {
     event.target.addEventListener("wa-lazy-load", (e) => e.stopPropagation(), { once: true });
 }, true);
 
+// Showing another folder in main is one request, declared once: the
+// "#svn-navigator" element (see the page markup below) swaps "#svn-index"
+// and pulls the breadcrumb, footer and header along whenever an
+// "svn-navigate" event with that folder's href reaches document. Folder
+// entries and breadcrumbs carry no htmx attributes for it -- just their
+// own real link -- and the listeners here fire the event for them.
+function svnNavigate(source, href) {
+    htmx.trigger(source, "svn-navigate", { href });
+}
+
+// A click on a tree entry's own name link (file/dir/repo.mustache) or a
+// linked breadcrumb -- one shared listener rather than an hx-on:click on
+// every entry. Capture phase on document, so it runs before wa-tree's own
+// click handler (inside wa-tree's shadow DOM). A ctrl/meta/shift click is
+// left to the browser (new tab/window); a plain click on a folder link or
+// breadcrumb has its page load cancelled and fires "svn-navigate"
+// instead. A tree link's click is always stopped here, so wa-tree never
+// selects the row: for a file/repo link, wa-selection-change (below) would
+// otherwise fire a second, modifier-less click, navigating the current
+// tab on a ctrl-click (and Chrome then blocks the new tab as a popup); for
+// a folder link, it would fire "svn-navigate" a second time. Nav's
+// highlight follows the navigation instead (see "svn-navigate" and
+// "htmx:after:history:push" below). Tree links are matched by position,
+// not class, so file.mustache's History icon (nested inside
+// ".file-actions", with its own hx-trigger="click") is never caught. A
+// breadcrumb's link is in wa-breadcrumb-item's shadow DOM, so here the
+// click's target is the wa-breadcrumb-item itself (or its icon); the last
+// crumb has no href and isn't a link.
+document.addEventListener("click", (event) => {
+    const modified = event.ctrlKey || event.metaKey || event.shiftKey;
+    const link = event.target.closest?.("wa-tree-item > a[href]");
+
+    if (link) {
+        event.stopPropagation();
+
+        if (!modified && link.parentElement.matches(".dir")) {
+            event.preventDefault();
+            svnNavigate(link, link.getAttribute("href"));
+        }
+        return;
+    }
+
+    const crumb = event.target.closest?.("wa-breadcrumb-item[href]");
+
+    if (crumb && !modified) {
+        event.preventDefault();
+        svnNavigate(crumb, crumb.getAttribute("href"));
+    }
+}, true);
+
+// A row selected some other way than by clicking its link -- keyboard
+// Enter/Space (wa-tree's keydown handler changes the selection without
+// any click) or a click elsewhere in the row (the indentation, the empty
+// space after the name). Web Awesome's wa-tree dispatches this on itself,
+// never on the wa-tree-item, and it bubbles. A folder fires
+// "svn-navigate"; a file or repo replays a real click on its link, since
+// opening a file (sometimes a download) is browser navigation that no
+// in-place swap could stand in for. That click is stopped by the click
+// listener above, so the row isn't selected a second time. Single
+// selection still reports an array.
+document.addEventListener("wa-selection-change", (event) => {
+    if (!event.target.matches?.("wa-tree.svn-nav, wa-tree.svn-index")) {
+        return;
+    }
+
+    for (const item of event.detail.selection) {
+        const link = item.querySelector(":scope > a[href]");
+
+        if (!link) {
+            continue;
+        }
+
+        if (item.matches(".dir")) {
+            svnNavigate(link, link.getAttribute("href"));
+        } else {
+            link.click();
+        }
+    }
+});
+
 // dir.mustache's wa-tree-item never sets "lazy" itself, since it's the exact
 // same markup rendered into both #svn-index (main, a strictly flat listing
 // -- its label already swaps main's whole content to browse deeper, one
@@ -260,31 +340,48 @@ document.addEventListener("htmx:after:swap", (event) => {
     }
 });
 
-// Nav's own [selected] wa-tree-item is only a one-time snapshot, taken
-// when nav rendered that item itself (root population or lazy-expansion,
-// both hx-target="this" -- see the ".svn-nav" branch above). Clicking a
-// folder's label *within nav* already keeps selection correct on its own,
-// via wa-tree's own built-in single-selection behavior -- but main's label
-// clicks and breadcrumb clicks both swap "#svn-index" instead, without
-// ever touching nav, so nav's stale snapshot is never told the current
-// directory changed.
-//
-// This can't key off "htmx:after:swap"'s own event.target: htmx dispatches
-// that event on the request's source element only if it's still connected
-// to the DOM at dispatch time, falling back to `document` otherwise
-// (confirmed via htmx's own source) -- and for both cases above, the
-// clicked element sits inside whatever this very swap (or its
-// accompanying "#svn-breadcrumb" oob swap) just replaced, so it's already
-// disconnected by dispatch time and event.target is just `document`,
-// unrelated to "#svn-index" or nav either way. "htmx:after:history:push"
-// sidesteps that entirely: htmx dispatches it on `document`, unconditionally,
-// exactly when it performs history.pushState() -- i.e. only when the
-// response actually carried HX-Push-Url (svn-index.lua never sends
-// HX-Replace-Url, so "push" is the only variant this app produces), with
-// the exact destination path already provided, no response-header parsing
-// needed. That also means no extra condition is needed here: nav's own
-// root/lazy-expansion fetches never receive HX-Push-Url and so never
-// trigger this at all.
+// Highlights a nav folder as the one main is showing: wa-tree's own
+// single selection, set by hand, since nav's [selected] item is otherwise
+// only a snapshot from when nav rendered it, and a click on a folder's
+// link never reaches wa-tree's selection at all (see the click listener
+// above). Cleared via querySelectorAll rather than assuming exactly one
+// stale match.
+function selectNavItem(item) {
+    document.querySelectorAll(".svn-nav wa-tree-item.dir[selected]").forEach((other) => {
+        if (other !== item) {
+            other.selected = false;
+        }
+    });
+
+    if (item) {
+        item.selected = true;
+    }
+}
+
+// Showing a folder in main from nav also highlights it and expands it in
+// nav, right away, whether it came from a click on its link, keyboard
+// Enter or a click elsewhere in the row. Expanding a still-lazy item makes
+// wa-tree-item itself show its spinner and fire wa-lazy-load, so its
+// children are fetched through the item's own hx-trigger, exactly as a
+// chevron click would; an already-loaded one just opens. Never collapses:
+// the chevron alone does that. Main is a flat listing with nothing to
+// expand, and a breadcrumb isn't in nav.
+document.addEventListener("svn-navigate", (event) => {
+    const item = event.target.closest?.(".svn-nav wa-tree-item.dir");
+
+    if (item) {
+        selectNavItem(item);
+        item.expanded = true;
+    }
+});
+
+// Wherever the navigation came from (main, a breadcrumb, nav), nav's
+// highlight moves to the folder main now shows, if nav has loaded it.
+// Keyed on "htmx:after:history:push", which htmx dispatches on document
+// when it performs history.pushState() -- i.e. only when the response
+// carried HX-Push-Url, which svn-index.lua sends only to
+// "#svn-navigator"'s requests (never HX-Replace-Url) -- with the
+// destination path, as the server spells it, in its detail.
 document.addEventListener("htmx:after:history:push", (event) => {
     const pushedPath = event.detail?.path;
 
@@ -292,42 +389,16 @@ document.addEventListener("htmx:after:history:push", (event) => {
         return;
     }
 
-    // Cleared via querySelectorAll rather than assuming exactly one stale
-    // match, for the same reason every other cleanup in this file does.
-    document.querySelectorAll(".svn-nav wa-tree-item.dir[selected]").forEach((item) => {
-        item.selected = false;
-    });
-
     // A plain per-element attribute comparison, not a dynamically-built
     // CSS attribute-selector string, since pushedPath can contain
     // arbitrary percent-encoded/Unicode segments that would need escaping
     // for selector syntax (see request_href/hx_href in svn-index.lua).
-    const matched = [...document.querySelectorAll(".svn-nav wa-tree-item.dir[hx-get]")]
-        .find((item) => item.getAttribute("hx-get") === pushedPath);
-
     // No match just means the destination was never fetched/expanded in
     // nav (off the original auto-expand-on-load path) -- nav and main stay
     // only loosely coupled after initial load by design, so this leaves no
     // selection at all rather than forcing a new fetch/expand to reveal it.
-    if (matched) {
-        matched.selected = true;
-    }
-});
-
-// Clicking a folder in nav both shows it in main and expands it in nav --
-// keyed on the label span's own main-swap request (dir.mustache's
-// "click[this.parentElement.selected]"), which fires for a selecting click
-// anywhere in the row (via wa-selection-change's replay), for keyboard
-// Enter, and for a click on the already-selected folder alike. Expanding a
-// still-lazy item makes wa-tree-item itself show its spinner and fire
-// wa-lazy-load, so its children are fetched through the item's own
-// hx-trigger, exactly as a chevron click would; an already-loaded one just
-// opens. Never collapses: the chevron alone does that. Main's own folder
-// labels are left alone -- main is a flat listing with nothing to expand.
-document.addEventListener("htmx:before:request", (event) => {
-    if (event.target.matches?.(".svn-nav wa-tree-item.dir > span")) {
-        event.target.parentElement.expanded = true;
-    }
+    selectNavItem([...document.querySelectorAll(".svn-nav wa-tree-item.dir[hx-get]")]
+        .find((item) => item.getAttribute("hx-get") === pushedPath));
 });
 
 // "Expand all"/"Collapse all" toggle for the History dialog's own entries
@@ -1161,8 +1232,8 @@ wa-tree.svn-nav .updir {
    in svn-index.lua): by default the folder with a small gear badge on its
    corner, unless SVN_INDEX_HIDE_DIR_ICON names a single icon instead. Only
    the entry's own label is dimmed, not its expanded children (nested
-   wa-tree-items, not inside this span). */
-wa-tree-item.navhidden > span {
+   wa-tree-items, not inside this link). */
+wa-tree-item.navhidden > a {
     color: var(--wa-color-text-quiet);
 }
 
@@ -1189,12 +1260,9 @@ wa-tree-item.navhidden > span {
     font-size: 0.62em;
 }
 
-/* Navigation is driven off wa-selection-change (see dir.mustache's own
-   hx-trigger, and each <wa-tree>'s own hx-on:wa-selection-change below,
-   which synthesizes a real click on a selected leaf's plain <a> for
-   file/repo entries), not off where in the row a click lands -- the label
-   itself just shouldn't look like a hyperlink, and the same goes for the
-   real <a href> each folder label now wraps. */
+/* A click anywhere in the row opens the entry, not only on its name (see
+   the "click" and "wa-selection-change" listeners in the script above),
+   so the name itself shouldn't look like a hyperlink. */
 wa-tree-item a {
     color: inherit;
     text-decoration: none;
@@ -1210,7 +1278,6 @@ wa-tree-item a {
    file.mustache's History icon, inside ".file-actions", has no label and
    isn't matched. */
 wa-tree-item > a > :is(wa-icon, .icon-badged):first-child,
-wa-tree-item > span > a > :is(wa-icon, .icon-badged):first-child,
 wa-breadcrumb-item > wa-icon,
 .log-message-preview > span > wa-icon {
     margin-inline-end: var(--wa-space-2xs);
@@ -1309,7 +1376,7 @@ wa-tree-item.file::part(label) {
    relieve space pressure. Truncate it with an ellipsis instead, keeping
    the whole row single-line. */
 wa-tree-item.file > a,
-wa-tree-item.dir > span {
+wa-tree-item.dir > a {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1326,66 +1393,53 @@ wa-tree-item.dir > span {
      "href", so wa-breadcrumb-item renders a real link in its shadow DOM in
      place of its default <button> -- one Tab stop per crumb, Enter
      activates it, and ctrl/meta/shift-click, middle-click and the link
-     context menu stay the browser's own. Only a plain click swaps "#svn-index"
-     in place: its hx-trigger filter skips modifier clicks, and its
-     hx-on:click cancels the link's own navigation for exactly the clicks
-     htmx handles. htmx's own anchor handling can't do either here -- it
-     only sees anchors at or above the element carrying hx-get, never one
-     inside its shadow DOM, which is why a bare href plus hx-get once fired
-     both the swap and a full page load. -->
+     context menu stay the browser's own. Only a plain click (or Enter)
+     swaps "#svn-index" in place: the "click" listener in the script above
+     cancels the link's own navigation and fires "svn-navigate" instead
+     (see "#svn-navigator" below). -->
 {{{page-subheader}}}
 {{{page-navigation-header}}}
-<!-- Neither dir.mustache's <span hx-get> nor file/repo.mustache's plain
-     <a href> ever activates via wa-tree's own selecting-click-anywhere-in-
-     the-row or keyboard Enter/Space: wa-tree's keydown handler drives
-     selection by mutating state, never firing a native click, and a
-     dead-zone click (indentation/chevron area, or empty row space) never
-     lands on either child element. hx-on:wa-selection-change here (not on
-     the item itself) is deliberate: Web Awesome's own wa-tree dispatches
-     this event on itself, never on the individual wa-tree-item (confirmed
-     against wa-tree's own source, tree.ts's selectItem()) -- a listener on
-     the item would sit on a descendant of where the event actually fires
-     and would never see it, since bubbling only flows outward to
-     ancestors, never down into descendants. One shared handler covers
-     both entry kinds: a synthesized click on dir's span re-fires its own
-     existing hx-get/hx-target/hx-swap/hx-select/hx-select-oob (no
-     double-fire -- dir.mustache's own "click[this.parentElement.selected]"
-     filter only matches once .selected is already true, which is only
-     ever the case for this synthetic replay or a genuine reselect, never
-     the original click that caused the selection in the first place); a
-     synthesized click on file/repo's anchor is real browser navigation,
-     sometimes a file download, that no ajax swap could stand in for.
-     Scoped to selection.forEach(...) rather than a single item, since
-     single-selection mode still reports an array. A click landing directly
-     on file/repo's anchor never gets here at all: the anchor stops its own
-     click's propagation (see file.mustache/repo.mustache), so the browser
-     handles it natively and wa-tree never selects the row -- otherwise this
-     replay would fire a second, modifier-less click on top of the browser's
-     own, navigating the current tab on a ctrl-click (and Chrome then blocks
-     the new tab as a popup). dir.mustache's span wraps a real <a href> too,
-     for the same browser link affordances, but nested *inside* the span
-     rather than replacing it: htmx's own filtered-trigger path cancels a
-     click's default action on any anchor at or above the trigger element
-     before it even evaluates the filter, ctrl-clicks included. That anchor
-     stops only a modifier click's propagation (the browser opens the new
-     tab/window, and neither htmx nor wa-tree sees it); a plain click just
-     has its native navigation cancelled and carries on into wa-tree's
-     selection and this replay, exactly as before. All three entries' links
-     carry tabindex="-1" (keyboard focus stays wa-tree's own roving
-     tabindex, one Tab stop per tree, with arrow keys and Enter driving it)
-     and draggable="false" (a name can't be dragged off as a link, e.g. onto
-     the tab or bookmarks bar; its text stays unselectable either way, since
-     wa-tree-item's own row styles set user-select: none). -->
+<!-- Every tree entry is a real <a href> (file/dir/repo.mustache), for the
+     browser's own link affordances: ctrl/meta/shift-click, middle-click,
+     the link context menu. Each carries tabindex="-1" (keyboard focus
+     stays wa-tree's own roving tabindex, one Tab stop per tree, with arrow
+     keys and Enter driving it) and draggable="false" (a name can't be
+     dragged off as a link, e.g. onto the tab or bookmarks bar; its text
+     stays unselectable either way, since wa-tree-item's own row styles set
+     user-select: none). Neither tree carries any navigation attributes of
+     its own: a click on an entry's link, and a row selected by keyboard or
+     by a click elsewhere in the row, are handled by the "click" and
+     "wa-selection-change" listeners in the script above. A folder fires
+     "svn-navigate", which "#svn-navigator" below turns into the one
+     request that swaps main; a file or repo is opened by the browser. A
+     folder entry's own hx-get is only nav's lazy expansion. -->
 <nav slot="navigation">
-<wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">
+<wa-tree class="svn-nav" hx-get="{{{nav_root_path}}}" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">
 </wa-tree>
 </nav>
 {{{page-navigation-footer}}}
 {{{page-main-header}}}
 <div class="svn-main">
-<wa-tree class="svn-index" id="svn-index" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">
+<wa-tree class="svn-index" id="svn-index">
 {{{svn_index}}}</wa-tree>
 </div>
+<!-- The one request that shows another folder in main, for every way of
+     getting there: a folder in main or nav, a breadcrumb. Each of those
+     fires "svn-navigate" with the folder's href (see svnNavigate() in the
+     script above), and this element answers it: it swaps "#svn-index" and
+     pulls the fetched page's breadcrumb, footer and header cluster along.
+     "#svn-breadcrumb" is the wrapping div, so the revision badge rides
+     along with the crumbs; the "Show folders" switch, outside it, keeps
+     its state. The URL comes from the event: hx-get is empty, there only so
+     htmx treats this as an element that makes requests, and the hx-on
+     handler sets the URL from the event's detail on htmx:config:request,
+     just before the request is sent. hx-sync="replace" means a newer
+     navigation aborts one still in flight, so the last click wins. The
+     request's HX-Target names "#svn-index", which is what makes
+     svn-index.lua send HX-Push-Url, so the address bar follows. Hidden
+     and empty: this element is never swapped itself, and nothing inside
+     it makes requests of its own. -->
+<div id="svn-navigator" hidden hx-get="" hx-trigger="svn-navigate from:document" hx-target="#svn-index" hx-swap="innerHTML" hx-sync="replace" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-on::config:request="ctx.request.action = ctx.sourceEvent.detail.href"></div>
 {{{page-main-footer}}}
 {{{page-aside}}}
 {{{page-footer}}}

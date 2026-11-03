@@ -444,16 +444,15 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("webawesome.css", 1, true))
         assert.truthy(html:find('<header slot="header" class="wa-split wa-gap-s wa-font-size-m">', 1, true))
         assert.truthy(html:find('<footer slot="footer" id="svn-footer" class="wa-font-size-xs">', 1, true))
-        -- hx-on:click stops the link's own click from reaching wa-tree's
-        -- row selection, whose wa-selection-change replay would otherwise
-        -- fire a second, modifier-less click on top of the browser's own --
-        -- breaking ctrl-click (see page.mustache's wa-tree comment).
+        -- No per-link hx-on:click: page.mustache's one capture-phase
+        -- "click" listener keeps the link's own click out of wa-tree's row
+        -- selection (see the "delegates tree link clicks" spec below).
         -- tabindex="-1" keeps keyboard focus on wa-tree's own roving
         -- tabindex; draggable="false" stops the name being dragged off as a
         -- link (its text isn't selectable anyway: wa-tree-item's own row
         -- styles set user-select: none).
         assert.truthy(html:find(
-            '<wa-tree-item class="file"><a href="/svn/demo1/README.md" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()"><wa-icon name="file" variant="regular"></wa-icon>README.md</a>',
+            '<wa-tree-item class="file"><a href="/svn/demo1/README.md" tabindex="-1" draggable="false"><wa-icon name="file" variant="regular"></wa-icon>README.md</a>',
             1, true
         ))
     end)
@@ -537,19 +536,15 @@ describe("svn-index output_filter", function()
         -- "href" -- so wa-breadcrumb-item renders a real link in its shadow
         -- DOM instead of its default <button>: one Tab stop per crumb, with
         -- ctrl/meta/shift-click, middle-click and the link context menu the
-        -- browser's own -- plus hx-get for htmx's own swap on a plain click.
-        -- Confirmed via a real browser that a bare href plus hx-get fires
-        -- BOTH htmx's own fetch AND the link's native navigation, racing
-        -- into a real full-page reload: htmx's own anchor handling never
-        -- sees an anchor inside the shadow DOM. So the hx-trigger filter
-        -- skips modifier clicks, and hx-on:click cancels the native
-        -- navigation for exactly the plain clicks htmx handles.
+        -- browser's own. No htmx attributes: page.mustache's delegated
+        -- "click" listener turns a plain click into "svn-navigate" (see the
+        -- "#svn-navigator" spec below).
         assert.truthy(html:find(
-            '<wa-breadcrumb-item href="/svn/myrepo/" hx-get="/svn/myrepo/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[!(ctrlKey||metaKey||shiftKey)]" hx-on:click="if (!(event.ctrlKey || event.metaKey || event.shiftKey)) event.preventDefault()"><wa-icon name="database"></wa-icon>myrepo</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item href="/svn/myrepo/"><wa-icon name="database"></wa-icon>myrepo</wa-breadcrumb-item>',
             1, true
         ))
         assert.truthy(html:find(
-            '<wa-breadcrumb-item href="/svn/myrepo/trunk/" hx-get="/svn/myrepo/trunk/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[!(ctrlKey||metaKey||shiftKey)]" hx-on:click="if (!(event.ctrlKey || event.metaKey || event.shiftKey)) event.preventDefault()"><wa-icon name="folder" variant="regular"></wa-icon>trunk</wa-breadcrumb-item>',
+            '<wa-breadcrumb-item href="/svn/myrepo/trunk/"><wa-icon name="folder" variant="regular"></wa-icon>trunk</wa-breadcrumb-item>',
             1, true
         ))
         assert.truthy(html:find(
@@ -584,33 +579,12 @@ describe("svn-index output_filter", function()
         -- after the fact (see the "htmx:after:swap" tests below) -- so
         -- outside of that, hx-trigger="wa-lazy-load" just sits dormant
         -- until nav sets lazy=true, at which point wa-tree-item's own
-        -- chevron interaction can fire it. Separately, the label's own
-        -- "click[this.parentElement.selected]" trigger only fires a plain
-        -- click when the item is already selected -- covering the
-        -- reselect-to-refresh case (a click that *doesn't* change
-        -- selection never fires wa-selection-change at all) -- and each
-        -- <wa-tree>'s own centralized hx-on:wa-selection-change (see
-        -- page.mustache) covers everything else: a selecting click
-        -- anywhere in the item's row (not just the label) or keyboard
-        -- activation, by synthesizing a real click on this same span once
-        -- Web Awesome's own wa-tree reports the selection change (it
-        -- dispatches that event on itself, never on the individual
-        -- wa-tree-item -- confirmed via wa-tree's own source, tree.ts's
-        -- selectItem()). No double-fire: by the time that synthetic click
-        -- lands, .selected is already true (wa-tree sets it before
-        -- dispatching), so it satisfies the very same
-        -- "click[this.parentElement.selected]" filter -- while the
-        -- original real click that *caused* the selection does not, since
-        -- it's evaluated before wa-tree's own handler (further up the
-        -- bubble chain) has had a chance to mutate .selected. So main
-        -- updates no matter how many times the same or a different entry
-        -- is activated. The span wraps a real <a href> (nested inside it,
-        -- never replacing it: htmx's own filtered-trigger path cancels the
-        -- default action of any click on an anchor at or above the trigger
-        -- element, ctrl-clicks included) so ctrl/meta/shift-click, middle-
-        -- click and the link context menu stay the browser's own: a
-        -- modifier click stops at the anchor, a plain click only has its
-        -- native navigation cancelled and carries on as described above.
+        -- chevron interaction can fire it. Showing the folder in main is
+        -- not the entry's own request: its name is a plain <a href> (for
+        -- ctrl/meta/shift-click, middle-click and the link context menu),
+        -- and page.mustache's delegated "click"/"wa-selection-change"
+        -- listeners fire "svn-navigate" for it instead (see the
+        -- "#svn-navigator" spec below).
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -624,7 +598,7 @@ describe("svn-index output_filter", function()
             1, true
         ))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[this.parentElement.selected]"><a href="/svn/demo1/arbortext/" tabindex="-1" draggable="false" hx-on:click="if (event.ctrlKey || event.metaKey || event.shiftKey) event.stopPropagation(); else event.preventDefault()"><wa-icon name="folder" variant="regular"></wa-icon>arbortext/</a></span>',
+            'hx-select=".svn-index > wa-tree-item"><a href="/svn/demo1/arbortext/" tabindex="-1" draggable="false"><wa-icon name="folder" variant="regular"></wa-icon>arbortext/</a></wa-tree-item>',
             1, true
         ))
     end)
@@ -645,19 +619,45 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        -- The exact "class=\"repo\"...><a href=... hx-on:click=...>" markup
-        -- (no other attributes in between -- the stopPropagation only keeps
-        -- a click on the link itself out of wa-tree's row selection, same
-        -- as file.mustache) proves this specific entry carries no
+        -- The exact "class=\"repo\"...><a href=... draggable=...>" markup
+        -- (no other attributes in between) proves this specific entry carries no
         -- hx-get/lazy wiring -- a page-wide search for "hx-get"/"lazy" would
         -- false-fail here since the page's own nav root item and lazy-clear
         -- script always contain those strings regardless of fixture. The
         -- dead-zone/keyboard click synthesis for this plain <a href> (same
-        -- as file.mustache) lives on each <wa-tree>'s own
-        -- hx-on:wa-selection-change instead (see page.mustache) -- not
-        -- here, since Web Awesome's own wa-tree dispatches that event on
-        -- itself, never on the individual wa-tree-item.
-        assert.truthy(html:find('<wa-tree-item class="repo"><a href="/svn/demo1/demo1/" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()">', 1, true))
+        -- as file.mustache) lives in page.mustache's delegated
+        -- "wa-selection-change" listener instead.
+        assert.truthy(html:find('<wa-tree-item class="repo"><a href="/svn/demo1/demo1/" tabindex="-1" draggable="false"><wa-icon', 1, true))
+    end)
+
+    it("delegates tree link and breadcrumb clicks to one capture-phase listener instead of an hx-on:click per entry", function()
+        -- One listener for every file/repo/folder name link and linked
+        -- breadcrumb, rather than the same handler repeated (and compiled
+        -- by htmx) per entry. Capture phase on document, so it runs before
+        -- wa-tree's own click handler. Tree links are matched by position
+        -- ("wa-tree-item > a") so the History icon, nested inside
+        -- ".file-actions", keeps its own handling. A plain click on a
+        -- folder link or breadcrumb fires "svn-navigate"; a modifier click
+        -- is left to the browser.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<dir name="arbortext" href="arbortext/" />
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find('document.addEventListener("click", (event) => {', 1, true))
+        assert.truthy(html:find('event.target.closest?.("wa-tree-item > a[href]")', 1, true))
+        assert.truthy(html:find('if (!modified && link.parentElement.matches(".dir")) {', 1, true))
+        assert.truthy(html:find('event.target.closest?.("wa-breadcrumb-item[href]")', 1, true))
+        assert.truthy(html:find('svnNavigate(crumb, crumb.getAttribute("href"));', 1, true))
+        assert.falsy(html:find('draggable="false" hx-on:click=', 1, true))
+        -- Keyboard/dead-zone selection, for both trees, from one listener
+        -- rather than an hx-on:wa-selection-change on each <wa-tree>.
+        assert.truthy(html:find('document.addEventListener("wa-selection-change", (event) => {', 1, true))
+        assert.falsy(html:find('hx-on:wa-selection-change=', 1, true))
     end)
 
     it("removes the lazy attribute once a nav folder's own fetch succeeds, via a page-level htmx:finally:request listener", function()
@@ -704,12 +704,12 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("item.loading = false;", 1, true))
     end)
 
-    it("expands a nav folder when its label navigates main, so one click both shows and opens it", function()
-        -- Keyed on the label span's own main-swap request, covering a
-        -- selecting click anywhere in the row, keyboard Enter and a click
-        -- on the already-selected folder. Expanding a lazy item makes
-        -- wa-tree-item fire wa-lazy-load, loading its children through
-        -- the item's own hx-trigger; main's own labels aren't matched.
+    it("expands and highlights a nav folder when it navigates main, so one click both shows and opens it", function()
+        -- Keyed on "svn-navigate" fired from inside a nav folder, covering
+        -- a click on its link, a click elsewhere in the row and keyboard
+        -- Enter. Expanding a lazy item makes wa-tree-item fire
+        -- wa-lazy-load, loading its children through the item's own
+        -- hx-trigger; main's folders and breadcrumbs aren't matched.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -718,24 +718,18 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('if (event.target.matches?.(".svn-nav wa-tree-item.dir > span")) {', 1, true))
-        assert.truthy(html:find("event.target.parentElement.expanded = true;", 1, true))
+        assert.truthy(html:find('document.addEventListener("svn-navigate", (event) => {', 1, true))
+        assert.truthy(html:find('event.target.closest?.(".svn-nav wa-tree-item.dir")', 1, true))
+        assert.truthy(html:find("selectNavItem(item);", 1, true))
+        assert.truthy(html:find("item.expanded = true;", 1, true))
     end)
 
-    it("re-syncs nav's stale [selected] highlight via htmx:after:history:push, since main label/breadcrumb clicks never touch nav's own render path", function()
-        -- Nav's own label clicks already keep [selected] correct on their
-        -- own (wa-tree's built-in single-selection behavior), but main's
-        -- label clicks and breadcrumb clicks both swap "#svn-index"
-        -- without ever re-rendering anything in nav, leaving its
-        -- server-rendered snapshot stale. This can't key off
-        -- "htmx:after:swap"'s own event.target -- confirmed via a real
-        -- browser that htmx dispatches that event on the request's source
-        -- element only if still connected at dispatch time, falling back
-        -- to `document` otherwise, and for both of those flows the clicked
-        -- element sits inside whatever this very swap (or its "#svn-breadcrumb"
-        -- oob swap) just replaced, so it's already disconnected --
-        -- "htmx:after:history:push" sidesteps that, firing on `document`
-        -- unconditionally with the exact pushed path already available.
+    it("re-syncs nav's stale [selected] highlight via htmx:after:history:push, since main and breadcrumb navigation never touch nav's own render path", function()
+        -- Main's folders and breadcrumbs swap "#svn-index" without ever
+        -- re-rendering anything in nav, leaving its server-rendered
+        -- snapshot stale. "htmx:after:history:push" fires on `document`
+        -- only for a pushed navigation, with the pushed path, as the
+        -- server spells it, available to match nav's own hx-get against.
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -826,7 +820,7 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("{ once: true }", 1, true))
     end)
 
-    it("gives the main listing a stable id for dir/repo entries to target when swapping main content", function()
+    it("gives the main listing a stable id for #svn-navigator to target when swapping main content", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/trunk/" base="myrepo">
@@ -835,7 +829,7 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<wa-tree class="svn-index" id="svn-index" hx-on:wa-selection-change=', 1, true))
+        assert.truthy(html:find('<wa-tree class="svn-index" id="svn-index">', 1, true))
     end)
 
     it("wires the wa-page navigation tree itself to load the repo root's own listing, with no top-level wrapper item", function()
@@ -859,7 +853,7 @@ describe("svn-index output_filter", function()
         }, "/svn/myrepo/trunk/", { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(html:find(
-            [[<wa-tree class="svn-nav" hx-get="/svn/myrepo/" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-on:wa-selection-change="event.detail.selection.forEach(item => item.querySelector(':scope > span[hx-get], :scope > a[href]')?.click())">]],
+            [[<wa-tree class="svn-nav" hx-get="/svn/myrepo/" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item">]],
             1, true
         ))
     end)
@@ -960,8 +954,8 @@ describe("svn-index output_filter", function()
 </svn>]]
         }, "/svn/myrepo/trunk/arbortext/?p=10", { SVN_INDEX_TEMPLATE = "wa-page" })
 
-        assert.truthy(html:find('<wa-breadcrumb-item href="/svn/myrepo/?p=10" hx-get="/svn/myrepo/?p=10"', 1, true))
-        assert.truthy(html:find('<wa-breadcrumb-item href="/svn/myrepo/trunk/?p=10" hx-get="/svn/myrepo/trunk/?p=10"', 1, true))
+        assert.truthy(html:find('<wa-breadcrumb-item href="/svn/myrepo/?p=10">', 1, true))
+        assert.truthy(html:find('<wa-breadcrumb-item href="/svn/myrepo/trunk/?p=10">', 1, true))
         assert.truthy(html:find('<wa-tree class="svn-nav" hx-get="/svn/myrepo/?p=10" hx-trigger="load"', 1, true))
     end)
 
@@ -1029,7 +1023,7 @@ describe("svn-index output_filter", function()
         -- other href in this file) before being placed in the template,
         -- same as any other HTML attribute value.
         assert.truthy(html:find(
-            '<a href="/svn/demo1/trunk/README.md?p=10&amp;view=details&amp;this=that" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()">',
+            '<a href="/svn/demo1/trunk/README.md?p=10&amp;view=details&amp;this=that" tabindex="-1" draggable="false"><wa-icon',
             1, true
         ))
         assert.truthy(html:find(
@@ -1050,7 +1044,7 @@ describe("svn-index output_filter", function()
         )
 
         assert.truthy(html:find(
-            '<a href="/svn/demo1/trunk/README.md?view=details&amp;this=that" tabindex="-1" draggable="false" hx-on:click="event.stopPropagation()">',
+            '<a href="/svn/demo1/trunk/README.md?view=details&amp;this=that" tabindex="-1" draggable="false"><wa-icon',
             1, true
         ))
     end)
@@ -1138,7 +1132,7 @@ describe("svn-index output_filter", function()
 
         assert.truthy(html:find('<span class="icon-badged"><wa-icon name="folder" variant="regular"></wa-icon><wa-icon name="gear" variant="solid"></wa-icon></span>.cms/</a>', 1, true))
         assert.truthy(html:find('"><wa-icon name="folder" variant="regular"></wa-icon>trunk/</a>', 1, true))
-        assert.truthy(html:find("wa-tree-item.navhidden > span {", 1, true))
+        assert.truthy(html:find("wa-tree-item.navhidden > a {", 1, true))
     end)
 
     it("uses SVN_INDEX_HIDE_DIR_ICON as the single icon for SVN_INDEX_HIDE_DIR-matched dirs when set", function()
@@ -1419,7 +1413,7 @@ describe("svn-index output_filter", function()
         end
     end)
 
-    it("pulls the breadcrumb, footer, and header cluster along via hx-select-oob on dir.mustache's own main-swap label", function()
+    it("navigates main from one #svn-navigator element, pulling the breadcrumb, footer, and header cluster along via its hx-select-oob", function()
         -- All three would otherwise go stale once main's content is
         -- swapped to a different directory -- the footer shows the current
         -- repository/path/revision, the same kind of "reflects wherever
@@ -1442,14 +1436,17 @@ describe("svn-index output_filter", function()
         -- problem.
         -- Rather than a server-side distinction (like HX-Push-Url's
         -- "wa-tree#svn-index" HX-Target check above), this is scoped
-        -- entirely client-side: only dir.mustache's label itself (the
-        -- element with hx-target="#svn-index") carries
+        -- entirely client-side: only "#svn-navigator" -- the one element
+        -- that answers "svn-navigate", fired by a folder in main or nav or
+        -- a breadcrumb -- carries
         -- hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right", so only
         -- *its own* requests ever pull the fetched page's
         -- breadcrumb/footer/header along -- nav's own in-place lazy-load
         -- fetch is a different element entirely (no hx-select-oob at all)
         -- and is naturally unaffected, with no header-sniffing needed on
-        -- the Lua side. "#svn-breadcrumb" is the wrapping div (not just
+        -- the Lua side. Its URL comes from the event's detail, set in its
+        -- own htmx:config:request handler; hx-sync="replace" lets the
+        -- latest navigation win. "#svn-breadcrumb" is the wrapping div (not just
         -- <wa-breadcrumb> itself), so the revision badge -- a sibling
         -- inside that same div -- rides along with it as one conceptual
         -- unit. Scoped to that div, not the whole "#svn-subheader", so this
@@ -1471,9 +1468,14 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find('<footer slot="footer" id="svn-footer" class="wa-font-size-xs">', 1, true))
         assert.truthy(html:find('<div class="wa-cluster" id="svn-header-left">', 1, true))
         assert.truthy(html:find(
-            '<span hx-get="/svn/demo1/arbortext/" hx-target="#svn-index" hx-swap="innerHTML" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-trigger="click[this.parentElement.selected]">',
+            '<div id="svn-navigator" hidden hx-get="" hx-trigger="svn-navigate from:document" hx-target="#svn-index" hx-swap="innerHTML" hx-sync="replace" hx-select=".svn-index > wa-tree-item" hx-select-oob="#svn-breadcrumb,#svn-footer,#svn-header-left,#svn-header-right" hx-on::config:request="ctx.request.action = ctx.sourceEvent.detail.href"></div>',
             1, true
         ))
+        -- The only element that swaps "#svn-index": no folder entry or
+        -- breadcrumb carries a request of its own for it.
+        local _, targets = html:gsub('hx%-target="#svn%-index"', "")
+        assert.are.equal(1, targets)
+        assert.truthy(html:find('htmx.trigger(source, "svn-navigate", { href });', 1, true))
     end)
 
     it("sets a new weak ETag for the transformed body on a plain page load, replacing mod_dav_svn's own original one", function()
