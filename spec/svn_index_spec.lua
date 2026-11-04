@@ -1158,7 +1158,9 @@ describe("svn-index output_filter", function()
         assert.falsy(html:find('<span class="icon-badged">', 1, true))
     end)
 
-    it("renders SVN_INDEX_FA_KIT_CODE as the page's data-fa-kit-code, and no attribute when unset", function()
+    it("renders SVN_INDEX_FA_KIT_CODE as the page's data-fa-kit-code, and an empty one when unset", function()
+        -- Empty rather than absent: Web Awesome's getKitCode() otherwise
+        -- searches the whole document again for every icon it resolves.
         local fixture = {
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
 <index rev="7" path="/" base="myrepo">
@@ -1171,7 +1173,7 @@ describe("svn-index output_filter", function()
         local without_kit = run_filter(fixture, "/svn/demo1/", { SVN_INDEX_TEMPLATE = "wa-page" })
 
         assert.truthy(with_kit:find('<html lang="en" class="wa-cloak" data-fa-kit-code="abc123def4">', 1, true))
-        assert.truthy(without_kit:find('<html lang="en" class="wa-cloak">', 1, true))
+        assert.truthy(without_kit:find('<html lang="en" class="wa-cloak" data-fa-kit-code="">', 1, true))
     end)
 
     it("never tags any entry \"navhidden\" when SVN_INDEX_HIDE_DIR is unset", function()
