@@ -28,6 +28,22 @@ document.addEventListener("wa-lazy-load", (event) => {
     event.target.addEventListener("wa-lazy-load", (e) => e.stopPropagation(), { once: true });
 }, true);
 
+// wa-tree answers every "wa-lazy-change" from any of its items by
+// re-initializing *every* item in the whole tree (WaTree.handleSlotChange
+// -> initTreeItem), which only re-derives "selectable" from the tree's
+// selection mode and swaps in slotted custom expand/collapse icons. Nav
+// uses neither (single selection, default icons), so for nav that re-init
+// is a no-op -- but it still scans the whole tree twice per item, about a
+// second per expansion of a ~2000-entry folder. Stopped here in the
+// capture phase, on its way down from document, so it never reaches
+// wa-tree's own listener on itself. Revisit if nav ever adopts multiple
+// selection or custom expand/collapse icons.
+document.addEventListener("wa-lazy-change", (event) => {
+    if (event.target.closest?.(".svn-nav")) {
+        event.stopPropagation();
+    }
+}, true);
+
 // dir.mustache's wa-tree-item never sets "lazy" itself, since it's the exact
 // same markup rendered into both #svn-index (main, a strictly flat listing
 // -- its label already swaps main's whole content to browse deeper, one
