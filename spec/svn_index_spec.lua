@@ -826,6 +826,21 @@ describe("svn-index output_filter", function()
         assert.truthy(html:find("{ once: true }", 1, true))
     end)
 
+    it("lets the browser skip the main listing's off-screen rows, with a placeholder height for rows not yet rendered", function()
+        -- On the rows, not "#svn-index" (always on screen). "auto" keeps a
+        -- row's last rendered height; 1.75rem is a row's real height at the
+        -- default font size, so a fresh page's scroll height is right.
+        local html = run_filter({
+            [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
+<index rev="7" path="/trunk/" base="myrepo">
+<file name="README.md" href="README.md" />
+</index>
+</svn>]]
+        }, nil, { SVN_INDEX_TEMPLATE = "wa-page" })
+
+        assert.truthy(html:find("#svn-index > wa-tree-item {\n    content-visibility: auto;\n    contain-intrinsic-block-size: auto 1.75rem;\n}", 1, true))
+    end)
+
     it("gives the main listing a stable id for dir/repo entries to target when swapping main content", function()
         local html = run_filter({
             [[<svn version="1.14.1 (r1886195)" href="http://subversion.apache.org/">
