@@ -589,6 +589,22 @@ div.svn-main {
     padding: var(--wa-space-m);
 }
 
+/* Lets the browser skip style and layout of the main listing's rows that
+   are off screen -- on a folder of a few thousand entries, most of the
+   rendering cost (each row is ~19 elements, mostly wa-tree-item's own
+   shadow DOM). On the rows, not on "#svn-index" itself, which is always
+   on screen and so never skipped. A skipped row's height comes from
+   contain-intrinsic-block-size: "auto" keeps the height a row had when it
+   was last rendered (implied by content-visibility: auto in current
+   engines, written out for older ones), and 1.75rem stands in until then
+   -- a row's real height at the default font size (28px), which keeps a
+   fresh page's scroll height right, so jumping to the end lands on the
+   last entry. Only the block size: rows stretch to the tree's width. */
+#svn-index > wa-tree-item {
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 1.75rem;
+}
+
 /* "#svn-history-dialog" itself sizes to fit its content by default -- fixed
    here (on the content div, not the dialog; a real "height", not just a
    "max-height" cap) so the dialog's own overall height stays constant
