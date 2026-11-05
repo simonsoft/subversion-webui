@@ -875,7 +875,13 @@ function output_filter(r)
             -- as page.mustache's data-fa-kit-code, which makes Web Awesome
             -- load every icon from Font Awesome's Pro CDN with that kit
             -- (e.g. for a Pro-only SVN_INDEX_HIDE_DIR_ICON like
-            -- "folder-gear"). Unset or empty: the free icon set.
+            -- "folder-gear"). Unset or empty: the free icon set -- but the
+            -- attribute is still rendered, empty: with no element carrying
+            -- it, Web Awesome's getKitCode() repeats a whole-document
+            -- querySelector("[data-fa-kit-code]") for every icon it
+            -- resolves (two per file row), seconds of main-thread time on a
+            -- folder of a few thousand files. On <html> the query stops at
+            -- the first element.
             fa_kit_code = r.subprocess_env and r.subprocess_env.SVN_INDEX_FA_KIT_CODE ~= "" and r.subprocess_env.SVN_INDEX_FA_KIT_CODE or nil,
             -- Always a plain string when history_active is truthy -- ""
             -- for the browsed directory itself, "<filename>" for a
