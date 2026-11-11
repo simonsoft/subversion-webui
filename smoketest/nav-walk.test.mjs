@@ -114,7 +114,7 @@ try {
             new MutationObserver((mutations) => {
                 for (const m of mutations) {
                     if (m.target.getAttribute?.("aria-busy") === "true" && m.target.closest(".svn-nav")) {
-                        window.__busy.add(m.target.querySelector(":scope > span")?.textContent.trim());
+                        window.__busy.add(m.target.querySelector(":scope > a")?.textContent.trim());
                     }
                 }
             }).observe(document, { attributes: true, attributeFilter: ["aria-busy"], subtree: true });
@@ -126,7 +126,7 @@ try {
             await page.waitForFunction(
                 () => {
                     const deeper = [...document.querySelectorAll(".svn-nav wa-tree-item.dir")].find(
-                        (i) => i.querySelector(":scope > span")?.textContent.trim() === "deeper/"
+                        (i) => i.querySelector(":scope > a")?.textContent.trim() === "deeper/"
                     );
                     return deeper?.selected && !deeper.lazy && !deeper.loading;
                 },
@@ -138,7 +138,7 @@ try {
 
         const state = await page.evaluate(() => {
             const items = [...document.querySelectorAll(".svn-nav wa-tree-item.dir")];
-            const name = (i) => i.querySelector(":scope > span").textContent.trim();
+            const name = (i) => i.querySelector(":scope > a").textContent.trim();
             return {
                 expanded: items.filter((i) => i.expanded).map(name),
                 selected: items.filter((i) => i.selected).map(name),
