@@ -516,6 +516,11 @@ open down to that folder: exactly the folders on the path expanded, the
 current one selected, and Web Awesome's own loading spinner shown on each
 folder while its listing is fetched.
 
+`main-large-folder.test.mjs` loads a folder of 1000 files and checks the
+main listing's `content-visibility`: off-screen rows are skipped, a fresh
+page's jump to the end shows the last entry, and the scroll height stays
+the same while paging through every row.
+
 It is entirely independent of `busted spec/`: not run as part of it, adds
 no Node.js dependency to the rest of the repo, and isn't required for
 ordinary development -- `busted spec/` remains the primary, fast test loop.
